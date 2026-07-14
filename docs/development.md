@@ -58,6 +58,24 @@ Real `.RAD` decoding, paging, transforms, and visual alignment must be smoke-tes
 representative content becomes available. Record the asset provenance and whether it may
 be committed before adding it to automated tests.
 
+To exercise a developer-provided static `.RAD` file without committing it, place it in
+`test-data` and expose it to Vite through the ignored local fixture link:
+
+```bash
+ln -s ../../../../test-data/point_cloud_29999_clean-lod.rad \
+  apps/demo/public/assets/local-static.rad
+```
+
+Then start the demo with:
+
+```bash
+VITE_STATIC_RAD_URL=/assets/local-static.rad pnpm dev
+```
+
+The viewport reports `Static RAD ready` only after Spark has fetched and initialised the
+asset. The same environment variable enables the optional `.RAD` assertion in the
+Playwright smoke test.
+
 ## Package boundaries
 
 - `player-core` must never import Spark or React.

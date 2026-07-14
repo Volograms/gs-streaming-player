@@ -29,3 +29,5 @@ All notable changes to this project will be documented here. The project uses
   cancellation, visibility control, retry-safe failure isolation, and resource release.
 - Reference demo WebGL viewport with real Spark initialisation and a self-contained glTF
   mesh fixture covered by the Playwright smoke test.
+- Optional local `.RAD` demo loading and Playwright assertion, validated with a real
+  quality-LoD SH3 asset while keeping developer-provided content out of Git.

@@ -4,9 +4,8 @@ This file tracks implementation against the epics in
 [`project-summary.md`](../project-summary.md). A task is checked only after its
 acceptance criteria are covered by implementation and verification.
 
-## Active implementation slice: Spark asset validation and dynamic scene foundation
+## Active implementation slice: Dynamic scene foundation
 
-- [ ] E02-T03 — Validate static `.RAD` loading with representative project content.
 - [ ] E02-T05 — Implement `SparkFrameSlot` dynamic frame representation.
 - [ ] E02-T06 — Integrate manual dynamic frame switching with frame slots.
 - [ ] E02-T07 — Expose the full Spark LoD and foveation controls.
@@ -18,11 +17,12 @@ acceptance criteria are covered by implementation and verification.
 
 - [x] E02-T01 — Finalise the renderer adapter API against Spark requirements.
 - [x] E02-T02 — Implement Spark renderer initialisation.
+- [x] E02-T03 — Load and browser-validate static `.RAD` objects.
 - [x] E02-T04 — Load conventional GLTF/GLB meshes.
 
-The E02-T03 loader implementation, progress reporting, transforms, visibility, failure
-isolation, cancellation, and disposal are unit covered. Completion awaits a real `.RAD`
-browser and visual-alignment test.
+The static loader's progress reporting, transforms, visibility, failure isolation,
+cancellation, and disposal are unit covered. A local 6.9 MB quality-LoD `.RAD` asset was
+also decoded and initialised through Spark in the Chromium smoke test.
 
 ### Content manifest foundation (2026-07-14)
 
@@ -42,7 +42,7 @@ browser and visual-alignment test.
 
 ## Inputs needed for M1/M2 validation
 
-- [ ] Obtain representative static `.RAD` content.
+- [x] Obtain representative static `.RAD` content (local-only; licensing still pending).
 - [ ] Obtain at least ten dynamic `.RAD` frames.
 - [ ] Obtain a representative production GLB mesh (a minimal glTF test marker is
       committed).

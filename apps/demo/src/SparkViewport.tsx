@@ -2,10 +2,16 @@ import { SparkGaussianRendererAdapter } from "@6g-path/gaussian-renderer-spark";
 import { useEffect, useRef, useState } from "react";
 
 type RendererStatus = "initialising" | "ready" | "unavailable";
+type StaticAssetStatus = "failed" | "loading" | "not-configured" | "ready";
+
+const staticRadUrl = import.meta.env.VITE_STATIC_RAD_URL;
 
 export function SparkViewport() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<RendererStatus>("initialising");
+  const [staticAssetStatus, setStaticAssetStatus] = useState<StaticAssetStatus>(
+    staticRadUrl === undefined ? "not-configured" : "loading",
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -34,6 +40,23 @@ export function SparkViewport() {
         if (active) {
           setStatus("ready");
         }
+
+        if (staticRadUrl !== undefined) {
+          try {
+            await adapter.loadStaticObject(
+              { id: "demo-static-rad", url: staticRadUrl },
+              { signal: controller.signal },
+            );
+            if (active) {
+              setStaticAssetStatus("ready");
+            }
+          } catch (error) {
+            if (active && !controller.signal.aborted) {
+              console.error("Unable to load the configured static RAD asset.", error);
+              setStaticAssetStatus("failed");
+            }
+          }
+        }
       } catch (error) {
         if (active && !controller.signal.aborted) {
           console.error("Unable to initialise the Spark demo viewport.", error);
@@ -61,6 +84,15 @@ export function SparkViewport() {
             ? "Renderer unavailable"
             : "Initialising renderer"}
       </p>
+      {staticAssetStatus === "not-configured" ? null : (
+        <p className="static-asset-status" data-static-asset-status={staticAssetStatus}>
+          {staticAssetStatus === "ready"
+            ? "Static RAD ready"
+            : staticAssetStatus === "failed"
+              ? "Static RAD failed"
+              : "Loading static RAD"}
+        </p>
+      )}
     </div>
   );
 }

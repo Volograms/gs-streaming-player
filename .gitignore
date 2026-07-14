@@ -8,3 +8,7 @@ test-results/
 .env
 .env.*
 !.env.example
+
+# Developer-provided renderer fixtures are staged here for local smoke tests only.
+apps/demo/public/assets/local-static.rad
+test-data/*.rad

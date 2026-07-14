@@ -93,7 +93,8 @@ h1 {
   min-height: 390px;
 }
 
-.renderer-status {
+.renderer-status,
+.static-asset-status {
   position: absolute;
   right: 1rem;
   bottom: 1rem;
@@ -107,12 +108,27 @@ h1 {
   letter-spacing: 0.04em;
 }
 
+.static-asset-status {
+  right: auto;
+  left: 1rem;
+}
+
 .renderer-status[data-renderer-status="ready"] {
   border-color: #3e756c;
   color: #73e4c9;
 }
 
 .renderer-status[data-renderer-status="unavailable"] {
+  border-color: #8d554c;
+  color: #ffb4a8;
+}
+
+.static-asset-status[data-static-asset-status="ready"] {
+  border-color: #3e756c;
+  color: #73e4c9;
+}
+
+.static-asset-status[data-static-asset-status="failed"] {
   border-color: #8d554c;
   color: #ffb4a8;
 }
