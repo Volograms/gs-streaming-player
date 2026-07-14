@@ -48,6 +48,16 @@ available:
 pnpm gs-manifest validate content/lesson.json --check-assets
 ```
 
+## Renderer development
+
+The demo initialises the real Spark renderer and loads the self-contained
+`apps/demo/public/assets/marker.gltf` fixture. Renderer unit tests use injected runtime
+factories so lifecycle and failure cases do not require WebGL or `.RAD` assets.
+
+Real `.RAD` decoding, paging, transforms, and visual alignment must be smoke-tested when
+representative content becomes available. Record the asset provenance and whether it may
+be committed before adding it to automated tests.
+
 ## Package boundaries
 
 - `player-core` must never import Spark or React.

@@ -23,3 +23,9 @@ All notable changes to this project will be documented here. The project uses
   manifest-relative asset URL resolution.
 - `gs-manifest validate` content CLI with actionable JSON Pointer diagnostics and opt-in
   referenced-asset checks.
+- Spark 2.1 renderer adapter with caller-owned canvas, scene, camera, and renderer
+  support; managed resize/render loops; deterministic ownership; and clean disposal.
+- Paged `.RAD` and GLTF/GLB loading paths with shared transforms, progress callbacks,
+  cancellation, visibility control, retry-safe failure isolation, and resource release.
+- Reference demo WebGL viewport with real Spark initialisation and a self-contained glTF
+  mesh fixture covered by the Playwright smoke test.

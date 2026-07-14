@@ -29,3 +29,9 @@ used during day-to-day implementation.
   generated from it and protected by a synchronisation test.
 - Manifest diagnostics identify fields using JSON Pointer paths. Referenced-asset checks
   are opt-in so structural and semantic validation does not require local media assets.
+- The initial concrete renderer baseline is Spark 2.1.0 with Three.js 0.180.0.
+- Renderer ownership is explicit: caller-owned scenes, cameras, and renderers survive
+  adapter disposal; adapter-created and adapter-loaded resources do not.
+- Manifest transforms are applied identically to splats and meshes. Matrices use
+  Three.js column-major ordering, take precedence over components, and receive no
+  implicit coordinate-system conversion.

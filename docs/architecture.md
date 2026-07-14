@@ -39,11 +39,14 @@ shared <--- player-core <--- renderer-spark
 player packages <--- demo
 ```
 
-`content-tools` is initially independent. It will share the versioned manifest schema
-once E01 establishes its single source of truth.
+`content-tools` consumes the versioned manifest schema owned by `player-core`. Its
+Node-only validation entry point is kept separate from browser-facing exports.
 
 ## Decisions
 
 The accepted foundation decisions are indexed in
 [`project/DECISIONS.md`](project/DECISIONS.md) and recorded in full under
 [`architecture/decisions`](architecture/decisions).
+
+See the [Spark renderer integration guide](renderer-integration.md) for the concrete
+renderer lifecycle and ownership rules.

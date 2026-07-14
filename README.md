@@ -5,9 +5,10 @@ The player is designed for persistent static splats, per-frame dynamic `.RAD` se
 conventional Three.js meshes, video-style buffering, and network-aware progressive
 quality.
 
-**Milestone M0 — Repository Ready** is complete. The active implementation slice is the
-versioned content manifest foundation. See the [project plan](docs/project-summary.md)
-and the live [task tracker](docs/project/TODO.md).
+The repository and content-manifest foundations are complete. The active implementation
+slice is Spark rendering and dynamic scene composition. See the
+[project plan](docs/project-summary.md) and the live
+[task tracker](docs/project/TODO.md).
 
 ## Requirements
 
@@ -63,3 +64,7 @@ their rationale are recorded in
 
 Content authors should also read the [manifest format](docs/manifest-format.md), which
 documents schema validation, URL resolution, and the validator CLI.
+
+Application developers should read the
+[Spark renderer integration guide](docs/renderer-integration.md) for lifecycle,
+ownership, loading, cancellation, and transform semantics.

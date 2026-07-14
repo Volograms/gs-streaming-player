@@ -45,5 +45,10 @@ export type {
   FramePreparationOptions,
   GaussianRendererAdapter,
   PreparedFrame,
+  RendererLoadOptions,
+  RendererLoadProgress,
+  RendererLoadProgressCallback,
   RendererMetrics,
+  RendererObjectHandle,
+  RendererObjectKind,
 } from "./renderer/types.js";

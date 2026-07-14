@@ -8,4 +8,5 @@ test("loads the demo application and workspace packages", async ({ page }) => {
   ).toBeVisible();
   await expect(page.getByText("Framework-independent player core")).toBeVisible();
   await expect(page.getByText("supported", { exact: true })).toBeVisible();
+  await expect(page.getByText("Renderer ready", { exact: true })).toBeVisible();
 });

@@ -1,0 +1,57 @@
+{
+  "asset": {
+    "generator": "6G-PATH Gaussian Player",
+    "version": "2.0"
+  },
+  "scene": 0,
+  "scenes": [{ "nodes": [0] }],
+  "nodes": [{ "mesh": 0 }],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": { "POSITION": 0 },
+          "indices": 1,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "doubleSided": true,
+      "emissiveFactor": [0.15, 0.75, 0.6],
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [0.15, 0.75, 0.6, 1],
+        "metallicFactor": 0,
+        "roughnessFactor": 1
+      }
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 44,
+      "uri": "data:application/octet-stream;base64,mpkZv83MzL4AAAAAmpkZP83MzL4AAAAAAAAAAJqZGT8AAAAAAAABAAIAAAA="
+    }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteLength": 36, "byteOffset": 0, "target": 34962 },
+    { "buffer": 0, "byteLength": 6, "byteOffset": 36, "target": 34963 }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 3,
+      "max": [0.6, 0.6, 0],
+      "min": [-0.6, -0.4, 0],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5123,
+      "count": 3,
+      "type": "SCALAR"
+    }
+  ]
+}

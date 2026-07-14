@@ -5,6 +5,7 @@ import { SIX_G_TELEMETRY_PACKAGE_ID } from "@6g-path/gaussian-telemetry-6g";
 import { createIdentityTransform } from "@6g-path/shared";
 
 import { getFoundationStatus } from "./foundationStatus.js";
+import { SparkViewport } from "./SparkViewport.js";
 
 const playback = createInitialPlaybackState();
 const origin = createIdentityTransform();
@@ -24,10 +25,7 @@ export function App() {
       </section>
 
       <section className="viewer-shell" aria-label="Player preview">
-        <div className="viewer-placeholder">
-          <span className="viewer-mark" aria-hidden="true" />
-          <p>Spark renderer integration begins in Milestone M1.</p>
-        </div>
+        <SparkViewport />
         <aside className="status-panel">
           <h2>Foundation status</h2>
           <ul>
