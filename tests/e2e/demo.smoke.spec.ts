@@ -1,0 +1,11 @@
+import { expect, test } from "@playwright/test";
+
+test("loads the demo application and workspace packages", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(
+    page.getByRole("heading", { name: "Adaptive Gaussian Splat Streaming" }),
+  ).toBeVisible();
+  await expect(page.getByText("Framework-independent player core")).toBeVisible();
+  await expect(page.getByText("supported", { exact: true })).toBeVisible();
+});

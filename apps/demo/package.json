@@ -1,0 +1,22 @@
+{
+  "name": "@6g-path/demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --project tsconfig.json && vite build",
+    "dev": "vite",
+    "preview": "vite preview",
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@6g-path/gaussian-content-tools": "workspace:*",
+    "@6g-path/gaussian-player": "workspace:*",
+    "@6g-path/gaussian-renderer-spark": "workspace:*",
+    "@6g-path/gaussian-telemetry-6g": "workspace:*",
+    "@6g-path/shared": "workspace:*",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  }
+}
