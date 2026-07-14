@@ -24,6 +24,8 @@ class FakeSplatMesh extends Object3D {
   readonly dispose = vi.fn();
   readonly initialized: Promise<FakeSplatMesh>;
   lodScale = 1;
+  maxSh = 3;
+  readonly updateGenerator = vi.fn();
 
   constructor(initialise?: Promise<void>) {
     super();
@@ -73,8 +75,23 @@ function createHarness() {
   } as unknown as WebGLRenderer;
   const spark = Object.assign(new Object3D(), {
     activeSplats: 321,
+    behindFoveate: 0.2,
+    coneFov: 120,
+    coneFov0: 90,
+    coneFoveate: 0.4,
     dispose: vi.fn(),
+    enableLod: true,
+    lodRenderScale: 1,
+    lodSplatScale: 1,
     lodSplatCount: undefined as number | undefined,
+    pager: {
+      maxPages: 4,
+      pageToSplatsChunk: [
+        { chunk: 0, splats: {}, time: 1 },
+        undefined,
+        { chunk: 1, splats: {}, time: 2 },
+      ],
+    },
   }) as unknown as SparkRenderer;
   const scene = new Scene();
   const camera = new PerspectiveCamera();
@@ -235,9 +252,18 @@ describe("SparkGaussianRendererAdapter", () => {
     expect(harness.splatMeshes[0]?.position.toArray()).toEqual([1, 2, 3]);
     expect(harness.splatMeshes[0]?.scale.toArray()).toEqual([2, 2, 2]);
     expect(adapter.getMetrics()).toMatchObject({
+      failedResourceLoadCount: 0,
+      gpuPageCapacity: 4,
+      gpuPageCount: 2,
       loadedMeshObjectCount: 0,
       loadedStaticObjectCount: 2,
+      loadingResourceCount: 0,
+      preparedFrameCount: 0,
       renderedSplatCount: 321,
+      resources: [
+        expect.objectContaining({ id: "room", state: "ready", visible: true }),
+        expect.objectContaining({ id: "desk", state: "ready", visible: true }),
+      ],
     });
 
     adapter.setObjectVisibility("room", false);
@@ -268,6 +294,7 @@ describe("SparkGaussianRendererAdapter", () => {
       adapter.loadStaticObject({ id: "broken", url: "/broken.rad" }),
     ).rejects.toThrow("bad RAD");
     expect(adapter.getMetrics().loadedStaticObjectCount).toBe(0);
+    expect(adapter.getMetrics().failedResourceLoadCount).toBe(1);
     expect(harness.splatMeshes[0]?.dispose).toHaveBeenCalledOnce();
 
     await expect(
@@ -350,11 +377,17 @@ describe("SparkGaussianRendererAdapter", () => {
     expect(harness.splatMeshes[0]?.visible).toBe(false);
     expect(harness.splatMeshes[1]?.visible).toBe(true);
     expect(adapter.getMetrics().activeFrameIndex).toBe(1);
+    expect(adapter.getMetrics().preparedFrameCount).toBe(2);
     expect(second.qualityLevel).toBe(2);
+    expect(adapter.getFrameSlotSnapshots()).toEqual([
+      expect.objectContaining({ frameIndex: 0, state: "ready", visible: false }),
+      expect.objectContaining({ frameIndex: 1, state: "ready", visible: true }),
+    ]);
 
     adapter.releaseFrame(second);
     expect(harness.splatMeshes[1]?.dispose).toHaveBeenCalledOnce();
     expect(adapter.getMetrics().activeFrameIndex).toBeUndefined();
+    expect(adapter.getMetrics().preparedFrameCount).toBe(1);
   });
 
   it("rejects cancelled and duplicate operations without corrupting loaded state", async () => {
@@ -414,5 +447,125 @@ describe("SparkGaussianRendererAdapter", () => {
       frameTimeMs: 20,
       renderFramesPerSecond: 50,
     });
+  });
+
+  it("reports in-flight frame resources and cancels their slots", async () => {
+    const harness = createHarness();
+    const pending = deferred<void>();
+    harness.splatInitialisers.push(pending.promise);
+    const adapter = new SparkGaussianRendererAdapter({
+      autoRender: false,
+      renderer: harness.renderer,
+      runtime: harness.runtime,
+      scene: harness.scene,
+    });
+    await adapter.initialise();
+    const controller = new AbortController();
+    const preparation = adapter.prepareFrame(
+      "actor",
+      { frameIndex: 4, timestampSeconds: 4 / 30, url: "/frame-4.rad" },
+      { signal: controller.signal },
+    );
+
+    expect(adapter.getMetrics()).toMatchObject({
+      loadingResourceCount: 1,
+      preparedFrameCount: 0,
+      resources: [
+        expect.objectContaining({
+          id: "actor:4:slot-0",
+          kind: "dynamic-frame",
+          loadedBytes: 25,
+          state: "loading",
+        }),
+      ],
+    });
+    expect(adapter.getFrameSlotSnapshots()).toEqual([
+      expect.objectContaining({
+        sequenceId: "actor",
+        state: "loading",
+        visible: false,
+      }),
+    ]);
+
+    controller.abort();
+    await expect(preparation).rejects.toBeInstanceOf(SparkRendererAbortError);
+    pending.resolve();
+    await Promise.resolve();
+    expect(adapter.getMetrics()).toMatchObject({
+      failedResourceLoadCount: 0,
+      loadingResourceCount: 0,
+      preparedFrameCount: 0,
+      resources: [],
+    });
+    expect(harness.splatMeshes[0]?.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("applies and reads complete Spark LoD, weighting, foveation, and SH controls", async () => {
+    const harness = createHarness();
+    const adapter = new SparkGaussianRendererAdapter({
+      autoRender: false,
+      renderer: harness.renderer,
+      runtime: harness.runtime,
+      scene: harness.scene,
+    });
+    await adapter.initialise();
+    await adapter.loadStaticObject({ id: "room", url: "/room.rad" });
+    await adapter.prepareFrame(
+      "actor",
+      { frameIndex: 0, timestampSeconds: 0, url: "/frame-0.rad" },
+      {},
+    );
+
+    adapter.setSparkRenderQuality({
+      dynamicSequenceWeights: { actor: 0.75 },
+      enableLod: true,
+      foveation: {
+        behindScale: 0.1,
+        fullDetailFovDegrees: 70,
+        peripheralDetailFovDegrees: 130,
+        peripheralScale: 0.35,
+      },
+      lodRenderScale: 1.5,
+      lodSplatScale: 1.25,
+      maximumSphericalHarmonics: 2,
+      objectWeights: { room: 0.5 },
+      splatBudget: 800_000,
+      staticSceneWeight: 2,
+    });
+
+    expect(harness.spark).toMatchObject({
+      behindFoveate: 0.1,
+      coneFov: 130,
+      coneFov0: 70,
+      coneFoveate: 0.35,
+      enableLod: true,
+      lodRenderScale: 1.5,
+      lodSplatCount: 800_000,
+      lodSplatScale: 1.25,
+    });
+    expect(harness.splatMeshes[0]).toMatchObject({ lodScale: 1, maxSh: 2 });
+    expect(harness.splatMeshes[1]).toMatchObject({ lodScale: 0.75, maxSh: 2 });
+    expect(harness.splatMeshes[0]?.updateGenerator).toHaveBeenCalledOnce();
+    expect(harness.splatMeshes[1]?.updateGenerator).toHaveBeenCalledOnce();
+
+    const effective = adapter.getSparkRenderQuality();
+    expect(effective).toMatchObject({
+      dynamicSequenceWeights: { actor: 0.75 },
+      maximumSphericalHarmonics: 2,
+      objectWeights: { room: 0.5 },
+      splatBudget: 800_000,
+    });
+    (effective.objectWeights as Record<string, number>).room = 99;
+    expect(adapter.getSparkRenderQuality().objectWeights.room).toBe(0.5);
+
+    expect(() =>
+      adapter.setSparkRenderQuality({
+        ...effective,
+        foveation: {
+          ...effective.foveation,
+          peripheralDetailFovDegrees: 20,
+        },
+      }),
+    ).toThrow(SparkRendererStateError);
   });
 });

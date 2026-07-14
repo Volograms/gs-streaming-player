@@ -33,3 +33,9 @@ All notable changes to this project will be documented here. The project uses
   quality-LoD SH3 asset while keeping developer-provided content out of Git.
 - Orbit, pan, zoom, damping, and touch-compatible camera navigation in the Spark demo
   viewport.
+- Explicit `SparkFrameSlot` lifecycle with progress, cancellation, readiness,
+  visibility, failure state, slot-backed frame switching, and deterministic GPU resource release.
+- Validated Spark LoD configuration covering global budgets/scales, static and dynamic
+  weights, per-object weights, foveation, and maximum spherical harmonics.
+- Renderer diagnostics for in-flight resources, failures, prepared frames, rendered
+  splats, GPU pages, frame time, and FPS, plus interactive demo quality controls.

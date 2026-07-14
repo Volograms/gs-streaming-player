@@ -29,10 +29,22 @@ export interface RendererLoadOptions {
 }
 
 export type RendererObjectKind = "mesh" | "static-splat";
+export type RendererResourceKind = "dynamic-frame" | RendererObjectKind;
+export type RendererResourceLoadState = "loading" | "ready";
 
 export interface RendererObjectHandle {
   id: string;
   kind: RendererObjectKind;
+}
+
+export interface RendererResourceMetrics {
+  id: string;
+  kind: RendererResourceKind;
+  loadedBytes?: number;
+  state: RendererResourceLoadState;
+  totalBytes?: number;
+  url: string;
+  visible: boolean;
 }
 
 export interface PreparedFrame {
@@ -45,11 +57,17 @@ export interface PreparedFrame {
 
 export interface RendererMetrics {
   activeFrameIndex?: number;
+  failedResourceLoadCount: number;
   frameTimeMs?: number;
+  gpuPageCapacity?: number;
+  gpuPageCount?: number;
   loadedMeshObjectCount: number;
   loadedStaticObjectCount: number;
+  loadingResourceCount: number;
+  preparedFrameCount: number;
   renderedSplatCount?: number;
   renderFramesPerSecond?: number;
+  resources: readonly RendererResourceMetrics[];
 }
 
 export interface GaussianRendererAdapter {

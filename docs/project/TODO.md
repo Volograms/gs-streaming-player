@@ -4,14 +4,19 @@ This file tracks implementation against the epics in
 [`project-summary.md`](../project-summary.md). A task is checked only after its
 acceptance criteria are covered by implementation and verification.
 
-## Active implementation slice: Dynamic scene foundation
+## Active implementation slice: Static and dynamic scene composition
 
-- [ ] E02-T05 — Implement `SparkFrameSlot` dynamic frame representation.
-- [ ] E02-T06 — Integrate manual dynamic frame switching with frame slots.
-- [ ] E02-T07 — Expose the full Spark LoD and foveation controls.
-- [ ] E02-T08 — Complete renderer and resource metrics.
+- [ ] E03-T01 — Compose static GS, dynamic GS, and mesh objects.
+- [ ] E03-T02 — Define coordinate-system conventions.
 
 ## Completed
+
+### M1 dynamic renderer foundation (2026-07-14)
+
+- [x] E02-T05 — Implement `SparkFrameSlot` dynamic frame representation.
+- [x] E02-T06 — Integrate manual dynamic frame switching with frame slots.
+- [x] E02-T07 — Expose the full Spark LoD and foveation controls.
+- [x] E02-T08 — Complete renderer and resource metrics.
 
 ### M1 asset-independent renderer foundation (2026-07-14)
 

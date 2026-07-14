@@ -35,3 +35,9 @@ used during day-to-day implementation.
 - Manifest transforms are applied identically to splats and meshes. Matrices use
   Three.js column-major ordering, take precedence over components, and receive no
   implicit coordinate-system conversion.
+- Dynamic Spark resources are owned by explicit frame slots; presentation changes slot
+  visibility, while release or cancellation disposes the slot's mesh without recreating
+  the scene.
+- Spark-specific LoD and foveation settings remain on the concrete adapter. The core
+  quality decision is translated at the boundary so Spark properties do not leak into
+  `player-core`.

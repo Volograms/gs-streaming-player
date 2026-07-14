@@ -2,11 +2,19 @@ import { PerspectiveCamera } from "three";
 
 import { throwIfAborted, waitWithAbort } from "./abort.js";
 import { disposeObject } from "./disposeObject.js";
-import { SparkRendererStateError } from "./errors.js";
+import { SparkRendererAbortError, SparkRendererStateError } from "./errors.js";
+import {
+  cloneSparkRenderQuality,
+  DEFAULT_SPARK_RENDER_QUALITY,
+  validateSparkRenderQuality,
+} from "./quality.js";
 import { defaultSparkRendererRuntime } from "./runtime.js";
+import { SparkFrameSlot } from "./SparkFrameSlot.js";
 import { applyTransform } from "./transform.js";
 
+import type { SparkRenderQualityConfiguration } from "./quality.js";
 import type { ResizeObserverLike, SparkRendererRuntime } from "./runtime.js";
+import type { SparkFrameSlotSnapshot } from "./SparkFrameSlot.js";
 import type { SparkRendererAdapterOptions } from "./types.js";
 import type {
   FramePreparationOptions,
@@ -20,6 +28,8 @@ import type {
   RendererMetrics,
   RendererObjectHandle,
   RendererObjectKind,
+  RendererResourceKind,
+  RendererResourceMetrics,
   StaticSceneObject,
 } from "@6g-path/gaussian-player";
 import type { Transform } from "@6g-path/shared";
@@ -28,17 +38,34 @@ import type { Camera, Object3D, Scene, WebGLRenderer } from "three";
 
 interface LoadedObjectRecord {
   dispose(): void;
+  id: string;
   kind: RendererObjectKind;
   node: Object3D;
+  splatMesh?: SplatMesh;
+}
+
+interface MutableResourceMetrics {
+  id: string;
+  kind: RendererResourceKind;
+  loadedBytes?: number;
+  state: "loading" | "ready";
+  totalBytes?: number;
+  url: string;
+  visible: boolean;
 }
 
 export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
   private readonly autoRender: boolean;
+  private failedResourceLoadCount = 0;
+  private readonly frameSlots = new Set<SparkFrameSlot>();
   private readonly loadedObjects = new Map<string, LoadedObjectRecord>();
   private readonly loadingObjectIds = new Set<string>();
   private readonly manageResize: boolean;
   private readonly options: SparkRendererAdapterOptions;
-  private readonly preparedFrames = new Map<PreparedFrame, SplatMesh>();
+  private nextFrameSlotId = 0;
+  private readonly preparedFrames = new Map<PreparedFrame, SparkFrameSlot>();
+  private qualityConfiguration = cloneSparkRenderQuality(DEFAULT_SPARK_RENDER_QUALITY);
+  private readonly resourceMetrics = new Map<string, MutableResourceMetrics>();
   private readonly runtime: SparkRendererRuntime;
   private activeFrame: PreparedFrame | undefined;
   private cameraValue: Camera | undefined;
@@ -91,6 +118,7 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
       this.cameraValue = camera;
       this.sparkValue = spark;
       this.initialised = true;
+      this.applyQualityConfiguration();
 
       if (this.manageResize) {
         this.resize();
@@ -122,6 +150,7 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
   ): Promise<RendererObjectHandle> {
     this.assertReadyForLoad(object.id, options.signal);
     this.loadingObjectIds.add(object.id);
+    const resource = this.beginResource(object.id, "static-splat", object.url);
     let splatMesh: SplatMesh | undefined;
 
     try {
@@ -129,6 +158,7 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
         object,
         options.onProgress,
         options.signal,
+        resource,
       );
       splatMesh = this.runtime.createSplatMesh({
         editable: false,
@@ -140,15 +170,24 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
       this.assertNotDisposed();
       applyTransform(splatMesh, object.transform);
       this.scene.add(splatMesh);
+      resource.state = "ready";
+      resource.visible = true;
       const loadedSplatMesh = splatMesh;
       this.loadedObjects.set(object.id, {
         dispose: () => loadedSplatMesh.dispose(),
+        id: object.id,
         kind: "static-splat",
         node: loadedSplatMesh,
+        splatMesh: loadedSplatMesh,
       });
+      this.applyQualityToStaticObject(object.id, loadedSplatMesh);
       splatMesh = undefined;
       return Object.freeze({ id: object.id, kind: "static-splat" });
     } catch (error) {
+      this.resourceMetrics.delete(object.id);
+      if (!(error instanceof SparkRendererAbortError)) {
+        this.failedResourceLoadCount += 1;
+      }
       splatMesh?.removeFromParent();
       splatMesh?.dispose();
       throw error;
@@ -163,6 +202,7 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
   ): Promise<RendererObjectHandle> {
     this.assertReadyForLoad(object.id, options.signal);
     this.loadingObjectIds.add(object.id);
+    const resource = this.beginResource(object.id, "mesh", object.url);
     let meshRoot: Object3D | undefined;
 
     try {
@@ -170,7 +210,12 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
         .createGltfLoader()
         .loadAsync(
           object.url,
-          this.createProgressReporter(object, options.onProgress, options.signal),
+          this.createProgressReporter(
+            object,
+            options.onProgress,
+            options.signal,
+            resource,
+          ),
         );
       const gltf = await waitWithAbort(load, options.signal, (abortedGltf) =>
         disposeObject(abortedGltf.scene),
@@ -179,15 +224,22 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
       meshRoot = gltf.scene;
       applyTransform(meshRoot, object.transform);
       this.scene.add(meshRoot);
+      resource.state = "ready";
+      resource.visible = true;
       const loadedMeshRoot = meshRoot;
       this.loadedObjects.set(object.id, {
         dispose: () => disposeObject(loadedMeshRoot),
+        id: object.id,
         kind: "mesh",
         node: loadedMeshRoot,
       });
       meshRoot = undefined;
       return Object.freeze({ id: object.id, kind: "mesh" });
     } catch (error) {
+      this.resourceMetrics.delete(object.id);
+      if (!(error instanceof SparkRendererAbortError)) {
+        this.failedResourceLoadCount += 1;
+      }
       meshRoot?.removeFromParent();
       if (meshRoot !== undefined) {
         disposeObject(meshRoot);
@@ -205,61 +257,51 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
   ): Promise<PreparedFrame> {
     this.assertInitialised();
     throwIfAborted(options.signal);
-    const onProgress = this.createProgressReporter(
-      { id: `${sequenceId}:${frame.frameIndex}`, url: frame.url },
-      options.onProgress,
-      options.signal,
-    );
-    let splatMesh: SplatMesh | undefined = this.runtime.createSplatMesh({
-      editable: false,
-      ...(onProgress === undefined ? {} : { onProgress }),
-      paged: true,
-      url: frame.url,
+    const slot = new SparkFrameSlot({
+      createSplatMesh: (slotOptions) => this.runtime.createSplatMesh(slotOptions),
+      scene: this.scene,
+      slotId: this.nextFrameSlotId,
     });
+    this.nextFrameSlotId += 1;
+    this.frameSlots.add(slot);
 
     try {
-      await waitWithAbort(splatMesh.initialized, options.signal, () => undefined);
+      const preparedFrame = await slot.prepare(sequenceId, frame, options);
       this.assertNotDisposed();
-      splatMesh.visible = false;
-      this.scene.add(splatMesh);
-      const preparedFrame: PreparedFrame = {
-        frameIndex: frame.frameIndex,
-        qualityLevel: options.targetQualityLevel ?? 0,
-        rendererResource: splatMesh,
-        sequenceId,
-        source: frame,
-      };
-      this.preparedFrames.set(preparedFrame, splatMesh);
-      splatMesh = undefined;
+      this.preparedFrames.set(preparedFrame, slot);
+      this.applyQualityToFrameSlot(slot);
       return preparedFrame;
     } catch (error) {
-      splatMesh?.removeFromParent();
-      splatMesh?.dispose();
+      if (slot.state === "failed") {
+        this.failedResourceLoadCount += 1;
+      }
+      slot.release();
+      this.frameSlots.delete(slot);
       throw error;
     }
   }
 
   presentFrame(frame: PreparedFrame): void {
-    const mesh = this.requirePreparedFrame(frame);
+    const slot = this.requirePreparedFrame(frame);
     if (this.activeFrame !== undefined && this.activeFrame !== frame) {
-      this.requirePreparedFrame(this.activeFrame).visible = false;
+      this.requirePreparedFrame(this.activeFrame).hide();
     }
-    mesh.visible = true;
+    slot.present();
     this.activeFrame = frame;
   }
 
   hideFrame(frame: PreparedFrame): void {
-    this.requirePreparedFrame(frame).visible = false;
+    this.requirePreparedFrame(frame).hide();
     if (this.activeFrame === frame) {
       this.activeFrame = undefined;
     }
   }
 
   releaseFrame(frame: PreparedFrame): void {
-    const mesh = this.requirePreparedFrame(frame);
+    const slot = this.requirePreparedFrame(frame);
     this.preparedFrames.delete(frame);
-    mesh.removeFromParent();
-    mesh.dispose();
+    this.frameSlots.delete(slot);
+    slot.release();
     if (this.activeFrame === frame) {
       this.activeFrame = undefined;
     }
@@ -271,35 +313,84 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
 
   setObjectVisibility(objectId: string, visible: boolean): void {
     this.requireLoadedObject(objectId).node.visible = visible;
+    const resource = this.resourceMetrics.get(objectId);
+    if (resource !== undefined) {
+      resource.visible = visible;
+    }
   }
 
   releaseObject(objectId: string): void {
     const object = this.requireLoadedObject(objectId);
     this.loadedObjects.delete(objectId);
+    this.resourceMetrics.delete(objectId);
     object.node.removeFromParent();
     object.dispose();
   }
 
   setRenderQuality(decision: QualityDecision): void {
-    const spark = this.requireInitialised(this.sparkValue, "Spark renderer");
-    spark.lodSplatCount = Math.max(1, Math.floor(decision.renderSplatBudget));
+    this.setSparkRenderQuality({
+      ...this.qualityConfiguration,
+      dynamicSequenceWeights: this.normaliseWeights(decision.dynamicObjectWeights),
+      objectWeights: this.qualityConfiguration.objectWeights,
+      splatBudget: Math.max(1, Math.floor(decision.renderSplatBudget)),
+      staticSceneWeight: this.normaliseWeight(decision.staticObjectWeight),
+    });
+  }
+
+  setSparkRenderQuality(configuration: SparkRenderQualityConfiguration): void {
+    this.assertInitialised();
+    validateSparkRenderQuality(configuration);
+    this.qualityConfiguration = cloneSparkRenderQuality(configuration);
+    this.applyQualityConfiguration();
+  }
+
+  getSparkRenderQuality(): SparkRenderQualityConfiguration {
+    return cloneSparkRenderQuality(this.qualityConfiguration);
+  }
+
+  getFrameSlotSnapshots(): readonly SparkFrameSlotSnapshot[] {
+    return [...this.frameSlots].map((slot) => slot.snapshot);
   }
 
   getMetrics(): RendererMetrics {
     const objects = [...this.loadedObjects.values()];
     const spark = this.sparkValue;
+    const frameResources = [...this.frameSlots]
+      .map((slot) => slot.getResourceMetrics())
+      .filter(
+        (resource): resource is RendererResourceMetrics => resource !== undefined,
+      );
+    const resources: RendererResourceMetrics[] = [
+      ...this.resourceMetrics.values(),
+      ...frameResources,
+    ].map((resource) => ({ ...resource }));
+    const pager = spark?.pager;
     return {
       ...(this.activeFrame === undefined
         ? {}
         : { activeFrameIndex: this.activeFrame.frameIndex }),
       ...(this.frameTimeMs === undefined ? {} : { frameTimeMs: this.frameTimeMs }),
+      failedResourceLoadCount: this.failedResourceLoadCount,
+      ...(pager === undefined ? {} : { gpuPageCapacity: pager.maxPages }),
+      ...(pager === undefined
+        ? {}
+        : {
+            gpuPageCount: pager.pageToSplatsChunk.reduce(
+              (count, page) => count + (page === undefined ? 0 : 1),
+              0,
+            ),
+          }),
       loadedMeshObjectCount: objects.filter(({ kind }) => kind === "mesh").length,
       loadedStaticObjectCount: objects.filter(({ kind }) => kind === "static-splat")
+        .length,
+      loadingResourceCount: resources.filter(({ state }) => state === "loading").length,
+      preparedFrameCount: [...this.frameSlots].filter(({ state }) => state === "ready")
         .length,
       ...(spark === undefined ? {} : { renderedSplatCount: spark.activeSplats }),
       ...(this.renderFramesPerSecond === undefined
         ? {}
         : { renderFramesPerSecond: this.renderFramesPerSecond }),
+      resources,
     };
   }
 
@@ -354,9 +445,12 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
     for (const objectId of [...this.loadedObjects.keys()]) {
       this.releaseObject(objectId);
     }
-    for (const frame of [...this.preparedFrames.keys()]) {
-      this.releaseFrame(frame);
+    for (const slot of this.frameSlots) {
+      slot.release();
     }
+    this.frameSlots.clear();
+    this.preparedFrames.clear();
+    this.resourceMetrics.clear();
     this.sparkValue?.removeFromParent();
     this.sparkValue?.dispose();
     if (this.options.renderer === undefined) {
@@ -400,8 +494,9 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
     object: { id: string; url: string },
     callback?: RendererLoadProgressCallback,
     signal?: AbortSignal,
+    resource?: MutableResourceMetrics,
   ): ((event: ProgressEvent) => void) | undefined {
-    if (callback === undefined) {
+    if (callback === undefined && resource === undefined) {
       return undefined;
     }
 
@@ -410,7 +505,15 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
         return;
       }
       const totalBytes = event.lengthComputable ? event.total : undefined;
-      callback({
+      if (resource !== undefined) {
+        resource.loadedBytes = event.loaded;
+        if (totalBytes === undefined) {
+          delete resource.totalBytes;
+        } else {
+          resource.totalBytes = totalBytes;
+        }
+      }
+      callback?.({
         ...(totalBytes === undefined
           ? {}
           : {
@@ -432,6 +535,87 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
         `A renderer object with id "${objectId}" already exists.`,
       );
     }
+  }
+
+  private beginResource(
+    id: string,
+    kind: RendererObjectKind,
+    url: string,
+  ): MutableResourceMetrics {
+    const resource: MutableResourceMetrics = {
+      id,
+      kind,
+      state: "loading",
+      url,
+      visible: false,
+    };
+    this.resourceMetrics.set(id, resource);
+    return resource;
+  }
+
+  private applyQualityConfiguration(): void {
+    const spark = this.requireInitialised(this.sparkValue, "Spark renderer");
+    const configuration = this.qualityConfiguration;
+    spark.enableLod = configuration.enableLod;
+    if (configuration.splatBudget === undefined) {
+      delete spark.lodSplatCount;
+    } else {
+      spark.lodSplatCount = configuration.splatBudget;
+    }
+    spark.lodSplatScale = configuration.lodSplatScale;
+    spark.lodRenderScale = configuration.lodRenderScale;
+    spark.coneFov0 = configuration.foveation.fullDetailFovDegrees;
+    spark.coneFov = configuration.foveation.peripheralDetailFovDegrees;
+    spark.coneFoveate = configuration.foveation.peripheralScale;
+    spark.behindFoveate = configuration.foveation.behindScale;
+
+    for (const object of this.loadedObjects.values()) {
+      if (object.splatMesh !== undefined) {
+        this.applyQualityToStaticObject(object.id, object.splatMesh);
+      }
+    }
+    for (const slot of this.frameSlots) {
+      this.applyQualityToFrameSlot(slot);
+    }
+  }
+
+  private applyQualityToStaticObject(objectId: string, mesh: SplatMesh): void {
+    const configuration = this.qualityConfiguration;
+    mesh.lodScale =
+      configuration.staticSceneWeight * (configuration.objectWeights[objectId] ?? 1);
+    this.applyMaximumSphericalHarmonics(mesh);
+  }
+
+  private applyQualityToFrameSlot(slot: SparkFrameSlot): void {
+    const sequenceId = slot.snapshot.sequenceId;
+    slot.setLodScale(
+      sequenceId === undefined
+        ? 1
+        : (this.qualityConfiguration.dynamicSequenceWeights[sequenceId] ?? 1),
+    );
+    slot.setMaximumSphericalHarmonics(
+      this.qualityConfiguration.maximumSphericalHarmonics,
+    );
+  }
+
+  private applyMaximumSphericalHarmonics(mesh: SplatMesh): void {
+    const maximum = this.qualityConfiguration.maximumSphericalHarmonics;
+    if (mesh.maxSh !== maximum) {
+      mesh.maxSh = maximum;
+      mesh.updateGenerator();
+    }
+  }
+
+  private normaliseWeight(weight: number): number {
+    return Number.isFinite(weight) && weight > 0 ? weight : 0.001;
+  }
+
+  private normaliseWeights(
+    weights: Readonly<Record<string, number>>,
+  ): Record<string, number> {
+    return Object.fromEntries(
+      Object.entries(weights).map(([id, weight]) => [id, this.normaliseWeight(weight)]),
+    );
   }
 
   private assertInitialised(): void {
@@ -464,14 +648,14 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
     return object;
   }
 
-  private requirePreparedFrame(frame: PreparedFrame): SplatMesh {
+  private requirePreparedFrame(frame: PreparedFrame): SparkFrameSlot {
     this.assertInitialised();
-    const mesh = this.preparedFrames.get(frame);
-    if (mesh === undefined || mesh !== frame.rendererResource) {
+    const slot = this.preparedFrames.get(frame);
+    if (slot === undefined || slot !== frame.rendererResource) {
       throw new SparkRendererStateError(
         "The prepared frame does not belong to this renderer.",
       );
     }
-    return mesh;
+    return slot;
   }
 }

@@ -10,6 +10,13 @@ test("loads the demo application and workspace packages", async ({ page }) => {
   await expect(page.getByText("supported", { exact: true })).toBeVisible();
   await expect(page.getByText("Renderer ready", { exact: true })).toBeVisible();
   await expect(page.getByText(/Drag to orbit/)).toBeVisible();
+  await expect(page.getByRole("group", { name: "Render quality" })).toBeEnabled();
+  await expect(page.getByLabel("Renderer metrics")).toBeVisible();
+
+  await page.getByLabel("Static detail").fill("1.5");
+  await expect(page.locator('output[for="static-detail"]')).toHaveText("1.50×");
+  await page.getByLabel("Maximum SH").selectOption("2");
+  await expect(page.getByLabel("Maximum SH")).toHaveValue("2");
 
   const viewport = page.getByLabel("Gaussian scene viewport");
   const bounds = await viewport.boundingBox();

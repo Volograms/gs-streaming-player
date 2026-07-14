@@ -51,4 +51,7 @@ export type {
   RendererMetrics,
   RendererObjectHandle,
   RendererObjectKind,
+  RendererResourceKind,
+  RendererResourceLoadState,
+  RendererResourceMetrics,
 } from "./renderer/types.js";

@@ -87,6 +87,62 @@ consistent.
 
 Unit tests exercise loading, progress, cancellation, transforms, visibility, failure
 isolation, frame switching, and resource disposal through injected non-WebGL runtimes.
-The demo browser test exercises real Spark initialisation and real glTF parsing. Static
-`.RAD` decoding and visual alignment remain pending until representative project assets
-are available.
+The demo browser test exercises real Spark initialisation, real glTF parsing, and opt-in
+loading of the local quality-LoD `.RAD` fixture. Dynamic sequence validation remains
+pending until representative frame assets and their coordinate conventions are
+available.
+
+## Dynamic frame slots
+
+Every prepared dynamic frame is backed by a `SparkFrameSlot`. A slot tracks its source,
+sequence and frame identity, load progress, readiness, quality level, visibility, error,
+and cancellation state. The adapter exposes immutable diagnostic snapshots:
+
+```ts
+const prepared = await adapter.prepareFrame("actor", frame, { signal });
+adapter.presentFrame(prepared);
+
+console.table(adapter.getFrameSlotSnapshots());
+
+adapter.hideFrame(prepared);
+adapter.releaseFrame(prepared);
+```
+
+Presenting a frame hides the previously active frame without recreating the scene.
+Releasing a frame removes its scene node and disposes its Spark resources.
+
+## LoD and foveation controls
+
+`setSparkRenderQuality()` configures the complete Spark-specific quality surface used by
+the player:
+
+```ts
+adapter.setSparkRenderQuality({
+  enableLod: true,
+  splatBudget: 1_500_000,
+  lodSplatScale: 1,
+  lodRenderScale: 1,
+  staticSceneWeight: 1,
+  objectWeights: { room: 1.25 },
+  dynamicSequenceWeights: { actor: 0.75 },
+  maximumSphericalHarmonics: 3,
+  foveation: {
+    fullDetailFovDegrees: 90,
+    peripheralDetailFovDegrees: 120,
+    peripheralScale: 0.4,
+    behindScale: 0.2,
+  },
+});
+```
+
+Invalid budgets, weights, SH levels, scales, and FOV relationships are rejected before
+Spark is mutated. `getSparkRenderQuality()` returns a detached copy of the effective
+configuration. The renderer-neutral `setRenderQuality()` translates adaptive player
+decisions into the same configuration.
+
+## Metrics
+
+`getMetrics()` reports frame time and FPS, rendered splats, loaded static and mesh
+counts, active and prepared dynamic frames, current resource load states, cumulative
+load failures, and Spark GPU page use/capacity when its pager is available. Resource
+entries include URLs, byte progress, visibility, type, and readiness.
