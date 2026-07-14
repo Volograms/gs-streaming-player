@@ -31,3 +31,5 @@ All notable changes to this project will be documented here. The project uses
   mesh fixture covered by the Playwright smoke test.
 - Optional local `.RAD` demo loading and Playwright assertion, validated with a real
   quality-LoD SH3 asset while keeping developer-provided content out of Git.
+- Orbit, pan, zoom, damping, and touch-compatible camera navigation in the Spark demo
+  viewport.

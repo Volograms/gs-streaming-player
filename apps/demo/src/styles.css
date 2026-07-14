@@ -93,6 +93,23 @@ h1 {
   min-height: 390px;
 }
 
+.navigation-hint {
+  position: absolute;
+  top: 1rem;
+  left: 50%;
+  width: max-content;
+  max-width: calc(100% - 2rem);
+  margin: 0;
+  padding: 0.45rem 0.7rem;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  color: #9eb0b9;
+  background: rgb(7 16 21 / 72%);
+  font-size: 0.7rem;
+  letter-spacing: 0.025em;
+  pointer-events: none;
+}
+
 .renderer-status,
 .static-asset-status {
   position: absolute;

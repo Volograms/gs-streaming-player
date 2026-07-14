@@ -17,6 +17,10 @@
     "@6g-path/gaussian-telemetry-6g": "workspace:*",
     "@6g-path/shared": "workspace:*",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.180.0"
   }
 }

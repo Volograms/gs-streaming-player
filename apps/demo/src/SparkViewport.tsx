@@ -1,5 +1,6 @@
 import { SparkGaussianRendererAdapter } from "@6g-path/gaussian-renderer-spark";
 import { useEffect, useRef, useState } from "react";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 type RendererStatus = "initialising" | "ready" | "unavailable";
 type StaticAssetStatus = "failed" | "loading" | "not-configured" | "ready";
@@ -20,12 +21,28 @@ export function SparkViewport() {
     }
 
     let active = true;
+    let controls: OrbitControls | undefined;
+    let rendererInitialised = false;
     const controller = new AbortController();
-    const adapter = new SparkGaussianRendererAdapter({ canvas });
+    const adapter = new SparkGaussianRendererAdapter({ autoRender: false, canvas });
 
     async function initialiseRenderer() {
       try {
         await adapter.initialise();
+        rendererInitialised = true;
+        controls = new OrbitControls(adapter.camera, canvas);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        controls.maxDistance = 100;
+        controls.minDistance = 0.05;
+        controls.screenSpacePanning = true;
+        controls.target.set(0, 0, 0);
+        controls.update();
+        adapter.renderer.setAnimationLoop(() => {
+          controls?.update();
+          adapter.render();
+        });
+
         await adapter.loadMesh(
           {
             id: "demo-marker",
@@ -70,6 +87,10 @@ export function SparkViewport() {
     return () => {
       active = false;
       controller.abort();
+      controls?.dispose();
+      if (rendererInitialised) {
+        adapter.renderer.setAnimationLoop(null);
+      }
       adapter.dispose();
     };
   }, []);
@@ -77,6 +98,9 @@ export function SparkViewport() {
   return (
     <div className="spark-viewport">
       <canvas ref={canvasRef} aria-label="Gaussian scene viewport" />
+      <p className="navigation-hint">
+        Drag to orbit · Right-drag to pan · Scroll to zoom
+      </p>
       <p className="renderer-status" data-renderer-status={status}>
         {status === "ready"
           ? "Renderer ready"

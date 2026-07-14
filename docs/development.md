@@ -76,6 +76,10 @@ The viewport reports `Static RAD ready` only after Spark has fetched and initial
 asset. The same environment variable enables the optional `.RAD` assertion in the
 Playwright smoke test.
 
+The demo viewport uses Three.js `OrbitControls`: primary-button drag orbits,
+secondary-button drag pans, and the wheel zooms. Touch gestures are enabled by the
+control implementation.
+
 ## Package boundaries
 
 - `player-core` must never import Spark or React.
