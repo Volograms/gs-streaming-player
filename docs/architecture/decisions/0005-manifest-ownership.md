@@ -12,10 +12,12 @@ objects, dynamic sequences, meshes, audio, transforms, and asset sizes.
 
 The versioned manifest schema is a player contract. `player-core` owns its domain model;
 content tools create and validate it, and renderers receive only the resolved object or
-frame inputs required for their work.
+frame inputs required for their work. A TypeBox schema is the typed source of truth,
+while a committed JSON Schema is checked against it for non-TypeScript consumers and
+editor integration.
 
 ## Consequences
 
 Renderers are not coupled to transport or authoring formats. Schema evolution requires
-explicit versions and compatibility handling. E01 will select the single source of truth
-used to keep JSON Schema and TypeScript types aligned.
+explicit versions and compatibility handling. TypeScript types are inferred from the
+schema, and tests reject drift in the committed JSON form.

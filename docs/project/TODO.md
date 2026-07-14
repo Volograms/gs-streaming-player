@@ -4,13 +4,7 @@ This file tracks implementation against the epics in
 [`project-summary.md`](../project-summary.md). A task is checked only after its
 acceptance criteria are covered by implementation and verification.
 
-## Active implementation slice: Content manifest foundation
-
-- [ ] E01-T01 — Define the versioned sequence manifest schema.
-- [ ] E01-T02 — Implement the manifest loader.
-- [ ] E01-T03 — Implement the manifest validator CLI.
-
-## Next milestone: M1 — L1 Static Scene
+## Active implementation slice: M1 — L1 Static Scene
 
 - [ ] E02-T01 — Finalise the renderer adapter API against Spark requirements.
 - [ ] E02-T02 — Implement Spark renderer initialisation.
@@ -18,6 +12,12 @@ acceptance criteria are covered by implementation and verification.
 - [ ] E02-T04 — Load conventional GLTF/GLB meshes.
 
 ## Completed
+
+### Content manifest foundation (2026-07-14)
+
+- [x] E01-T01 — Define the versioned sequence manifest schema.
+- [x] E01-T02 — Implement the manifest loader.
+- [x] E01-T03 — Implement the manifest validator CLI.
 
 ### M0 — Repository Ready (2026-07-14)
 

@@ -30,6 +30,7 @@ pnpm build         # Build every library package and the demo
 pnpm typecheck     # Type-check every workspace package
 pnpm lint          # Run ESLint across the repository
 pnpm format:check  # Check Prettier formatting
+pnpm gs-manifest   # Run manifest content tools
 pnpm test          # Run all unit tests
 pnpm test:e2e      # Run the Chromium smoke tests
 ```
@@ -59,3 +60,6 @@ APIs.
 Start with the [architecture overview](docs/architecture.md). Architectural rules and
 their rationale are recorded in
 [`docs/architecture/decisions`](docs/architecture/decisions).
+
+Content authors should also read the [manifest format](docs/manifest-format.md), which
+documents schema validation, URL resolution, and the validator CLI.

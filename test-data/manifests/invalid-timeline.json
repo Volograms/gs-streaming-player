@@ -1,0 +1,27 @@
+{
+  "version": "1.0",
+  "id": "invalid-timeline",
+  "durationSeconds": 0.05,
+  "frameRate": 30,
+  "frameCount": 3,
+  "staticObjects": [],
+  "dynamicSequences": [
+    {
+      "id": "presenter",
+      "frameCount": 2,
+      "frameRate": 30,
+      "frames": [
+        {
+          "frameIndex": 0,
+          "timestampSeconds": 0.04,
+          "url": "frame_00000.rad"
+        },
+        {
+          "frameIndex": 3,
+          "timestampSeconds": 0.03,
+          "url": "frame_00001.rad"
+        }
+      ]
+    }
+  ]
+}

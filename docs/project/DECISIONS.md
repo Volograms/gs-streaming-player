@@ -25,3 +25,7 @@ used during day-to-day implementation.
   framework-independent.
 - Initial npm package names use the `@6g-path` scope. Publication ownership is confirmed
   before the first public release.
+- The manifest's TypeBox definition is the source of truth; the committed JSON Schema is
+  generated from it and protected by a synchronisation test.
+- Manifest diagnostics identify fields using JSON Pointer paths. Referenced-asset checks
+  are opt-in so structural and semantic validation does not require local media assets.

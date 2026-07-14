@@ -2,7 +2,11 @@
   "name": "@6g-path/gaussian-content-tools",
   "version": "0.0.0",
   "type": "module",
+  "bin": {
+    "gs-manifest": "./bin/gs-manifest.mjs"
+  },
   "files": [
+    "bin",
     "dist"
   ],
   "main": "./dist/index.js",
@@ -11,11 +15,18 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
+    "build": "tsup src/index.ts src/node.ts src/cli.ts --format esm --dts --sourcemap --clean",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@6g-path/gaussian-player": "workspace:*"
   }
 }

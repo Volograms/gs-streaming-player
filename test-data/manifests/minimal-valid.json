@@ -1,0 +1,56 @@
+{
+  "$schema": "../../packages/player-core/schemas/gaussian-sequence-manifest.schema.json",
+  "version": "1.0",
+  "id": "minimal-sequence",
+  "durationSeconds": 0.1,
+  "frameRate": 30,
+  "frameCount": 3,
+  "staticObjects": [
+    {
+      "id": "room",
+      "url": "../splats/room.rad",
+      "priority": 1
+    }
+  ],
+  "dynamicSequences": [
+    {
+      "id": "presenter",
+      "frameCount": 3,
+      "frameRate": 30,
+      "frames": [
+        {
+          "frameIndex": 0,
+          "timestampSeconds": 0,
+          "url": "../splats/presenter/frame_00000.rad",
+          "qualityLevels": [
+            {
+              "level": 0,
+              "byteSize": 1024,
+              "minimumPlayable": true
+            },
+            {
+              "level": 1,
+              "byteSize": 4096
+            }
+          ]
+        },
+        {
+          "frameIndex": 1,
+          "timestampSeconds": 0.033333,
+          "url": "../splats/presenter/frame_00001.rad"
+        },
+        {
+          "frameIndex": 2,
+          "timestampSeconds": 0.066667,
+          "url": "../splats/presenter/frame_00002.rad"
+        }
+      ]
+    }
+  ],
+  "meshObjects": [
+    {
+      "id": "desk",
+      "url": "../meshes/desk.glb"
+    }
+  ]
+}

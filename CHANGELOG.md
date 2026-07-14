@@ -17,3 +17,9 @@ All notable changes to this project will be documented here. The project uses
   gates.
 - Architecture overview and six initial architecture decision records.
 - Project TODO and decision tracking workflow.
+- Versioned, TypeBox-authored sequence manifest contract with generated JSON Schema and
+  semantic timeline validation.
+- Cancellable manifest loading from URLs, parsed objects, blobs, and files, including
+  manifest-relative asset URL resolution.
+- `gs-manifest validate` content CLI with actionable JSON Pointer diagnostics and opt-in
+  referenced-asset checks.

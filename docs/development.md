@@ -32,6 +32,22 @@ Unit tests use Vitest in per-package projects. Browser integration tests use Pla
 and start the demo automatically. CI retains coverage, screenshots, and traces when
 relevant.
 
+## Manifest validation
+
+Validate a manifest's structure and timeline semantics without downloading or reading
+its referenced media:
+
+```bash
+pnpm gs-manifest validate test-data/manifests/minimal-valid.json
+```
+
+Add `--check-assets` when the referenced local files or remote URLs are expected to be
+available:
+
+```bash
+pnpm gs-manifest validate content/lesson.json --check-assets
+```
+
 ## Package boundaries
 
 - `player-core` must never import Spark or React.
