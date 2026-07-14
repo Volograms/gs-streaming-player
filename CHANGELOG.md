@@ -34,7 +34,8 @@ All notable changes to this project will be documented here. The project uses
 - Orbit, pan, zoom, damping, and touch-compatible camera navigation in the Spark demo
   viewport.
 - Explicit `SparkFrameSlot` lifecycle with progress, cancellation, readiness,
-  visibility, failure state, slot-backed frame switching, and deterministic GPU resource release.
+  visibility, failure state, slot-backed frame switching, and deterministic GPU resource
+  release.
 - Validated Spark LoD configuration covering global budgets/scales, static and dynamic
   weights, per-object weights, foveation, and maximum spherical harmonics.
 - Renderer diagnostics for in-flight resources, failures, prepared frames, rendered
