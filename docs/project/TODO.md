@@ -4,14 +4,34 @@ This file tracks implementation against the epics in
 [`project-summary.md`](../project-summary.md). A task is checked only after its
 acceptance criteria are covered by implementation and verification.
 
-## Active implementation slice: Static and dynamic scene composition
+## Active implementation slice: Temporal buffering and scene composition
 
 - [ ] E03-T01 — Complete visual alignment validation for the composed static GS, dynamic
       GS, and mesh scene. The real assets now load and switch together.
 - [ ] E03-T04 — Validate dynamic alpha and background masking behaviour.
 - [ ] E03-T05 — Measure dynamic switching performance.
+- [ ] E06-T04/T05 — Extend the base-first buffer scheduler with request cost estimates,
+      per-request priorities, and deadline-aware ordering. Profile the remaining Spark
+      root-residency bottleneck (the real five-frame headless Chromium check currently
+      takes about 2.3 minutes despite bounded requests).
+- [ ] E06-T06/T09 — Complete independent in-flight refinement cancellation and memory
+      budget integration beyond frame-count eviction.
 
 ## Completed
+
+### E06 bounded temporal buffer foundation (2026-07-15)
+
+- [x] E06-T01 — Define observable buffered-frame state.
+- [x] E06-T02 — Implement a configurable, bounded frame ring buffer.
+- [x] E06-T03 — Treat a resident Spark root page as minimum playable quality.
+
+The demo now owns only the current frame, three future frames, and one previous frame.
+It presents the current frame as soon as that frame is playable, fills the rest of the
+window in the background, and enables future refinement only after all owned base pages
+are resident. Seeking preserves the displayed frame until its replacement is playable.
+Unit tests cover base-first refinement, bounded ownership, cancellation, eviction, and
+non-adjacent seeks. Real Chromium validation requested exactly frames 40-43 and 50 for
+the initial looped window and switched Next/Previous without camera interaction.
 
 ### E03 coordinate and alignment foundation (2026-07-15)
 
@@ -20,9 +40,13 @@ acceptance criteria are covered by implementation and verification.
       static splats, meshes, and every dynamic frame.
 
 The demo composes the persistent mesh and optional static RAD with an opt-in local
-dynamic range. Chromium decoded frames 40-50 of `rafa-pitch`, retained all 11 prepared
-slots, and switched forward and backward without recreating the scene. Final E03-T01
-completion awaits visual confirmation of scale and origin alignment.
+dynamic range. Chromium decoded frames 40-50 of `rafa-pitch` and switched forward and
+backward without recreating the scene. Final E03-T01 completion awaits visual
+confirmation of scale and origin alignment.
+
+Paged-frame readiness requires Spark chunk 0 to be resident rather than relying on
+`SplatMesh.initialized`, preventing presentation from switching to a frame with no
+drawable page.
 
 ### M1 dynamic renderer foundation (2026-07-14)
 

@@ -8,6 +8,7 @@ import type { Transform } from "@6g-path/shared";
 
 export interface FramePreparationOptions {
   signal?: AbortSignal;
+  /** Stop after the renderer's minimum drawable quality instead of refinement. */
   minimumQualityOnly?: boolean;
   onProgress?: RendererLoadProgressCallback;
   targetQualityLevel?: number;
@@ -90,6 +91,8 @@ export interface GaussianRendererAdapter {
   presentFrame(frame: PreparedFrame): void;
   hideFrame(frame: PreparedFrame): void;
   releaseFrame(frame: PreparedFrame): void;
+  /** Enable or suppress enhancement-quality paging for an inactive prepared frame. */
+  setFrameRefinement(frame: PreparedFrame, enabled: boolean): void;
   setObjectTransform(objectId: string, transform: Transform): void;
   setObjectVisibility(objectId: string, visible: boolean): void;
   releaseObject(objectId: string): void;

@@ -259,6 +259,7 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
     throwIfAborted(options.signal);
     const slot = new SparkFrameSlot({
       createSplatMesh: (slotOptions) => this.runtime.createSplatMesh(slotOptions),
+      invalidateLod: () => this.invalidateLod(),
       scene: this.scene,
       slotId: this.nextFrameSlotId,
     });
@@ -284,7 +285,7 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
   presentFrame(frame: PreparedFrame): void {
     const slot = this.requirePreparedFrame(frame);
     if (this.activeFrame !== undefined && this.activeFrame !== frame) {
-      this.requirePreparedFrame(this.activeFrame).hide();
+      this.requirePreparedFrame(this.activeFrame).warm();
     }
     slot.present();
     this.activeFrame = frame;
@@ -350,6 +351,10 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
 
   getFrameSlotSnapshots(): readonly SparkFrameSlotSnapshot[] {
     return [...this.frameSlots].map((slot) => slot.snapshot);
+  }
+
+  setFrameRefinement(frame: PreparedFrame, enabled: boolean): void {
+    this.requirePreparedFrame(frame).setWarmLodScaleFraction(enabled ? 1 : 0);
   }
 
   getMetrics(): RendererMetrics {
@@ -488,6 +493,12 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
       antialias: false,
       canvas: this.options.canvas,
     });
+  }
+
+  private invalidateLod(): void {
+    const spark = this.requireInitialised(this.sparkValue, "Spark renderer");
+    spark.lodDirty = true;
+    spark.setDirty();
   }
 
   private createProgressReporter(

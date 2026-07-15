@@ -25,6 +25,8 @@ class FakeSplatMesh extends Object3D {
   readonly initialized: Promise<FakeSplatMesh>;
   lodScale = 1;
   maxSh = 3;
+  opacity = 1;
+  paged?: SplatMesh["paged"];
   readonly updateGenerator = vi.fn();
 
   constructor(initialise?: Promise<void>) {
@@ -82,6 +84,7 @@ function createHarness() {
     dispose: vi.fn(),
     enableLod: true,
     lodRenderScale: 1,
+    lodDirty: false,
     lodSplatScale: 1,
     lodSplatCount: undefined as number | undefined,
     pager: {
@@ -92,6 +95,7 @@ function createHarness() {
         { chunk: 1, splats: {}, time: 2 },
       ],
     },
+    setDirty: vi.fn(),
   }) as unknown as SparkRenderer;
   const scene = new Scene();
   const camera = new PerspectiveCamera();
@@ -383,7 +387,11 @@ describe("SparkGaussianRendererAdapter", () => {
     adapter.presentFrame(first);
     expect(harness.splatMeshes[0]?.visible).toBe(true);
     adapter.presentFrame(second);
-    expect(harness.splatMeshes[0]?.visible).toBe(false);
+    expect(harness.splatMeshes[0]).toMatchObject({
+      lodScale: 0,
+      opacity: 0,
+      visible: true,
+    });
     expect(harness.splatMeshes[1]?.visible).toBe(true);
     expect(adapter.getMetrics().activeFrameIndex).toBe(1);
     expect(adapter.getMetrics().preparedFrameCount).toBe(2);
@@ -397,6 +405,70 @@ describe("SparkGaussianRendererAdapter", () => {
     expect(harness.splatMeshes[1]?.dispose).toHaveBeenCalledOnce();
     expect(adapter.getMetrics().activeFrameIndex).toBeUndefined();
     expect(adapter.getMetrics().preparedFrameCount).toBe(1);
+  });
+
+  it("keeps a paged frame transparent until its root LoD page is resident", async () => {
+    const harness = createHarness();
+    const initialiser = deferred<void>();
+    harness.splatInitialisers.push(initialiser.promise);
+    const adapter = new SparkGaussianRendererAdapter({
+      autoRender: false,
+      renderer: harness.renderer,
+      runtime: harness.runtime,
+      scene: harness.scene,
+    });
+    await adapter.initialise();
+    let rootPageReady = false;
+    const preparation = adapter.prepareFrame(
+      "actor",
+      { frameIndex: 0, timestampSeconds: 0, url: "/frame-0.rad" },
+      {},
+    );
+    const mesh = harness.splatMeshes[0];
+    if (mesh === undefined) {
+      throw new Error("Expected the frame mesh to be created synchronously.");
+    }
+    const readyUploads: { page: number }[] = [];
+    const getSplatsChunk = vi.fn(() =>
+      rootPageReady ? { lru: 0, page: 0 } : undefined,
+    );
+    mesh.paged = {
+      pager: { getSplatsChunk, newUploads: [], readyUploads },
+    } as unknown as NonNullable<SplatMesh["paged"]>;
+    initialiser.resolve();
+
+    await vi.waitFor(() => {
+      expect(mesh.visible).toBe(true);
+      expect(mesh.opacity).toBe(0);
+      expect(mesh.lodScale).toBe(0);
+      expect(adapter.getFrameSlotSnapshots()[0]).toMatchObject({
+        state: "loading",
+        visible: false,
+      });
+    });
+
+    rootPageReady = true;
+    readyUploads.push({ page: 0 });
+    let preparationResolved = false;
+    void preparation.then(() => {
+      preparationResolved = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(preparationResolved).toBe(false);
+    readyUploads.pop();
+    const prepared = await preparation;
+    expect(getSplatsChunk).toHaveBeenCalled();
+    expect(adapter.getFrameSlotSnapshots()[0]).toMatchObject({
+      state: "ready",
+      visible: false,
+    });
+
+    adapter.presentFrame(prepared);
+    expect(mesh.opacity).toBe(1);
+    expect(mesh.visible).toBe(true);
+    expect(adapter.getFrameSlotSnapshots()[0]).toMatchObject({ visible: true });
+    expect(harness.spark.lodDirty).toBe(true);
+    expect(harness.spark.setDirty).toHaveBeenCalled();
   });
 
   it("rejects cancelled and duplicate operations without corrupting loaded state", async () => {
@@ -519,7 +591,7 @@ describe("SparkGaussianRendererAdapter", () => {
     });
     await adapter.initialise();
     await adapter.loadStaticObject({ id: "room", url: "/room.rad" });
-    await adapter.prepareFrame(
+    const prepared = await adapter.prepareFrame(
       "actor",
       { frameIndex: 0, timestampSeconds: 0, url: "/frame-0.rad" },
       {},
@@ -553,6 +625,13 @@ describe("SparkGaussianRendererAdapter", () => {
       lodSplatScale: 1.25,
     });
     expect(harness.splatMeshes[0]).toMatchObject({ lodScale: 1, maxSh: 2 });
+    expect(harness.splatMeshes[1]).toMatchObject({
+      lodScale: 0,
+      maxSh: 2,
+    });
+    adapter.setFrameRefinement(prepared, true);
+    expect(harness.splatMeshes[1]).toMatchObject({ lodScale: 0.75, maxSh: 2 });
+    adapter.presentFrame(prepared);
     expect(harness.splatMeshes[1]).toMatchObject({ lodScale: 0.75, maxSh: 2 });
     expect(harness.splatMeshes[0]?.updateGenerator).toHaveBeenCalledOnce();
     expect(harness.splatMeshes[1]?.updateGenerator).toHaveBeenCalledOnce();

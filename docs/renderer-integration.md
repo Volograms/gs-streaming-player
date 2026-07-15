@@ -116,6 +116,16 @@ Releasing a frame removes its scene node and disposes its Spark resources. The s
 transform is applied to every slot before it enters the scene, preserving alignment
 across frame replacement.
 
+For paged RAD content, Spark's `SplatMesh.initialized` only establishes the mesh and RAD
+metadata; it does not guarantee that drawable splats are resident. `prepareFrame()`
+therefore resolves only after chunk 0 has been fetched and uploaded by Spark's pager.
+During that interval the slot is scene-visible with zero opacity and zero LoD scale, so
+Spark can fetch its root without displaying it. The temporal buffer can then enable LoD
+refinement for selected future slots while they remain transparent. `presentFrame()`
+restores the configured LoD scale and opacity in the same synchronous operation that
+warms the old frame, preventing a blank replacement frame. Visibility and LoD changes
+explicitly invalidate Spark's traversal so paging begins without camera movement.
+
 ## LoD and foveation controls
 
 `setSparkRenderQuality()` configures the complete Spark-specific quality surface used by

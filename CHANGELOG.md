@@ -46,3 +46,15 @@ All notable changes to this project will be documented here. The project uses
 - Configurable local dynamic RAD range preview with eager preparation, 30 fps looped
   playback, manual frame stepping, source-frame diagnostics, and real Chromium
   validation against frames 40-50 of `rafa-pitch`.
+- Framework-independent buffered-frame state and a configurable ring buffer with one
+  presented frame, bounded future/previous ownership, base-first preparation, future
+  refinement, cancellation, and deterministic eviction.
+- Demo integration of the five-slot temporal buffer, keeping the current frame visible
+  while a requested replacement reaches minimum playable quality.
+
+### Fixed
+
+- Paged dynamic frames no longer become presentable at metadata initialisation or
+  replace the active frame before their root LoD page is resident. Explicit Spark LoD
+  invalidation also starts paging immediately after a visibility or refinement change,
+  without requiring camera interaction.

@@ -8,6 +8,16 @@ export type {
   StaticSceneObject,
 } from "./manifest/types.js";
 export {
+  FrameRingBuffer,
+  type FrameRingBufferOptions,
+} from "./buffering/FrameRingBuffer.js";
+export type {
+  BufferedFrame,
+  BufferedFrameStatus,
+  FrameRingBufferConfiguration,
+  FrameRingBufferSnapshot,
+} from "./buffering/types.js";
+export {
   GAUSSIAN_SEQUENCE_MANIFEST_VERSION,
   GaussianSequenceManifestSchema,
 } from "./manifest/schema.js";

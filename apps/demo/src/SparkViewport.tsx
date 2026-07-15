@@ -1,9 +1,10 @@
+import { FrameRingBuffer } from "@6g-path/gaussian-player";
 import {
   cloneSparkRenderQuality,
   DEFAULT_SPARK_RENDER_QUALITY,
   SparkGaussianRendererAdapter,
 } from "@6g-path/gaussian-renderer-spark";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 import { DynamicSequenceControls } from "./DynamicSequenceControls.js";
@@ -12,7 +13,7 @@ import { RendererMetricsOverlay } from "./RendererMetricsOverlay.js";
 import { CAPTURE_TO_THREE_TRANSFORM } from "./sceneCoordinates.js";
 import { SparkQualityControls } from "./SparkQualityControls.js";
 
-import type { PreparedFrame, RendererMetrics } from "@6g-path/gaussian-player";
+import type { RendererMetrics } from "@6g-path/gaussian-player";
 import type { SparkRenderQualityConfiguration } from "@6g-path/gaussian-renderer-spark";
 
 type RendererStatus = "initialising" | "ready" | "unavailable";
@@ -33,12 +34,14 @@ function createInitialQuality(): SparkRenderQualityConfiguration {
 export function SparkViewport() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const adapterRef = useRef<SparkGaussianRendererAdapter | null>(null);
-  const preparedFramesRef = useRef<readonly PreparedFrame[]>([]);
+  const bufferRef = useRef<FrameRingBuffer | null>(null);
+  const dynamicSwitchingRef = useRef(false);
   const [dynamicAssetStatus, setDynamicAssetStatus] = useState<DynamicAssetStatus>(
     dynamicSequence === undefined ? "not-configured" : "loading",
   );
   const [dynamicFrameIndex, setDynamicFrameIndex] = useState(0);
   const [isDynamicPlaying, setIsDynamicPlaying] = useState(false);
+  const [isDynamicSwitching, setIsDynamicSwitching] = useState(false);
   const [metrics, setMetrics] = useState<RendererMetrics>();
   const [preparedFrameCount, setPreparedFrameCount] = useState(0);
   const [quality, setQuality] = useState(createInitialQuality);
@@ -58,6 +61,7 @@ export function SparkViewport() {
     let controls: OrbitControls | undefined;
     let rendererInitialised = false;
     let metricsTimer: number | undefined;
+    let unsubscribeBuffer: (() => void) | undefined;
     const controller = new AbortController();
     const adapter = new SparkGaussianRendererAdapter({ autoRender: false, canvas });
 
@@ -122,35 +126,32 @@ export function SparkViewport() {
         }
 
         if (dynamicSequence !== undefined) {
-          const preparedFrames: PreparedFrame[] = [];
-          try {
-            for (const frame of dynamicSequence.frames) {
-              const preparedFrame = await adapter.prepareFrame(
-                dynamicSequence.id,
-                frame,
-                {
-                  signal: controller.signal,
-                  ...(dynamicSequence.transform === undefined
-                    ? {}
-                    : { transform: dynamicSequence.transform }),
-                },
+          const buffer = new FrameRingBuffer({
+            futureFrameCount: 3,
+            loop: true,
+            previousFrameCount: 1,
+            renderer: adapter,
+            sequence: dynamicSequence,
+          });
+          bufferRef.current = buffer;
+          unsubscribeBuffer = buffer.subscribe(({ frames }) => {
+            if (active) {
+              setPreparedFrameCount(
+                frames.filter(
+                  ({ status }) => status !== "loading-base" && status !== "failed",
+                ).length,
               );
-              preparedFrames.push(preparedFrame);
-              if (active) {
-                setPreparedFrameCount(preparedFrames.length);
-              }
             }
-            preparedFramesRef.current = preparedFrames;
-            const firstFrame = preparedFrames[0];
-            if (firstFrame !== undefined) {
-              adapter.presentFrame(firstFrame);
-            }
+          });
+          try {
+            await buffer.initialise(0);
             if (active) {
               setDynamicAssetStatus("ready");
             }
           } catch (error) {
-            for (const preparedFrame of preparedFrames) {
-              adapter.releaseFrame(preparedFrame);
+            buffer.dispose();
+            if (bufferRef.current === buffer) {
+              bufferRef.current = null;
             }
             if (active && !controller.signal.aborted) {
               console.error(
@@ -175,7 +176,10 @@ export function SparkViewport() {
       active = false;
       controller.abort();
       adapterRef.current = null;
-      preparedFramesRef.current = [];
+      dynamicSwitchingRef.current = false;
+      unsubscribeBuffer?.();
+      bufferRef.current?.dispose();
+      bufferRef.current = null;
       if (metricsTimer !== undefined) {
         window.clearInterval(metricsTimer);
       }
@@ -187,28 +191,47 @@ export function SparkViewport() {
     };
   }, []);
 
+  const presentDynamicFrame = useCallback(async (frameIndex: number) => {
+    const buffer = bufferRef.current;
+    if (buffer === null || dynamicSwitchingRef.current) {
+      return;
+    }
+    dynamicSwitchingRef.current = true;
+    setIsDynamicSwitching(true);
+    try {
+      await buffer.present(frameIndex);
+      if (bufferRef.current === buffer) {
+        setDynamicFrameIndex(frameIndex);
+      }
+    } catch (error) {
+      if (bufferRef.current === buffer) {
+        console.error("Unable to present the requested dynamic RAD frame.", error);
+        setDynamicAssetStatus("failed");
+        setIsDynamicPlaying(false);
+      }
+    } finally {
+      if (bufferRef.current === buffer) {
+        dynamicSwitchingRef.current = false;
+        setIsDynamicSwitching(false);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (!isDynamicPlaying || dynamicAssetStatus !== "ready") {
       return;
     }
-    const frameRate = dynamicSequence?.frameRate;
-    if (frameRate === undefined) {
+    const sequence = dynamicSequence;
+    if (sequence === undefined) {
       return;
     }
     const timer = window.setInterval(() => {
-      setDynamicFrameIndex(
-        (frameIndex) => (frameIndex + 1) % preparedFramesRef.current.length,
-      );
-    }, 1000 / frameRate);
+      if (!dynamicSwitchingRef.current) {
+        void presentDynamicFrame((dynamicFrameIndex + 1) % sequence.frameCount);
+      }
+    }, 1000 / sequence.frameRate);
     return () => window.clearInterval(timer);
-  }, [dynamicAssetStatus, isDynamicPlaying]);
-
-  useEffect(() => {
-    const frame = preparedFramesRef.current[dynamicFrameIndex];
-    if (frame !== undefined) {
-      adapterRef.current?.presentFrame(frame);
-    }
-  }, [dynamicFrameIndex]);
+  }, [dynamicAssetStatus, dynamicFrameIndex, isDynamicPlaying, presentDynamicFrame]);
 
   function updateQuality(configuration: SparkRenderQualityConfiguration) {
     qualityRef.current = configuration;
@@ -218,10 +241,10 @@ export function SparkViewport() {
 
   function stepDynamicFrame(delta: number) {
     setIsDynamicPlaying(false);
-    setDynamicFrameIndex((frameIndex) => {
-      const frameCount = preparedFramesRef.current.length;
-      return frameCount === 0 ? 0 : (frameIndex + delta + frameCount) % frameCount;
-    });
+    const frameCount = dynamicSequence?.frameCount ?? 0;
+    if (frameCount > 0) {
+      void presentDynamicFrame((dynamicFrameIndex + delta + frameCount) % frameCount);
+    }
   }
 
   const sourceFrameIndex =
@@ -242,7 +265,7 @@ export function SparkViewport() {
       {dynamicSequence === undefined ||
       dynamicAssetStatus === "not-configured" ? null : (
         <DynamicSequenceControls
-          disabled={dynamicAssetStatus !== "ready"}
+          disabled={dynamicAssetStatus !== "ready" || isDynamicSwitching}
           frameCount={dynamicSequence.frameCount}
           frameIndex={dynamicFrameIndex}
           isPlaying={isDynamicPlaying}

@@ -1,6 +1,15 @@
 import { expect, test } from "@playwright/test";
 
 test("loads the demo application and workspace packages", async ({ page }) => {
+  const dynamicStartFrame = Number(process.env.VITE_DYNAMIC_RAD_START_FRAME ?? 40);
+  const dynamicEndFrame = Number(process.env.VITE_DYNAMIC_RAD_END_FRAME ?? 50);
+  const requestedDynamicFrames = new Set<number>();
+  page.on("request", (request) => {
+    const match = /\/frame(\d+)-lod\.rad(?:\?|$)/.exec(request.url());
+    if (match?.[1] !== undefined) {
+      requestedDynamicFrames.add(Number(match[1]));
+    }
+  });
   test.setTimeout(
     process.env.VITE_DYNAMIC_RAD_BASE_URL === undefined ? 30_000 : 180_000,
   );
@@ -46,9 +55,25 @@ test("loads the demo application and workspace packages", async ({ page }) => {
     await expect(page.getByText(/Dynamic RAD ready/)).toBeVisible({
       timeout: 120_000,
     });
+    const expectedInitialWindow = new Set([
+      dynamicStartFrame,
+      Math.min(dynamicStartFrame + 1, dynamicEndFrame),
+      Math.min(dynamicStartFrame + 2, dynamicEndFrame),
+      Math.min(dynamicStartFrame + 3, dynamicEndFrame),
+      dynamicEndFrame,
+    ]);
+    expect([...requestedDynamicFrames].sort((a, b) => a - b)).toEqual(
+      [...expectedInitialWindow].sort((a, b) => a - b),
+    );
     await page.getByRole("button", { name: "Next dynamic frame" }).click();
-    await expect(page.getByText(/Source 41/)).toBeVisible();
+    await expect(
+      page.getByText(
+        new RegExp(`Source ${Math.min(dynamicStartFrame + 1, dynamicEndFrame)}`),
+      ),
+    ).toBeVisible({ timeout: 120_000 });
     await page.getByRole("button", { name: "Previous dynamic frame" }).click();
-    await expect(page.getByText(/Source 40/)).toBeVisible();
+    await expect(page.getByText(new RegExp(`Source ${dynamicStartFrame}`))).toBeVisible(
+      { timeout: 120_000 },
+    );
   }
 });

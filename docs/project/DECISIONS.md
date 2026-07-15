@@ -42,6 +42,13 @@ used during day-to-day implementation.
 - Dynamic Spark resources are owned by explicit frame slots; presentation changes slot
   visibility, while release or cancellation disposes the slot's mesh without recreating
   the scene.
+- A prepared paged frame must have its root LoD page resident. Inactive buffered slots
+  remain transparent; `SplatMesh.initialized` alone is not a playback readiness signal.
+  All owned slots reach root-only quality before the buffer enables enhancement paging
+  for future frames.
+- The initial temporal buffer owns one presented frame, three future frames, and one
+  previous frame. The window size is configurable, base quality has priority over
+  refinement, and a replacement never evicts the presented frame before it is playable.
 - Spark-specific LoD and foveation settings remain on the concrete adapter. The core
   quality decision is translated at the boundary so Spark properties do not leak into
   `player-core`.

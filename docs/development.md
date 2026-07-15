@@ -110,9 +110,12 @@ pnpm dev
 ```
 
 The demo maps the source range to zero-based logical frame indices, applies the shared
-capture-to-world transform, prepares the frames, and exposes Previous, Play/Pause, and
-Next diagnostic controls. This eager short-range preview is for composition validation;
-the temporal player will replace it with bounded buffering for long sequences.
+capture-to-world transform, and exposes Previous, Play/Pause, and Next diagnostic
+controls. A configurable player-core ring buffer owns at most five frames by default:
+the presented frame, three future frames, and one previous frame. The current frame
+appears as soon as its root page is resident while the remaining window fills in the
+background. Base pages are prioritised before future-frame refinement. If a requested
+frame is not yet playable, the controls wait and the current frame remains visible.
 
 Run the opt-in real-asset browser check with the same environment variables:
 

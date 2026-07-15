@@ -1,5 +1,5 @@
 import { waitWithAbort } from "./abort.js";
-import { SparkRendererStateError } from "./errors.js";
+import { SparkRendererAbortError, SparkRendererStateError } from "./errors.js";
 import { applyTransform } from "./transform.js";
 
 import type {
@@ -29,6 +29,7 @@ export interface SparkFrameSlotSnapshot {
 
 export interface SparkFrameSlotOptions {
   createSplatMesh(options: SplatMeshOptions): SplatMesh;
+  invalidateLod(): void;
   scene: Scene;
   slotId: number;
 }
@@ -39,12 +40,15 @@ export class SparkFrameSlot {
   private errorValue: unknown;
   private frameValue: PreparedFrame | undefined;
   private loadedBytesValue: number | undefined;
+  private lodScaleValue = 1;
   private meshValue: SplatMesh | undefined;
   private readonly options: SparkFrameSlotOptions;
+  private presentedValue = false;
   private sequenceIdValue: string | undefined;
   private sourceValue: GaussianFrameSource | undefined;
   private stateValue: SparkFrameSlotState = "empty";
   private totalBytesValue: number | undefined;
+  private warmLodScaleFractionValue = 0;
 
   constructor(options: SparkFrameSlotOptions) {
     this.options = options;
@@ -80,7 +84,7 @@ export class SparkFrameSlot {
       ...(this.totalBytesValue === undefined
         ? {}
         : { totalBytes: this.totalBytesValue }),
-      visible: this.meshValue?.visible ?? false,
+      visible: this.presentedValue,
     };
   }
 
@@ -142,6 +146,7 @@ export class SparkFrameSlot {
       }
       applyTransform(mesh, options.transform);
       this.options.scene.add(mesh);
+      await this.waitForMinimumRenderablePage(mesh, controller.signal);
       const frame: PreparedFrame = {
         frameIndex: source.frameIndex,
         qualityLevel: options.targetQualityLevel ?? 0,
@@ -168,11 +173,29 @@ export class SparkFrameSlot {
   }
 
   present(): void {
-    this.requireReadyMesh().visible = true;
+    const mesh = this.requireReadyMesh();
+    mesh.lodScale = this.lodScaleValue;
+    mesh.opacity = 1;
+    mesh.visible = true;
+    this.presentedValue = true;
+    this.options.invalidateLod();
   }
 
   hide(): void {
-    this.requireReadyMesh().visible = false;
+    const mesh = this.requireReadyMesh();
+    mesh.lodScale = 0;
+    mesh.visible = false;
+    this.presentedValue = false;
+    this.options.invalidateLod();
+  }
+
+  warm(): void {
+    const mesh = this.requireReadyMesh();
+    mesh.lodScale = this.getWarmLodScale();
+    mesh.opacity = 0;
+    mesh.visible = true;
+    this.presentedValue = false;
+    this.options.invalidateLod();
   }
 
   cancel(): void {
@@ -180,9 +203,20 @@ export class SparkFrameSlot {
   }
 
   setLodScale(scale: number): void {
+    this.lodScaleValue = scale;
     const mesh = this.meshValue;
     if (mesh !== undefined) {
-      mesh.lodScale = scale;
+      mesh.lodScale = this.presentedValue ? scale : this.getWarmLodScale();
+      this.options.invalidateLod();
+    }
+  }
+
+  setWarmLodScaleFraction(fraction: number): void {
+    this.warmLodScaleFractionValue = Math.max(0, fraction);
+    const mesh = this.meshValue;
+    if (mesh !== undefined && !this.presentedValue) {
+      mesh.lodScale = this.getWarmLodScale();
+      this.options.invalidateLod();
     }
   }
 
@@ -213,7 +247,7 @@ export class SparkFrameSlot {
         ? {}
         : { totalBytes: this.totalBytesValue }),
       url: this.sourceValue.url,
-      visible: this.meshValue?.visible ?? false,
+      visible: this.presentedValue,
     };
   }
 
@@ -225,6 +259,7 @@ export class SparkFrameSlot {
     this.abortController?.abort();
     this.disposeMesh();
     this.frameValue = undefined;
+    this.presentedValue = false;
     this.sequenceIdValue = undefined;
   }
 
@@ -233,6 +268,7 @@ export class SparkFrameSlot {
     this.errorValue = undefined;
     this.frameValue = undefined;
     this.loadedBytesValue = undefined;
+    this.presentedValue = false;
     this.sourceValue = undefined;
     this.sequenceIdValue = undefined;
     this.totalBytesValue = undefined;
@@ -245,6 +281,58 @@ export class SparkFrameSlot {
       mesh.removeFromParent();
       mesh.dispose();
     }
+  }
+
+  private waitForMinimumRenderablePage(
+    mesh: SplatMesh,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const paged = mesh.paged;
+    if (paged === undefined) {
+      return Promise.resolve();
+    }
+
+    // Spark only pages scene-visible generators. Keep the slot transparent while its
+    // root LoD page is fetched so preparation cannot expose a partially ready frame.
+    mesh.opacity = 0;
+    mesh.lodScale = this.getWarmLodScale();
+    mesh.visible = true;
+    this.options.invalidateLod();
+
+    return new Promise<void>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const cleanup = () => {
+        if (timer !== undefined) {
+          clearTimeout(timer);
+        }
+        signal.removeEventListener("abort", handleAbort);
+      };
+      const handleAbort = () => {
+        cleanup();
+        reject(new SparkRendererAbortError());
+      };
+      const check = () => {
+        if (signal.aborted) {
+          handleAbort();
+          return;
+        }
+        const pager = paged.pager;
+        const rootPage = pager?.getSplatsChunk(paged, 0);
+        const rootUploadPending =
+          rootPage !== undefined &&
+          (pager?.newUploads?.some(({ page }) => page === rootPage.page) === true ||
+            pager?.readyUploads?.some(({ page }) => page === rootPage.page) === true);
+        if (rootPage !== undefined && !rootUploadPending) {
+          cleanup();
+          resolve();
+          return;
+        }
+        timer = setTimeout(check, 16);
+      };
+
+      signal.addEventListener("abort", handleAbort, { once: true });
+      check();
+    });
   }
 
   private linkExternalSignal(
@@ -261,6 +349,10 @@ export class SparkFrameSlot {
     const abort = () => controller.abort();
     signal.addEventListener("abort", abort, { once: true });
     return () => signal.removeEventListener("abort", abort);
+  }
+
+  private getWarmLodScale(): number {
+    return this.lodScaleValue * this.warmLodScaleFractionValue;
   }
 
   private requireReadyMesh(): SplatMesh {
