@@ -7,7 +7,9 @@ acceptance criteria are covered by implementation and verification.
 ## Active implementation slice: Temporal buffering and scene composition
 
 - [ ] E03-T01 — Complete visual alignment validation for the composed static GS, dynamic
-      GS, and mesh scene. The real assets now load and switch together.
+      GS, and mesh scene. The real assets now load and switch together, and independent
+      static-scene and dynamic-actor scale controls are available for calibration; final
+      origin and floor alignment still require visual confirmation.
 - [ ] E03-T04 — Validate dynamic alpha and background masking behaviour.
 - [ ] E03-T05 — Measure dynamic switching performance.
 - [ ] E05-T02/T08 — Add media-element and audio-master clocks. The monotonic injectable
@@ -65,7 +67,11 @@ without camera interaction.
 The demo composes the persistent mesh and optional static RAD with an opt-in local
 dynamic range. Chromium decoded frames 40-50 of `rafa-pitch` and switched forward and
 backward without recreating the scene. Final E03-T01 completion awaits visual
-confirmation of scale and origin alignment.
+confirmation of origin and floor alignment. Separate uniform-scale controls now adjust
+the static scene and dynamic actor around their respective local origins while
+preserving the shared capture-axis rotation. A dynamic scale change propagates to
+already prepared buffered frames and frames prepared later, and invalidates stale
+presentation-readiness results so the affected frames are checked again before handoff.
 
 Paged-frame readiness requires Spark chunk 0 to be resident rather than relying on
 `SplatMesh.initialized`, preventing presentation from switching to a frame with no

@@ -66,6 +66,7 @@ function createHarness() {
   } as HTMLCanvasElement;
   const rendererDispose = vi.fn();
   const render = vi.fn();
+  const setDirty = vi.fn();
   const setAnimationLoop = vi.fn();
   const setPixelRatio = vi.fn();
   const setSize = vi.fn();
@@ -97,7 +98,7 @@ function createHarness() {
         { chunk: 1, splats: {}, time: 2 },
       ],
     },
-    setDirty: vi.fn(),
+    setDirty,
   }) as unknown as SparkRenderer;
   const scene = new Scene();
   const camera = new PerspectiveCamera();
@@ -159,6 +160,7 @@ function createHarness() {
     resizeObserve,
     runtime,
     scene,
+    setDirty,
     setAnimationLoop,
     setPixelRatio,
     setSize,
@@ -274,11 +276,15 @@ describe("SparkGaussianRendererAdapter", () => {
 
     adapter.setObjectVisibility("room", false);
     expect(harness.splatMeshes[0]?.visible).toBe(false);
+    harness.spark.lodDirty = false;
+    harness.setDirty.mockClear();
     adapter.setObjectTransform("room", {
       matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 8, 9, 10, 1],
     });
     expect(harness.splatMeshes[0]?.matrixAutoUpdate).toBe(false);
     expect(harness.splatMeshes[0]?.matrix.elements.slice(12, 15)).toEqual([8, 9, 10]);
+    expect(harness.spark.lodDirty).toBe(true);
+    expect(harness.setDirty).toHaveBeenCalled();
 
     adapter.releaseObject("room");
     expect(harness.splatMeshes[0]?.dispose).toHaveBeenCalledOnce();
@@ -402,6 +408,21 @@ describe("SparkGaussianRendererAdapter", () => {
       expect.objectContaining({ frameIndex: 0, state: "ready", visible: false }),
       expect.objectContaining({ frameIndex: 1, state: "ready", visible: true }),
     ]);
+
+    adapter.setFrameTransform(first, {
+      rotation: { w: 0, x: 1, y: 0, z: 0 },
+      scale: { x: 0.75, y: 0.75, z: 0.75 },
+    });
+    adapter.setFrameTransform(second, {
+      rotation: { w: 0, x: 1, y: 0, z: 0 },
+      scale: { x: 1.5, y: 1.5, z: 1.5 },
+    });
+    expect(harness.splatMeshes[0]?.quaternion.toArray()).toEqual([1, 0, 0, 0]);
+    expect(harness.splatMeshes[0]?.scale.toArray()).toEqual([0.75, 0.75, 0.75]);
+    expect(harness.splatMeshes[1]?.quaternion.toArray()).toEqual([1, 0, 0, 0]);
+    expect(harness.splatMeshes[1]?.scale.toArray()).toEqual([1.5, 1.5, 1.5]);
+    expect(harness.splatMeshes[0]?.dispose).not.toHaveBeenCalled();
+    expect(harness.splatMeshes[1]?.dispose).not.toHaveBeenCalled();
 
     adapter.releaseFrame(second);
     expect(harness.splatMeshes[1]?.dispose).toHaveBeenCalledOnce();
@@ -566,6 +587,15 @@ describe("SparkGaussianRendererAdapter", () => {
       loadedBytes: 400,
       selectedSplatCount: 100,
       state: "presentable",
+    });
+
+    adapter.setFrameTransform(prepared, {
+      scale: { x: 1.25, y: 1.25, z: 1.25 },
+    });
+    expect(mesh.scale.toArray()).toEqual([1.25, 1.25, 1.25]);
+    expect(adapter.getFramePresentationQuality(prepared)).toMatchObject({
+      detailLevel: 0.25,
+      state: "refining",
     });
 
     adapter.presentFrame(prepared);

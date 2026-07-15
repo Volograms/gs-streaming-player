@@ -130,6 +130,8 @@ export interface GaussianRendererAdapter {
   getFramePresentationQuality(frame: PreparedFrame): FramePresentationQuality;
   /** Enable or suppress enhancement-quality paging for an inactive prepared frame. */
   setFrameRefinement(frame: PreparedFrame, enabled: boolean): void;
+  /** Replace the local-to-world transform of an already prepared frame. */
+  setFrameTransform(frame: PreparedFrame, transform?: Transform): void;
   setObjectTransform(objectId: string, transform: Transform): void;
   setObjectVisibility(objectId: string, visible: boolean): void;
   releaseObject(objectId: string): void;

@@ -4,22 +4,27 @@ import { FrameRingBuffer } from "../src/index.js";
 
 import type {
   DynamicGaussianSequence,
+  FramePreparationOptions,
   FramePresentationQuality,
+  FrameRefinementOptions,
   GaussianRendererAdapter,
   PreparedFrame,
 } from "../src/index.js";
 
 interface Deferred<T> {
   promise: Promise<T>;
+  reject(reason: unknown): void;
   resolve(value: T): void;
 }
 
 function deferred<T>(): Deferred<T> {
+  let reject!: (reason: unknown) => void;
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((promiseResolve) => {
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    reject = promiseReject;
     resolve = promiseResolve;
   });
-  return { promise, resolve };
+  return { promise, reject, resolve };
 }
 
 function createSequence(frameCount = 6): DynamicGaussianSequence {
@@ -40,7 +45,12 @@ function createRendererHarness({ automaticQuality = true } = {}) {
   const presentationQualities = new Map<number, FramePresentationQuality>();
   const qualityPreparations = new Map<number, Deferred<FramePresentationQuality>>();
   const prepareFrame = vi.fn(
-    async (_sequenceId: string, source: { frameIndex: number }) => {
+    async (
+      _sequenceId: string,
+      source: { frameIndex: number },
+      _options: FramePreparationOptions,
+    ) => {
+      void _options;
       const pending = deferred<PreparedFrame>();
       preparations.set(source.frameIndex, pending);
       return pending.promise;
@@ -48,7 +58,11 @@ function createRendererHarness({ automaticQuality = true } = {}) {
   );
   const presentFrame = vi.fn();
   const refineFrame = vi.fn(
-    async (frame: PreparedFrame, target: { detailLevel: number }) => {
+    async (
+      frame: PreparedFrame,
+      target: { detailLevel: number },
+      options?: FrameRefinementOptions,
+    ) => {
       const quality: FramePresentationQuality = {
         detailLevel: target.detailLevel,
         selectedSplatCount: 10_000,
@@ -60,14 +74,25 @@ function createRendererHarness({ automaticQuality = true } = {}) {
       }
       const pending = deferred<FramePresentationQuality>();
       qualityPreparations.set(frame.frameIndex, pending);
-      return pending.promise.then((result) => {
-        presentationQualities.set(frame.frameIndex, result);
-        return result;
-      });
+      const handleAbort = () => {
+        const error = new Error("Frame refinement was aborted.");
+        error.name = "AbortError";
+        pending.reject(error);
+      };
+      options?.signal?.addEventListener("abort", handleAbort, { once: true });
+      return pending.promise
+        .then((result) => {
+          presentationQualities.set(frame.frameIndex, result);
+          return result;
+        })
+        .finally(() => {
+          options?.signal?.removeEventListener("abort", handleAbort);
+        });
     },
   );
   const releaseFrame = vi.fn();
   const setFrameRefinement = vi.fn();
+  const setFrameTransform = vi.fn();
   const renderer = {
     dispose: vi.fn(),
     getFramePresentationQuality: vi.fn(
@@ -89,6 +114,7 @@ function createRendererHarness({ automaticQuality = true } = {}) {
     releaseFrame,
     releaseObject: vi.fn(),
     setFrameRefinement,
+    setFrameTransform,
     setObjectTransform: vi.fn(),
     setObjectVisibility: vi.fn(),
     setRenderQuality: vi.fn(),
@@ -137,6 +163,7 @@ function createRendererHarness({ automaticQuality = true } = {}) {
     resolve,
     resolveQuality,
     setFrameRefinement,
+    setFrameTransform,
   };
 }
 
@@ -343,6 +370,9 @@ describe("FrameRingBuffer", () => {
     await initialising;
 
     const firstPresentation = buffer.present(1);
+    const firstPresentationRejected = expect(firstPresentation).rejects.toMatchObject({
+      name: "AbortError",
+    });
     harness.resolve(1);
     await vi.waitFor(() => expect(harness.qualityPreparations.has(1)).toBe(true));
 
@@ -353,9 +383,84 @@ describe("FrameRingBuffer", () => {
     await secondPresentation;
 
     harness.resolveQuality(1);
-    await expect(firstPresentation).rejects.toMatchObject({ name: "AbortError" });
+    await firstPresentationRejected;
     expect(harness.presentFrame).toHaveBeenLastCalledWith(frame2);
     expect(buffer.snapshot.currentFrameIndex).toBe(2);
+  });
+
+  it("updates prepared and loading frames and uses the transform for future frames", async () => {
+    const harness = createRendererHarness();
+    const buffer = new FrameRingBuffer({
+      futureFrameCount: 2,
+      previousFrameCount: 0,
+      renderer: harness.renderer,
+      sequence: createSequence(),
+    });
+    const initialising = buffer.initialise(0);
+    const frame0 = harness.resolve(0);
+    await initialising;
+    const frame1 = harness.resolve(1);
+    await vi.waitFor(() => {
+      expect(
+        buffer.snapshot.frames.find(({ frameIndex }) => frameIndex === 1),
+      ).toMatchObject({ status: "base-ready" });
+    });
+    const transform = {
+      rotation: { w: 0, x: 1, y: 0, z: 0 },
+      scale: { x: 1.5, y: 1.5, z: 1.5 },
+    };
+
+    buffer.setTransform(transform);
+
+    expect(harness.setFrameTransform).toHaveBeenCalledWith(frame0, transform);
+    expect(harness.setFrameTransform).toHaveBeenCalledWith(frame1, transform);
+    expect(harness.setFrameRefinement).toHaveBeenCalledWith(frame0, false);
+
+    const frame2 = harness.resolve(2);
+    await buffer.whenBuffered();
+    expect(harness.setFrameTransform).toHaveBeenCalledWith(frame2, transform);
+
+    await buffer.present(1);
+    expect(harness.renderer.prepareFrame).toHaveBeenCalledWith(
+      "actor",
+      expect.objectContaining({ frameIndex: 3 }),
+      expect.objectContaining({ transform }),
+    );
+  });
+
+  it("revalidates an in-flight presentation after its transform changes", async () => {
+    const harness = createRendererHarness({ automaticQuality: false });
+    const buffer = new FrameRingBuffer({
+      futureFrameCount: 1,
+      previousFrameCount: 0,
+      renderer: harness.renderer,
+      sequence: createSequence(),
+    });
+    const initialising = buffer.initialise(0);
+    harness.resolve(0);
+    await vi.waitFor(() => expect(harness.qualityPreparations.has(0)).toBe(true));
+    harness.resolveQuality(0);
+    await initialising;
+
+    const switching = buffer.present(1);
+    const frame1 = harness.resolve(1);
+    await vi.waitFor(() => expect(harness.qualityPreparations.has(1)).toBe(true));
+    const transform = {
+      rotation: { w: 0, x: 1, y: 0, z: 0 },
+      scale: { x: 0.8, y: 0.8, z: 0.8 },
+    };
+
+    buffer.setTransform(transform);
+    await vi.waitFor(() => {
+      expect(
+        harness.refineFrame.mock.calls.filter(([frame]) => frame === frame1),
+      ).toHaveLength(2);
+    });
+    harness.resolveQuality(1);
+
+    await expect(switching).resolves.toBe(frame1);
+    expect(harness.presentFrame).toHaveBeenLastCalledWith(frame1);
+    expect(harness.setFrameTransform).toHaveBeenCalledWith(frame1, transform);
   });
 
   it("cancels in-flight frames and releases prepared frames on disposal", async () => {

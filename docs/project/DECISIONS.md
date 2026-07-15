@@ -40,6 +40,10 @@ used during day-to-day implementation.
 - The player world is right-handed and Y-up. Source-axis conversion is explicit asset
   configuration, including the current fixtures' 180-degree X rotation; it is never a
   renderer-wide RAD default.
+- Runtime object-scale calibration is a uniform local transform applied independently to
+  the static scene and dynamic actor. It preserves the configured source-axis rotation;
+  dynamic changes propagate across prepared and future buffered frames and force
+  presentation-readiness revalidation.
 - Dynamic Spark resources are owned by explicit frame slots; presentation changes slot
   visibility, while release or cancellation disposes the slot's mesh without recreating
   the scene.

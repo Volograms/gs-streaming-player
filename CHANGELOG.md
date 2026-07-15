@@ -56,6 +56,9 @@ All notable changes to this project will be documented here. The project uses
 - Framework-independent sequence playback controller with an injectable monotonic clock,
   absolute 30 fps deadlines, startup reserve, pause/seek/loop controls, explicit
   buffering state, and dropped-frame accounting.
+- Independent uniform-scale controls for the static scene and dynamic actor. Runtime
+  scale changes preserve the capture-axis rotation, update prepared and future dynamic
+  frames, and revalidate their Spark presentation readiness.
 
 ### Fixed
 

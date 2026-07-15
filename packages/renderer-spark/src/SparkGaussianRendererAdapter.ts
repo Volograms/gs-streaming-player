@@ -314,7 +314,11 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
   }
 
   setObjectTransform(objectId: string, transform: Transform): void {
-    applyTransform(this.requireLoadedObject(objectId).node, transform);
+    const object = this.requireLoadedObject(objectId);
+    applyTransform(object.node, transform);
+    if (object.splatMesh !== undefined) {
+      this.invalidateLod();
+    }
   }
 
   setObjectVisibility(objectId: string, visible: boolean): void {
@@ -372,6 +376,10 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
 
   setFrameRefinement(frame: PreparedFrame, enabled: boolean): void {
     this.requirePreparedFrame(frame).setWarmLodScaleFraction(enabled ? 1 : 0);
+  }
+
+  setFrameTransform(frame: PreparedFrame, transform?: Transform): void {
+    this.requirePreparedFrame(frame).setTransform(transform);
   }
 
   getMetrics(): RendererMetrics {

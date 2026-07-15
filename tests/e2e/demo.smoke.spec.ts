@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("loads the demo application and workspace packages", async ({ page }) => {
+  await page.setViewportSize({ height: 900, width: 1280 });
   const dynamicStartFrame = Number(process.env.VITE_DYNAMIC_RAD_START_FRAME ?? 40);
   const dynamicEndFrame = Number(process.env.VITE_DYNAMIC_RAD_END_FRAME ?? 50);
   const requestedDynamicFrames = new Set<number>();
@@ -11,7 +12,11 @@ test("loads the demo application and workspace packages", async ({ page }) => {
     }
   });
   test.setTimeout(
-    process.env.VITE_DYNAMIC_RAD_BASE_URL === undefined ? 30_000 : 180_000,
+    process.env.VITE_DYNAMIC_RAD_BASE_URL !== undefined
+      ? 180_000
+      : process.env.VITE_STATIC_RAD_URL !== undefined
+        ? 90_000
+        : 30_000,
   );
   await page.goto("/");
 
@@ -23,10 +28,11 @@ test("loads the demo application and workspace packages", async ({ page }) => {
   await expect(page.getByText("Renderer ready", { exact: true })).toBeVisible();
   await expect(page.getByText(/Drag to orbit/)).toBeVisible();
   await expect(page.getByRole("group", { name: "Render quality" })).toBeEnabled();
+  await expect(page.getByRole("group", { name: "Object scale" })).toBeEnabled();
   await expect(page.getByLabel("Renderer metrics")).toBeVisible();
 
-  await page.getByLabel("Static detail").fill("1.5");
-  await expect(page.locator('output[for="static-detail"]')).toHaveText("1.50×");
+  await page.getByLabel("Static detail").fill("0.75");
+  await expect(page.locator('output[for="static-detail"]')).toHaveText("0.75×");
   await page.getByLabel("Maximum SH").selectOption("2");
   await expect(page.getByLabel("Maximum SH")).toHaveValue("2");
 
@@ -49,6 +55,8 @@ test("loads the demo application and workspace packages", async ({ page }) => {
     await expect(page.getByText("Static RAD ready", { exact: true })).toBeVisible({
       timeout: 30_000,
     });
+    await page.getByLabel("Static scene scale").fill("1.1");
+    await expect(page.locator('output[for="static-object-scale"]')).toHaveText("1.10×");
   }
 
   if (process.env.VITE_DYNAMIC_RAD_BASE_URL !== undefined) {
@@ -65,28 +73,45 @@ test("loads the demo application and workspace packages", async ({ page }) => {
     expect([...requestedDynamicFrames].sort((a, b) => a - b)).toEqual(
       [...expectedInitialWindow].sort((a, b) => a - b),
     );
-    await page.getByRole("button", { name: "Next dynamic frame" }).click();
+    const dynamicScale = page.getByLabel("Dynamic actor scale");
+    await dynamicScale.fill("0.8");
+    await expect(page.locator('output[for="dynamic-object-scale"]')).toHaveText(
+      "0.80×",
+    );
+    const dynamicControls = page.getByRole("region", {
+      name: "Dynamic sequence preview",
+    });
+    const nextButton = page.getByRole("button", { name: "Next dynamic frame" });
+    await expect(nextButton).toBeEnabled();
+    await nextButton.click({ force: true });
     await expect(
       page.getByText(
         new RegExp(`Source ${Math.min(dynamicStartFrame + 1, dynamicEndFrame)}`),
       ),
     ).toBeVisible({ timeout: 120_000 });
-    await page.getByRole("button", { name: "Previous dynamic frame" }).click();
+    const previousButton = page.getByRole("button", {
+      name: "Previous dynamic frame",
+    });
+    await expect(previousButton).toBeEnabled();
+    await previousButton.click({ force: true });
     await expect(page.getByText(new RegExp(`Source ${dynamicStartFrame}`))).toBeVisible(
       { timeout: 120_000 },
     );
 
-    const dynamicControls = page.getByRole("region", {
-      name: "Dynamic sequence preview",
-    });
-    await page.getByRole("button", { name: "Play dynamic sequence" }).click();
+    const playButton = page.getByRole("button", { name: "Play dynamic sequence" });
+    await expect(playButton).toBeEnabled();
+    await playButton.click({ force: true });
     await expect(
       page.getByRole("button", { name: "Pause dynamic sequence" }),
     ).toBeVisible();
+    await expect(page.getByLabel("Dynamic actor scale")).toBeDisabled();
     await expect(dynamicControls).toHaveAttribute("data-frame-index", /^(?!0$)\d+$/, {
       timeout: 10_000,
     });
-    await page.getByRole("button", { name: "Pause dynamic sequence" }).click();
+    await page
+      .getByRole("button", { name: "Pause dynamic sequence" })
+      .click({ force: true });
+    await expect(page.getByLabel("Dynamic actor scale")).toBeEnabled();
     await expect(dynamicControls).toHaveAttribute("data-playback-state", "paused");
     await expect(page.locator("[data-player-lifecycle]")).toHaveAttribute(
       "data-player-lifecycle",

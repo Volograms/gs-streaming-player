@@ -11,6 +11,7 @@ import type {
   PreparedFrame,
   RendererResourceMetrics,
 } from "@6g-path/gaussian-player";
+import type { Transform } from "@6g-path/shared";
 import type { SplatMesh, SplatMeshOptions } from "@sparkjsdev/spark";
 import type { Scene } from "three";
 
@@ -385,6 +386,14 @@ export class SparkFrameSlot {
       mesh.lodScale = this.getWarmLodScale();
       this.options.invalidateLod();
     }
+  }
+
+  setTransform(transform?: Transform): void {
+    const mesh = this.requireReadyMesh();
+    applyTransform(mesh, transform);
+    this.qualityTargetRevision += 1;
+    this.presentationReadyRevision = -1;
+    this.options.invalidateLod();
   }
 
   setMaximumSphericalHarmonics(maximum: 0 | 1 | 2 | 3): void {

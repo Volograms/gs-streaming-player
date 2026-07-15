@@ -10,7 +10,12 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { DynamicSequenceControls } from "./DynamicSequenceControls.js";
 import { createLocalDynamicSequence } from "./localDynamicSequence.js";
 import { RendererMetricsOverlay } from "./RendererMetricsOverlay.js";
-import { CAPTURE_TO_THREE_TRANSFORM } from "./sceneCoordinates.js";
+import {
+  CAPTURE_TO_THREE_TRANSFORM,
+  createCaptureToThreeTransform,
+  withUniformScale,
+} from "./sceneCoordinates.js";
+import { SceneScaleControls } from "./SceneScaleControls.js";
 import { SparkQualityControls } from "./SparkQualityControls.js";
 
 import type {
@@ -56,7 +61,9 @@ export function SparkViewport({ onPlaybackSnapshot }: SparkViewportProps) {
   const [preparedFrameCount, setPreparedFrameCount] = useState(0);
   const [quality, setQuality] = useState(createInitialQuality);
   const qualityRef = useRef(quality);
+  const [dynamicActorScale, setDynamicActorScale] = useState(1);
   const [status, setStatus] = useState<RendererStatus>("initialising");
+  const [staticSceneScale, setStaticSceneScale] = useState(1);
   const [staticAssetStatus, setStaticAssetStatus] = useState<StaticAssetStatus>(
     staticRadUrl === undefined ? "not-configured" : "loading",
   );
@@ -234,6 +241,28 @@ export function SparkViewport({ onPlaybackSnapshot }: SparkViewportProps) {
     adapterRef.current?.setSparkRenderQuality(configuration);
   }
 
+  function updateStaticSceneScale(scale: number) {
+    setStaticSceneScale(scale);
+    adapterRef.current?.setObjectTransform(
+      "demo-static-rad",
+      createCaptureToThreeTransform(scale),
+    );
+  }
+
+  function updateDynamicActorScale(scale: number) {
+    const playback = playbackRef.current;
+    if (
+      playback !== null &&
+      (playback.snapshot.isPlaying || playback.snapshot.lifecycle === "SEEKING")
+    ) {
+      playback.pause();
+    }
+    setDynamicActorScale(scale);
+    bufferRef.current?.setTransform(
+      withUniformScale(dynamicSequence?.transform ?? CAPTURE_TO_THREE_TRANSFORM, scale),
+    );
+  }
+
   function stepDynamicFrame(delta: number) {
     void playbackRef.current?.step(delta).catch((error: unknown) => {
       console.error("Unable to present the requested dynamic RAD frame.", error);
@@ -262,11 +291,26 @@ export function SparkViewport({ onPlaybackSnapshot }: SparkViewportProps) {
       <p className="navigation-hint">
         Drag to orbit · Right-drag to pan · Scroll to zoom
       </p>
-      <SparkQualityControls
-        configuration={quality}
-        disabled={status !== "ready"}
-        onChange={updateQuality}
-      />
+      <div className="viewport-control-stack">
+        <SparkQualityControls
+          configuration={quality}
+          disabled={status !== "ready"}
+          onChange={updateQuality}
+        />
+        <SceneScaleControls
+          disabled={status !== "ready"}
+          dynamicDisabled={
+            dynamicAssetStatus !== "ready" ||
+            isDynamicPlaying ||
+            dynamicPlaybackLifecycle === "SEEKING"
+          }
+          dynamicScale={dynamicActorScale}
+          onDynamicScaleChange={updateDynamicActorScale}
+          onStaticScaleChange={updateStaticSceneScale}
+          staticDisabled={staticAssetStatus !== "ready"}
+          staticScale={staticSceneScale}
+        />
+      </div>
       <RendererMetricsOverlay metrics={metrics} />
       {dynamicSequence === undefined ||
       dynamicAssetStatus === "not-configured" ? null : (

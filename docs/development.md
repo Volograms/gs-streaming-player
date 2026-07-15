@@ -91,6 +91,13 @@ The demo viewport uses Three.js `OrbitControls`: primary-button drag orbits,
 secondary-button drag pans, and the wheel zooms. Touch gestures are enabled by the
 control implementation.
 
+The `Object scale` panel provides separate uniform controls for `Static scene scale` and
+`Dynamic actor scale`. Use these to calibrate independently captured assets without
+changing their axis conversion. Scaling is applied around each object's local origin, so
+an asset whose origin is not on the intended floor may also require a translation in its
+content transform. The current capture-to-world 180-degree X rotation is preserved when
+either scale changes.
+
 To exercise a local dynamic range, expose a directory containing files named
 `frameNNNN-lod.rad` through the ignored preview link:
 
@@ -119,6 +126,13 @@ shown as the final handoff quality. If a requested frame misses its absolute 30 
 deadline, the controls report `Buffering dynamic RAD` and the current frame remains
 visible. Playback resumes from a new monotonic clock anchor after two future frames are
 presentation-ready.
+
+Changing the dynamic actor scale updates every prepared frame in the current temporal
+buffer and becomes the transform used for frames prepared later. The update invalidates
+the affected Spark presentation-readiness state and restarts quality preparation as
+needed; a frame must satisfy the current presentation target again before it can be
+handed off. This keeps the scale consistent across buffered and future frames rather
+than applying it only to the visible frame.
 
 The deterministic baseline target is 0.25 spatial detail. It is configurable through the
 `FrameRingBuffer` API, including an optional selected-splat floor for controlled
