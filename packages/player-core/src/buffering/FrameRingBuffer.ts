@@ -771,7 +771,23 @@ export class FrameRingBuffer {
       const settledQuality = this.renderer.getFramePresentationQuality(preparedFrame);
       this.applyQualitySnapshot(record, settledQuality);
       if (!this.meetsPresentationTarget(settledQuality)) {
-        throw new Error(`Frame ${frameIndex} did not reach presentation quality.`);
+        // Refinement cancellation is expected when the rolling window or adaptive
+        // quality target changes. A superseded refinement settles without making the
+        // frame ready, so re-evaluate the current target and start/await its replacement.
+        // Do not retry an obsolete presentation after another request moved the window;
+        // its caller must unwind so the request-revision guard can report cancellation.
+        // Real renderer failures still reject the refinement promise above.
+        const windowFrameIndex = this.windowFrameIndexValue;
+        const distance =
+          windowFrameIndex === undefined
+            ? -1
+            : this.forwardDistanceFrom(windowFrameIndex, frameIndex);
+        if (distance < 0 || distance > this.futureFrameCount) {
+          throw new Error(
+            `Frame ${frameIndex} is no longer in the presentation window.`,
+          );
+        }
+        continue;
       }
       return;
     }

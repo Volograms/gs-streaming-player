@@ -92,6 +92,10 @@ The isolated Chromium test loads the five-frame window, switches Next/Previous, 
 the absolute-deadline playback controller, observes frame advancement, and pauses again
 in about five seconds against frames 40-50.
 
+Readiness waits also survive refinement cancellation when the rolling window wraps or
+adaptive quality changes its target. Superseded work is retried against the current
+target, while genuine renderer failures still move playback to `ERROR`.
+
 ### E06 bounded temporal buffer foundation (2026-07-15)
 
 - [x] E06-T01 — Define observable buffered-frame state.

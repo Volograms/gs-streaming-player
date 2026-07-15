@@ -548,6 +548,54 @@ describe("FrameRingBuffer", () => {
     });
   });
 
+  it("retries a loop-boundary readiness wait when adaptive quality supersedes refinement", async () => {
+    const harness = createRendererHarness({ automaticQuality: false });
+    const buffer = new FrameRingBuffer({
+      futureFrameCount: 1,
+      loop: true,
+      previousFrameCount: 0,
+      renderer: harness.renderer,
+      sequence: createSequence(3),
+    });
+    const initialising = buffer.initialise(0);
+    harness.resolve(0);
+    await vi.waitFor(() => expect(harness.qualityPreparations.has(0)).toBe(true));
+    harness.resolveQuality(0);
+    await initialising;
+
+    const movingToLastFrame = buffer.present(2);
+    harness.resolve(2);
+    await vi.waitFor(() => expect(harness.qualityPreparations.has(2)).toBe(true));
+    harness.resolveQuality(2);
+    await movingToLastFrame;
+
+    harness.presentationQualities.set(0, {
+      detailLevel: 0,
+      selectedSplatCount: 1,
+      state: "root-ready",
+    });
+    const waitingForWrappedFrame = buffer.whenPresentationReadyAhead(1);
+    await vi.waitFor(() => {
+      expect(
+        harness.refineFrame.mock.calls.filter(([frame]) => frame.frameIndex === 0),
+      ).toHaveLength(2);
+    });
+
+    buffer.setPresentationQualityTarget({
+      detailLevel: 0.15,
+      minimumSplatCount: 2,
+    });
+    await vi.waitFor(() => {
+      expect(
+        harness.refineFrame.mock.calls.filter(([frame]) => frame.frameIndex === 0),
+      ).toHaveLength(3);
+    });
+    harness.resolveQuality(0);
+
+    await expect(waitingForWrappedFrame).resolves.toBeUndefined();
+    expect(buffer.isPresentationReady(0)).toBe(true);
+  });
+
   it("cancels in-flight frames and releases prepared frames on disposal", async () => {
     const harness = createRendererHarness();
     const buffer = new FrameRingBuffer({

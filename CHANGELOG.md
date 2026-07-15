@@ -76,6 +76,9 @@ All notable changes to this project will be documented here. The project uses
 
 ### Fixed
 
+- Playback readiness now retries refinements cancelled or superseded by rolling-window
+  policy and adaptive quality changes, preventing loop-boundary frames from turning a
+  temporary buffer transition into a fatal dynamic-sequence error.
 - Paged dynamic frames no longer become presentable at metadata initialisation or
   replace the active frame before their root LoD page is resident. Explicit Spark LoD
   invalidation also starts paging immediately after a visibility or refinement change,
