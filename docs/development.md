@@ -74,7 +74,18 @@ VITE_STATIC_RAD_URL=/assets/local-static.rad pnpm dev
 
 The viewport reports `Static RAD ready` only after Spark has fetched and initialised the
 asset. The same environment variable enables the optional `.RAD` assertion in the
-Playwright smoke test.
+Playwright smoke test. The demo applies a 180-degree rotation around the X axis to the
+local `.RAD` object, converting the Y-down/Z-forward capture convention used by the
+current fixtures to Three.js's Y-up/Z-back convention. Production manifests should set
+the equivalent object transform when their source content uses this convention:
+
+```json
+{
+  "transform": {
+    "rotation": { "w": 0, "x": 1, "y": 0, "z": 0 }
+  }
+}
+```
 
 The demo viewport uses Three.js `OrbitControls`: primary-button drag orbits,
 secondary-button drag pans, and the wheel zooms. Touch gestures are enabled by the

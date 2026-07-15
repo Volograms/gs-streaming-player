@@ -91,7 +91,13 @@ export function SparkViewport() {
         if (staticRadUrl !== undefined) {
           try {
             await adapter.loadStaticObject(
-              { id: "demo-static-rad", url: staticRadUrl },
+              {
+                id: "demo-static-rad",
+                transform: {
+                  rotation: { w: 0, x: 1, y: 0, z: 0 },
+                },
+                url: staticRadUrl,
+              },
               { signal: controller.signal },
             );
             if (active) {
