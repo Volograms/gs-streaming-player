@@ -3,14 +3,17 @@ import { createInitialPlaybackState } from "@6g-path/gaussian-player";
 import { sparkRendererCapabilities } from "@6g-path/gaussian-renderer-spark";
 import { SIX_G_TELEMETRY_PACKAGE_ID } from "@6g-path/gaussian-telemetry-6g";
 import { createIdentityTransform } from "@6g-path/shared";
+import { useState } from "react";
 
 import { getFoundationStatus } from "./foundationStatus.js";
 import { SparkViewport } from "./SparkViewport.js";
 
-const playback = createInitialPlaybackState();
 const origin = createIdentityTransform();
 
 export function App() {
+  const [playbackLifecycle, setPlaybackLifecycle] = useState(
+    () => createInitialPlaybackState().lifecycle,
+  );
   const statusItems = getFoundationStatus();
 
   return (
@@ -25,7 +28,9 @@ export function App() {
       </section>
 
       <section className="viewer-shell" aria-label="Player preview">
-        <SparkViewport />
+        <SparkViewport
+          onPlaybackSnapshot={({ lifecycle }) => setPlaybackLifecycle(lifecycle)}
+        />
         <aside className="status-panel">
           <h2>Foundation status</h2>
           <ul>
@@ -42,7 +47,7 @@ export function App() {
       <section className="details" aria-label="Workspace diagnostics">
         <article>
           <span>Player lifecycle</span>
-          <strong>{playback.lifecycle}</strong>
+          <strong data-player-lifecycle={playbackLifecycle}>{playbackLifecycle}</strong>
         </article>
         <article>
           <span>RAD paging</span>

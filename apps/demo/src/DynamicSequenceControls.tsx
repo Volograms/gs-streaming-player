@@ -2,6 +2,7 @@ interface DynamicSequenceControlsProps {
   disabled: boolean;
   frameCount: number;
   frameIndex: number;
+  isBuffering: boolean;
   isPlaying: boolean;
   onNext(): void;
   onPlayPause(): void;
@@ -15,6 +16,7 @@ export function DynamicSequenceControls({
   disabled,
   frameCount,
   frameIndex,
+  isBuffering,
   isPlaying,
   onNext,
   onPlayPause,
@@ -26,6 +28,8 @@ export function DynamicSequenceControls({
   return (
     <section
       className="dynamic-sequence-controls"
+      data-frame-index={frameIndex}
+      data-playback-state={isBuffering ? "buffering" : isPlaying ? "playing" : "paused"}
       aria-label="Dynamic sequence preview"
     >
       <button
@@ -57,7 +61,7 @@ export function DynamicSequenceControls({
           ? `Preparing dynamic RAD ${preparedFrameCount}/${frameCount}`
           : status === "failed"
             ? "Dynamic RAD failed"
-            : `Dynamic RAD ready · Source ${sourceFrameIndex} · ${frameIndex + 1}/${frameCount}`}
+            : `${isBuffering ? "Buffering dynamic RAD" : "Dynamic RAD ready"} · Source ${sourceFrameIndex} · ${frameIndex + 1}/${frameCount}`}
       </output>
     </section>
   );

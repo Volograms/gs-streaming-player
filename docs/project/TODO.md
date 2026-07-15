@@ -10,28 +10,51 @@ acceptance criteria are covered by implementation and verification.
       GS, and mesh scene. The real assets now load and switch together.
 - [ ] E03-T04 — Validate dynamic alpha and background masking behaviour.
 - [ ] E03-T05 — Measure dynamic switching performance.
+- [ ] E05-T02/T08 — Add media-element and audio-master clocks. The monotonic injectable
+      clock and deterministic test clock are now implemented.
+- [ ] E05-T03/T06/T07 — Complete timestamp-based selection, playback-rate support, and
+      the public event model beyond observable state snapshots.
 - [ ] E06-T04/T05 — Extend the base-first buffer scheduler with request cost estimates,
-      per-request priorities, and deadline-aware ordering. Profile the remaining Spark
-      root-residency bottleneck (the real five-frame headless Chromium check currently
-      takes about 2.3 minutes despite bounded requests).
+      per-request priorities, deadline-aware ordering, and network-selected quality
+      targets. The isolated five-frame real-asset Chromium check now completes in about
+      five seconds; sustained playback profiling remains.
 - [ ] E06-T06/T09 — Complete independent in-flight refinement cancellation and memory
       budget integration beyond frame-count eviction.
 
 ## Completed
 
+### Stable presentation and playback clock foundation (2026-07-15)
+
+- [x] E05-T01 — Implement the explicit playback state machine foundation.
+- [x] E06-T03 — Define and enforce minimum viable frame quality.
+- [x] E06-T08 — Hold the current frame and enter `BUFFERING` when required quality is
+      unavailable.
+
+Presentation readiness now means a configurable spatial target is resident, uploaded,
+and stable across Spark render turns; root residency alone is only base readiness. Every
+handoff revalidates the renderer because the shared page pool may evict a formerly ready
+frame. The player-core playback controller uses absolute monotonic deadlines, prebuffers
+two presentation-ready frames, emits `PLAYING`/`BUFFERING`/`PAUSED` states, and keeps
+the old frame visible on a miss. Deterministic tests exercise 30 deadlines per second,
+startup buffering, missed-frame hold, and pause cancellation.
+
+The isolated Chromium test loads the five-frame window, switches Next/Previous, starts
+the absolute-deadline playback controller, observes frame advancement, and pauses again
+in about five seconds against frames 40-50.
+
 ### E06 bounded temporal buffer foundation (2026-07-15)
 
 - [x] E06-T01 — Define observable buffered-frame state.
 - [x] E06-T02 — Implement a configurable, bounded frame ring buffer.
-- [x] E06-T03 — Treat a resident Spark root page as minimum playable quality.
 
 The demo now owns only the current frame, three future frames, and one previous frame.
-It presents the current frame as soon as that frame is playable, fills the rest of the
-window in the background, and enables future refinement only after all owned base pages
-are resident. Seeking preserves the displayed frame until its replacement is playable.
-Unit tests cover base-first refinement, bounded ownership, cancellation, eviction, and
-non-adjacent seeks. Real Chromium validation requested exactly frames 40-43 and 50 for
-the initial looped window and switched Next/Previous without camera interaction.
+It presents the current frame only after the configured presentation target is stable,
+fills the rest of the window in the background, and enables future refinement after base
+preparation. Seeking preserves the displayed frame until its replacement is
+presentation-ready. Unit tests cover base-first refinement, bounded ownership,
+cancellation, eviction, and non-adjacent seeks. Real Chromium validation requested
+exactly frames 40-43 and 50 for the initial looped window and switched Next/Previous
+without camera interaction.
 
 ### E03 coordinate and alignment foundation (2026-07-15)
 

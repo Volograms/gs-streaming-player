@@ -9,6 +9,7 @@ export type {
 } from "./manifest/types.js";
 export {
   FrameRingBuffer,
+  type FramePresentationOptions,
   type FrameRingBufferOptions,
 } from "./buffering/FrameRingBuffer.js";
 export type {
@@ -46,13 +47,25 @@ export {
   type PlaybackState,
   type PlayerLifecycleState,
 } from "./player/playbackState.js";
+export {
+  SequencePlaybackController,
+  type PlaybackClock,
+  type SequencePlaybackBuffer,
+  type SequencePlaybackControllerOptions,
+  type SequencePlaybackSnapshot,
+} from "./player/SequencePlaybackController.js";
 export type {
   PlayerMetrics,
   QualityController,
   QualityDecision,
 } from "./quality/types.js";
 export type {
+  FramePresentationQuality,
+  FramePresentationQualityState,
   FramePreparationOptions,
+  FrameQualityProgressCallback,
+  FrameQualityTarget,
+  FrameRefinementOptions,
   GaussianRendererAdapter,
   PreparedFrame,
   RendererLoadOptions,

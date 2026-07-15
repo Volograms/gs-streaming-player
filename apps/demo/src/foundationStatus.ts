@@ -8,6 +8,7 @@ export function getFoundationStatus(): FoundationStatusItem[] {
     { label: "Strict TypeScript package boundaries", status: "ready" },
     { label: "Framework-independent player core", status: "ready" },
     { label: "Spark renderer implementation", status: "ready" },
-    { label: "Temporal streaming engine", status: "planned" },
+    { label: "Temporal streaming engine", status: "ready" },
+    { label: "Network-adaptive quality policy", status: "planned" },
   ];
 }

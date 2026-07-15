@@ -51,6 +51,11 @@ All notable changes to this project will be documented here. The project uses
   refinement, cancellation, and deterministic eviction.
 - Demo integration of the five-slot temporal buffer, keeping the current frame visible
   while a requested replacement reaches minimum playable quality.
+- Renderer-neutral per-frame presentation-quality targets with Spark page-demand,
+  upload, selected-splat, and mapping-stability inspection.
+- Framework-independent sequence playback controller with an injectable monotonic clock,
+  absolute 30 fps deadlines, startup reserve, pause/seek/loop controls, explicit
+  buffering state, and dropped-frame accounting.
 
 ### Fixed
 
@@ -58,3 +63,8 @@ All notable changes to this project will be documented here. The project uses
   replace the active frame before their root LoD page is resident. Explicit Spark LoD
   invalidation also starts paging immediately after a visibility or refinement change,
   without requiring camera interaction.
+- Dynamic frames no longer hand off at root-only quality or retain stale readiness after
+  Spark page eviction. The active frame remains visible until the replacement's current
+  presentation target is resident and stable.
+- Demo playback no longer uses a drifting React interval or serialises frame rate behind
+  async loads; timing and buffering now remain in the player core.

@@ -75,5 +75,22 @@ test("loads the demo application and workspace packages", async ({ page }) => {
     await expect(page.getByText(new RegExp(`Source ${dynamicStartFrame}`))).toBeVisible(
       { timeout: 120_000 },
     );
+
+    const dynamicControls = page.getByRole("region", {
+      name: "Dynamic sequence preview",
+    });
+    await page.getByRole("button", { name: "Play dynamic sequence" }).click();
+    await expect(
+      page.getByRole("button", { name: "Pause dynamic sequence" }),
+    ).toBeVisible();
+    await expect(dynamicControls).toHaveAttribute("data-frame-index", /^(?!0$)\d+$/, {
+      timeout: 10_000,
+    });
+    await page.getByRole("button", { name: "Pause dynamic sequence" }).click();
+    await expect(dynamicControls).toHaveAttribute("data-playback-state", "paused");
+    await expect(page.locator("[data-player-lifecycle]")).toHaveAttribute(
+      "data-player-lifecycle",
+      "PAUSED",
+    );
   }
 });

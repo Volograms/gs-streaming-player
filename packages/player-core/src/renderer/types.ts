@@ -16,6 +16,37 @@ export interface FramePreparationOptions {
   transform?: Transform;
 }
 
+export interface FrameQualityTarget {
+  /** Renderer-neutral spatial detail target in the range (0, 1]. */
+  detailLevel: number;
+  /** Optional view-specific floor; use zero when LoD selection should decide the count. */
+  minimumSplatCount: number;
+}
+
+export type FramePresentationQualityState = "refining" | "root-ready" | "presentable";
+
+export interface FramePresentationQuality {
+  demandedPageCount?: number;
+  detailLevel: number;
+  fetchingPageCount?: number;
+  loadedBytes?: number;
+  maximumSplatCount?: number;
+  residentPageCount?: number;
+  selectedSplatCount?: number;
+  state: FramePresentationQualityState;
+  totalBytes?: number;
+  uploadPendingPageCount?: number;
+}
+
+export type FrameQualityProgressCallback = (
+  quality: Readonly<FramePresentationQuality>,
+) => void;
+
+export interface FrameRefinementOptions {
+  onProgress?: FrameQualityProgressCallback;
+  signal?: AbortSignal;
+}
+
 export interface RendererLoadProgress {
   fraction?: number;
   loadedBytes: number;
@@ -91,6 +122,12 @@ export interface GaussianRendererAdapter {
   presentFrame(frame: PreparedFrame): void;
   hideFrame(frame: PreparedFrame): void;
   releaseFrame(frame: PreparedFrame): void;
+  refineFrame(
+    frame: PreparedFrame,
+    target: FrameQualityTarget,
+    options?: FrameRefinementOptions,
+  ): Promise<FramePresentationQuality>;
+  getFramePresentationQuality(frame: PreparedFrame): FramePresentationQuality;
   /** Enable or suppress enhancement-quality paging for an inactive prepared frame. */
   setFrameRefinement(frame: PreparedFrame, enabled: boolean): void;
   setObjectTransform(objectId: string, transform: Transform): void;

@@ -17,7 +17,10 @@ import type { ResizeObserverLike, SparkRendererRuntime } from "./runtime.js";
 import type { SparkFrameSlotSnapshot } from "./SparkFrameSlot.js";
 import type { SparkRendererAdapterOptions } from "./types.js";
 import type {
+  FramePresentationQuality,
   FramePreparationOptions,
+  FrameQualityTarget,
+  FrameRefinementOptions,
   GaussianFrameSource,
   GaussianRendererAdapter,
   MeshSceneObject,
@@ -75,6 +78,7 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
   private lastRenderTime: number | undefined;
   private rendererValue: WebGLRenderer | undefined;
   private renderFramesPerSecond: number | undefined;
+  private renderRevision = 0;
   private resizeObserver: ResizeObserverLike | undefined;
   private sceneValue: Scene | undefined;
   private sparkValue: SparkRenderer | undefined;
@@ -259,6 +263,7 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
     throwIfAborted(options.signal);
     const slot = new SparkFrameSlot({
       createSplatMesh: (slotOptions) => this.runtime.createSplatMesh(slotOptions),
+      getRenderRevision: () => this.renderRevision,
       invalidateLod: () => this.invalidateLod(),
       scene: this.scene,
       slotId: this.nextFrameSlotId,
@@ -353,6 +358,18 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
     return [...this.frameSlots].map((slot) => slot.snapshot);
   }
 
+  refineFrame(
+    frame: PreparedFrame,
+    target: FrameQualityTarget,
+    options?: FrameRefinementOptions,
+  ): Promise<FramePresentationQuality> {
+    return this.requirePreparedFrame(frame).refine(target, options);
+  }
+
+  getFramePresentationQuality(frame: PreparedFrame): FramePresentationQuality {
+    return this.requirePreparedFrame(frame).getPresentationQuality();
+  }
+
   setFrameRefinement(frame: PreparedFrame, enabled: boolean): void {
     this.requirePreparedFrame(frame).setWarmLodScaleFraction(enabled ? 1 : 0);
   }
@@ -409,6 +426,7 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
     }
     this.lastRenderTime = now;
     this.renderer.render(this.scene, this.camera);
+    this.renderRevision += 1;
   };
 
   start(): void {

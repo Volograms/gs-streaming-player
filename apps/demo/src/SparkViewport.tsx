@@ -1,10 +1,10 @@
-import { FrameRingBuffer } from "@6g-path/gaussian-player";
+import { FrameRingBuffer, SequencePlaybackController } from "@6g-path/gaussian-player";
 import {
   cloneSparkRenderQuality,
   DEFAULT_SPARK_RENDER_QUALITY,
   SparkGaussianRendererAdapter,
 } from "@6g-path/gaussian-renderer-spark";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 import { DynamicSequenceControls } from "./DynamicSequenceControls.js";
@@ -13,7 +13,11 @@ import { RendererMetricsOverlay } from "./RendererMetricsOverlay.js";
 import { CAPTURE_TO_THREE_TRANSFORM } from "./sceneCoordinates.js";
 import { SparkQualityControls } from "./SparkQualityControls.js";
 
-import type { RendererMetrics } from "@6g-path/gaussian-player";
+import type {
+  PlayerLifecycleState,
+  RendererMetrics,
+  SequencePlaybackSnapshot,
+} from "@6g-path/gaussian-player";
 import type { SparkRenderQualityConfiguration } from "@6g-path/gaussian-renderer-spark";
 
 type RendererStatus = "initialising" | "ready" | "unavailable";
@@ -31,17 +35,23 @@ function createInitialQuality(): SparkRenderQualityConfiguration {
   };
 }
 
-export function SparkViewport() {
+interface SparkViewportProps {
+  onPlaybackSnapshot?(snapshot: Readonly<SequencePlaybackSnapshot>): void;
+}
+
+export function SparkViewport({ onPlaybackSnapshot }: SparkViewportProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const adapterRef = useRef<SparkGaussianRendererAdapter | null>(null);
   const bufferRef = useRef<FrameRingBuffer | null>(null);
-  const dynamicSwitchingRef = useRef(false);
+  const playbackRef = useRef<SequencePlaybackController | null>(null);
+  const playbackSnapshotListenerRef = useRef(onPlaybackSnapshot);
   const [dynamicAssetStatus, setDynamicAssetStatus] = useState<DynamicAssetStatus>(
     dynamicSequence === undefined ? "not-configured" : "loading",
   );
   const [dynamicFrameIndex, setDynamicFrameIndex] = useState(0);
   const [isDynamicPlaying, setIsDynamicPlaying] = useState(false);
-  const [isDynamicSwitching, setIsDynamicSwitching] = useState(false);
+  const [dynamicPlaybackLifecycle, setDynamicPlaybackLifecycle] =
+    useState<PlayerLifecycleState>("IDLE");
   const [metrics, setMetrics] = useState<RendererMetrics>();
   const [preparedFrameCount, setPreparedFrameCount] = useState(0);
   const [quality, setQuality] = useState(createInitialQuality);
@@ -50,6 +60,10 @@ export function SparkViewport() {
   const [staticAssetStatus, setStaticAssetStatus] = useState<StaticAssetStatus>(
     staticRadUrl === undefined ? "not-configured" : "loading",
   );
+
+  useEffect(() => {
+    playbackSnapshotListenerRef.current = onPlaybackSnapshot;
+  }, [onPlaybackSnapshot]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -62,6 +76,7 @@ export function SparkViewport() {
     let rendererInitialised = false;
     let metricsTimer: number | undefined;
     let unsubscribeBuffer: (() => void) | undefined;
+    let unsubscribePlayback: (() => void) | undefined;
     const controller = new AbortController();
     const adapter = new SparkGaussianRendererAdapter({ autoRender: false, canvas });
 
@@ -138,7 +153,7 @@ export function SparkViewport() {
             if (active) {
               setPreparedFrameCount(
                 frames.filter(
-                  ({ status }) => status !== "loading-base" && status !== "failed",
+                  ({ status }) => status === "ready" || status === "presented",
                 ).length,
               );
             }
@@ -146,6 +161,26 @@ export function SparkViewport() {
           try {
             await buffer.initialise(0);
             if (active) {
+              const playback = new SequencePlaybackController({
+                buffer,
+                loop: true,
+                minimumReadyFrames: 2,
+                sequence: dynamicSequence,
+              });
+              playbackRef.current = playback;
+              unsubscribePlayback = playback.subscribe((snapshot) => {
+                if (!active) {
+                  return;
+                }
+                setDynamicFrameIndex(snapshot.currentFrameIndex);
+                setDynamicPlaybackLifecycle(snapshot.lifecycle);
+                setIsDynamicPlaying(snapshot.isPlaying);
+                playbackSnapshotListenerRef.current?.(snapshot);
+                if (snapshot.lifecycle === "ERROR") {
+                  console.error("Dynamic sequence playback failed.", snapshot.error);
+                  setDynamicAssetStatus("failed");
+                }
+              });
               setDynamicAssetStatus("ready");
             }
           } catch (error) {
@@ -176,7 +211,9 @@ export function SparkViewport() {
       active = false;
       controller.abort();
       adapterRef.current = null;
-      dynamicSwitchingRef.current = false;
+      unsubscribePlayback?.();
+      playbackRef.current?.dispose();
+      playbackRef.current = null;
       unsubscribeBuffer?.();
       bufferRef.current?.dispose();
       bufferRef.current = null;
@@ -191,48 +228,6 @@ export function SparkViewport() {
     };
   }, []);
 
-  const presentDynamicFrame = useCallback(async (frameIndex: number) => {
-    const buffer = bufferRef.current;
-    if (buffer === null || dynamicSwitchingRef.current) {
-      return;
-    }
-    dynamicSwitchingRef.current = true;
-    setIsDynamicSwitching(true);
-    try {
-      await buffer.present(frameIndex);
-      if (bufferRef.current === buffer) {
-        setDynamicFrameIndex(frameIndex);
-      }
-    } catch (error) {
-      if (bufferRef.current === buffer) {
-        console.error("Unable to present the requested dynamic RAD frame.", error);
-        setDynamicAssetStatus("failed");
-        setIsDynamicPlaying(false);
-      }
-    } finally {
-      if (bufferRef.current === buffer) {
-        dynamicSwitchingRef.current = false;
-        setIsDynamicSwitching(false);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isDynamicPlaying || dynamicAssetStatus !== "ready") {
-      return;
-    }
-    const sequence = dynamicSequence;
-    if (sequence === undefined) {
-      return;
-    }
-    const timer = window.setInterval(() => {
-      if (!dynamicSwitchingRef.current) {
-        void presentDynamicFrame((dynamicFrameIndex + 1) % sequence.frameCount);
-      }
-    }, 1000 / sequence.frameRate);
-    return () => window.clearInterval(timer);
-  }, [dynamicAssetStatus, dynamicFrameIndex, isDynamicPlaying, presentDynamicFrame]);
-
   function updateQuality(configuration: SparkRenderQualityConfiguration) {
     qualityRef.current = configuration;
     setQuality(configuration);
@@ -240,10 +235,21 @@ export function SparkViewport() {
   }
 
   function stepDynamicFrame(delta: number) {
-    setIsDynamicPlaying(false);
-    const frameCount = dynamicSequence?.frameCount ?? 0;
-    if (frameCount > 0) {
-      void presentDynamicFrame((dynamicFrameIndex + delta + frameCount) % frameCount);
+    void playbackRef.current?.step(delta).catch((error: unknown) => {
+      console.error("Unable to present the requested dynamic RAD frame.", error);
+      setDynamicAssetStatus("failed");
+    });
+  }
+
+  function toggleDynamicPlayback() {
+    const playback = playbackRef.current;
+    if (playback === null) {
+      return;
+    }
+    if (playback.snapshot.isPlaying) {
+      playback.pause();
+    } else {
+      playback.play();
     }
   }
 
@@ -265,12 +271,15 @@ export function SparkViewport() {
       {dynamicSequence === undefined ||
       dynamicAssetStatus === "not-configured" ? null : (
         <DynamicSequenceControls
-          disabled={dynamicAssetStatus !== "ready" || isDynamicSwitching}
+          disabled={
+            dynamicAssetStatus !== "ready" || dynamicPlaybackLifecycle === "SEEKING"
+          }
           frameCount={dynamicSequence.frameCount}
           frameIndex={dynamicFrameIndex}
           isPlaying={isDynamicPlaying}
+          isBuffering={dynamicPlaybackLifecycle === "BUFFERING"}
           onNext={() => stepDynamicFrame(1)}
-          onPlayPause={() => setIsDynamicPlaying((playing) => !playing)}
+          onPlayPause={toggleDynamicPlayback}
           onPrevious={() => stepDynamicFrame(-1)}
           preparedFrameCount={preparedFrameCount}
           sourceFrameIndex={

@@ -4,15 +4,16 @@ Architecture decisions are recorded as ADRs in
 [`docs/architecture/decisions`](../architecture/decisions). This file is the short index
 used during day-to-day implementation.
 
-| ADR  | Decision                                         | Status   |
-| ---- | ------------------------------------------------ | -------- |
-| 0001 | Use a pnpm workspace monorepo                    | Accepted |
-| 0002 | Isolate renderers behind a core adapter          | Accepted |
-| 0003 | Use one `.RAD` asset per dynamic frame initially | Accepted |
-| 0004 | Inject adaptive quality policy                   | Accepted |
-| 0005 | Make the sequence manifest player-owned          | Accepted |
-| 0006 | Normalise network telemetry behind a provider    | Accepted |
-| 0007 | Keep coordinate conversion in content transforms | Accepted |
+| ADR  | Decision                                            | Status   |
+| ---- | --------------------------------------------------- | -------- |
+| 0001 | Use a pnpm workspace monorepo                       | Accepted |
+| 0002 | Isolate renderers behind a core adapter             | Accepted |
+| 0003 | Use one `.RAD` asset per dynamic frame initially    | Accepted |
+| 0004 | Inject adaptive quality policy                      | Accepted |
+| 0005 | Make the sequence manifest player-owned             | Accepted |
+| 0006 | Normalise network telemetry behind a provider       | Accepted |
+| 0007 | Keep coordinate conversion in content transforms    | Accepted |
+| 0008 | Gate presentation quality and use an absolute clock | Accepted |
 
 ## Working conventions
 
@@ -42,13 +43,17 @@ used during day-to-day implementation.
 - Dynamic Spark resources are owned by explicit frame slots; presentation changes slot
   visibility, while release or cancellation disposes the slot's mesh without recreating
   the scene.
-- A prepared paged frame must have its root LoD page resident. Inactive buffered slots
-  remain transparent; `SplatMesh.initialized` alone is not a playback readiness signal.
-  All owned slots reach root-only quality before the buffer enables enhancement paging
-  for future frames.
+- A prepared paged frame must have its root LoD page resident, but this is only base
+  readiness. A frame is presentation-ready after its configured spatial-quality demand
+  is resident and stable. Inactive buffered slots remain transparent, and readiness is
+  revalidated immediately before handoff because Spark may evict pages later.
 - The initial temporal buffer owns one presented frame, three future frames, and one
   previous frame. The window size is configurable, base quality has priority over
-  refinement, and a replacement never evicts the presented frame before it is playable.
+  refinement, and a replacement never evicts the presented frame before it is
+  presentation-ready.
 - Spark-specific LoD and foveation settings remain on the concrete adapter. The core
   quality decision is translated at the boundary so Spark properties do not leak into
   `player-core`.
+- Playback uses absolute deadlines from a monotonic, injectable clock. A missing
+  presentation-ready frame holds the current frame and enters `BUFFERING`; the initial
+  no-audio clock pauses media time across that stall.

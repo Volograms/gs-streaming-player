@@ -113,9 +113,19 @@ The demo maps the source range to zero-based logical frame indices, applies the 
 capture-to-world transform, and exposes Previous, Play/Pause, and Next diagnostic
 controls. A configurable player-core ring buffer owns at most five frames by default:
 the presented frame, three future frames, and one previous frame. The current frame
-appears as soon as its root page is resident while the remaining window fills in the
-background. Base pages are prioritised before future-frame refinement. If a requested
-frame is not yet playable, the controls wait and the current frame remains visible.
+appears only after its presentation-quality target is resident and stable while the
+remaining window fills in the background. A root page is base readiness and is never
+shown as the final handoff quality. If a requested frame misses its absolute 30 fps
+deadline, the controls report `Buffering dynamic RAD` and the current frame remains
+visible. Playback resumes from a new monotonic clock anchor after two future frames are
+presentation-ready.
+
+The deterministic baseline target is 0.25 spatial detail. It is configurable through the
+`FrameRingBuffer` API, including an optional selected-splat floor for controlled
+experiments. The floor defaults to zero because a valid count depends on camera view and
+the global render budget. This gate guarantees stable handoff, but sustained 30 fps
+still requires enough network/decode/upload throughput for that target. Generic
+throughput-driven target selection is the next adaptive-quality slice.
 
 Run the opt-in real-asset browser check with the same environment variables:
 

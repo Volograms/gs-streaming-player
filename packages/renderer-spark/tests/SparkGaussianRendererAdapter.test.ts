@@ -24,7 +24,9 @@ class FakeSplatMesh extends Object3D {
   readonly dispose = vi.fn();
   readonly initialized: Promise<FakeSplatMesh>;
   lodScale = 1;
+  mappingVersion = 0;
   maxSh = 3;
+  numSplats = 0;
   opacity = 1;
   paged?: SplatMesh["paged"];
   readonly updateGenerator = vi.fn();
@@ -469,6 +471,114 @@ describe("SparkGaussianRendererAdapter", () => {
     expect(adapter.getFrameSlotSnapshots()[0]).toMatchObject({ visible: true });
     expect(harness.spark.lodDirty).toBe(true);
     expect(harness.spark.setDirty).toHaveBeenCalled();
+  });
+
+  it("does not mark a paged frame presentable until demanded pages are uploaded and stable", async () => {
+    const harness = createHarness();
+    const initialiser = deferred<void>();
+    harness.splatInitialisers.push(initialiser.promise);
+    const adapter = new SparkGaussianRendererAdapter({
+      autoRender: false,
+      renderer: harness.renderer,
+      runtime: harness.runtime,
+      scene: harness.scene,
+    });
+    await adapter.initialise();
+    const preparation = adapter.prepareFrame(
+      "actor",
+      { frameIndex: 0, timestampSeconds: 0, url: "/frame-0.rad" },
+      {},
+    );
+    const mesh = harness.splatMeshes[0];
+    if (mesh === undefined) {
+      throw new Error("Expected the frame mesh to be created synchronously.");
+    }
+
+    const mappings: Array<{ lru: number; page: number } | undefined> = [
+      { lru: 0, page: 0 },
+      undefined,
+    ];
+    const newUploads: Array<{ page: number }> = [];
+    const readyUploads: Array<{ page: number }> = [];
+    const fetchPriority: Array<{ chunk: number; splats: unknown }> = [];
+    const pager = {
+      fetchers: [],
+      fetched: [],
+      fetchPriority,
+      getSplatsChunk: vi.fn((_splats: unknown, chunk: number) => mappings[chunk]),
+      lodTreeUpdates: [],
+      newUploads,
+      readyUploads,
+      splatsChunkToPage: new Map<unknown, typeof mappings>(),
+    };
+    const paged = {
+      getRadMeta: vi.fn(async () => ({
+        meta: {
+          chunks: [{ bytes: 100 }, { bytes: 300 }],
+          count: 1_000,
+        },
+      })),
+      numSplats: 1,
+      pager,
+    };
+    pager.splatsChunkToPage.set(paged, mappings);
+    fetchPriority.push({ chunk: 0, splats: paged }, { chunk: 1, splats: paged });
+    mesh.paged = paged as unknown as NonNullable<SplatMesh["paged"]>;
+    initialiser.resolve();
+    const prepared = await preparation;
+
+    expect(adapter.getFramePresentationQuality(prepared)).toMatchObject({
+      loadedBytes: 100,
+      selectedSplatCount: 1,
+      state: "root-ready",
+      totalBytes: 400,
+    });
+
+    let refinementResolved = false;
+    const refinement = adapter.refineFrame(prepared, {
+      detailLevel: 0.25,
+      minimumSplatCount: 100,
+    });
+    void refinement.then(() => {
+      refinementResolved = true;
+    });
+    expect(mesh).toMatchObject({ lodScale: 0.25, visible: true, opacity: 0 });
+
+    mappings[1] = { lru: 0, page: 1 };
+    newUploads.push({ page: 1 });
+    paged.numSplats = 100;
+    mesh.mappingVersion = 1;
+    adapter.render();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(refinementResolved).toBe(false);
+
+    newUploads.pop();
+    mesh.mappingVersion = 2;
+    adapter.render();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(refinementResolved).toBe(false);
+
+    mesh.mappingVersion = 3;
+    adapter.render();
+    await expect(refinement).resolves.toMatchObject({
+      demandedPageCount: 2,
+      detailLevel: 0.25,
+      loadedBytes: 400,
+      selectedSplatCount: 100,
+      state: "presentable",
+    });
+
+    adapter.presentFrame(prepared);
+    expect(mesh).toMatchObject({ lodScale: 0.25, opacity: 1, visible: true });
+
+    mappings[1] = undefined;
+    paged.numSplats = 1;
+    mesh.mappingVersion = 4;
+    expect(adapter.getFramePresentationQuality(prepared)).toMatchObject({
+      detailLevel: 0.25,
+      loadedBytes: 100,
+      state: "refining",
+    });
   });
 
   it("rejects cancelled and duplicate operations without corrupting loaded state", async () => {

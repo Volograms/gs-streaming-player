@@ -3,7 +3,10 @@ import { SparkRendererAbortError, SparkRendererStateError } from "./errors.js";
 import { applyTransform } from "./transform.js";
 
 import type {
+  FramePresentationQuality,
   FramePreparationOptions,
+  FrameQualityTarget,
+  FrameRefinementOptions,
   GaussianFrameSource,
   PreparedFrame,
   RendererResourceMetrics,
@@ -18,6 +21,7 @@ export interface SparkFrameSlotSnapshot {
   error?: unknown;
   frameIndex?: number;
   loadedBytes?: number;
+  presentationQuality?: FramePresentationQuality;
   qualityLevel?: number;
   sequenceId?: string;
   slotId: number;
@@ -29,18 +33,29 @@ export interface SparkFrameSlotSnapshot {
 
 export interface SparkFrameSlotOptions {
   createSplatMesh(options: SplatMeshOptions): SplatMesh;
+  getRenderRevision(): number;
   invalidateLod(): void;
   scene: Scene;
   slotId: number;
 }
 
+interface FrameQualityInspection {
+  demandKey: string;
+  mappingVersion: number;
+  settled: boolean;
+  snapshot: FramePresentationQuality;
+}
+
 export class SparkFrameSlot {
   readonly slotId: number;
   private abortController: AbortController | undefined;
+  private chunkBytesValue: readonly number[] = [];
+  private committedLodScaleFractionValue = 1;
   private errorValue: unknown;
   private frameValue: PreparedFrame | undefined;
   private loadedBytesValue: number | undefined;
   private lodScaleValue = 1;
+  private maximumSplatCountValue: number | undefined;
   private meshValue: SplatMesh | undefined;
   private readonly options: SparkFrameSlotOptions;
   private presentedValue = false;
@@ -48,6 +63,12 @@ export class SparkFrameSlot {
   private sourceValue: GaussianFrameSource | undefined;
   private stateValue: SparkFrameSlotState = "empty";
   private totalBytesValue: number | undefined;
+  private qualityTargetRevision = 0;
+  private presentationReadyRevision = -1;
+  private qualityTargetValue: FrameQualityTarget = {
+    detailLevel: 0,
+    minimumSplatCount: 0,
+  };
   private warmLodScaleFractionValue = 0;
 
   constructor(options: SparkFrameSlotOptions) {
@@ -78,6 +99,9 @@ export class SparkFrameSlot {
       ...(this.loadedBytesValue === undefined
         ? {}
         : { loadedBytes: this.loadedBytesValue }),
+      ...(this.meshValue === undefined
+        ? {}
+        : { presentationQuality: this.getPresentationQuality() }),
       slotId: this.slotId,
       ...(this.sourceValue === undefined ? {} : { source: this.sourceValue }),
       state: this.stateValue,
@@ -144,6 +168,7 @@ export class SparkFrameSlot {
       if (this.isReleased()) {
         throw new SparkRendererStateError(`Frame slot ${this.slotId} was released.`);
       }
+      await this.loadPagedMetadata(mesh, controller.signal);
       applyTransform(mesh, options.transform);
       this.options.scene.add(mesh);
       await this.waitForMinimumRenderablePage(mesh, controller.signal);
@@ -174,7 +199,7 @@ export class SparkFrameSlot {
 
   present(): void {
     const mesh = this.requireReadyMesh();
-    mesh.lodScale = this.lodScaleValue;
+    mesh.lodScale = this.lodScaleValue * this.committedLodScaleFractionValue;
     mesh.opacity = 1;
     mesh.visible = true;
     this.presentedValue = true;
@@ -198,6 +223,140 @@ export class SparkFrameSlot {
     this.options.invalidateLod();
   }
 
+  refine(
+    target: FrameQualityTarget,
+    options: FrameRefinementOptions = {},
+  ): Promise<FramePresentationQuality> {
+    if (
+      !Number.isFinite(target.detailLevel) ||
+      target.detailLevel <= 0 ||
+      target.detailLevel > 1
+    ) {
+      throw new RangeError("Frame detailLevel must be greater than 0 and at most 1.");
+    }
+    if (!Number.isInteger(target.minimumSplatCount) || target.minimumSplatCount < 0) {
+      throw new RangeError("minimumSplatCount must be a non-negative integer.");
+    }
+    if (options.signal?.aborted === true) {
+      return Promise.reject(new SparkRendererAbortError());
+    }
+
+    const mesh = this.requireReadyMesh();
+    if (
+      this.maximumSplatCountValue !== undefined &&
+      target.minimumSplatCount > this.maximumSplatCountValue
+    ) {
+      return Promise.reject(
+        new SparkRendererStateError(
+          `Frame has at most ${this.maximumSplatCountValue} splats, below the requested minimum of ${target.minimumSplatCount}.`,
+        ),
+      );
+    }
+    const revision = this.qualityTargetRevision + 1;
+    this.qualityTargetRevision = revision;
+    this.presentationReadyRevision = -1;
+    this.qualityTargetValue = { ...target };
+    this.warmLodScaleFractionValue = target.detailLevel;
+    mesh.lodScale = this.lodScaleValue * target.detailLevel;
+    this.options.invalidateLod();
+
+    if (mesh.paged === undefined) {
+      if (mesh.numSplats < target.minimumSplatCount) {
+        return Promise.reject(
+          new SparkRendererStateError(
+            `Frame has ${mesh.numSplats} splats, below the requested minimum of ${target.minimumSplatCount}.`,
+          ),
+        );
+      }
+      this.committedLodScaleFractionValue = target.detailLevel;
+      this.presentationReadyRevision = revision;
+      const snapshot = this.getPresentationQuality();
+      options.onProgress?.(snapshot);
+      return Promise.resolve(snapshot);
+    }
+
+    const startingMappingVersion = mesh.mappingVersion;
+    const startingRenderRevision = this.options.getRenderRevision();
+    return new Promise<FramePresentationQuality>((resolve, reject) => {
+      let candidate: { demandKey: string; renderRevision: number } | undefined;
+      let lastProgressKey = "";
+      let timer: ReturnType<typeof setTimeout> | undefined;
+
+      const cleanup = () => {
+        if (timer !== undefined) {
+          clearTimeout(timer);
+        }
+        options.signal?.removeEventListener("abort", handleAbort);
+      };
+      const handleAbort = () => {
+        cleanup();
+        reject(new SparkRendererAbortError());
+      };
+      const scheduleCheck = (delay = 16) => {
+        timer = setTimeout(check, delay);
+      };
+      const check = () => {
+        if (options.signal?.aborted === true) {
+          handleAbort();
+          return;
+        }
+        if (revision !== this.qualityTargetRevision || this.isReleased()) {
+          cleanup();
+          reject(new SparkRendererAbortError("Frame refinement was superseded."));
+          return;
+        }
+
+        const inspection = this.inspectPresentationQuality();
+        const progressKey = JSON.stringify(inspection.snapshot);
+        if (progressKey !== lastProgressKey) {
+          lastProgressKey = progressKey;
+          options.onProgress?.(inspection.snapshot);
+        }
+
+        const renderRevision = this.options.getRenderRevision();
+        if (inspection.settled && renderRevision > startingRenderRevision) {
+          if (
+            candidate !== undefined &&
+            inspection.demandKey === candidate.demandKey &&
+            renderRevision > candidate.renderRevision &&
+            (inspection.mappingVersion > startingMappingVersion ||
+              renderRevision >= candidate.renderRevision + 2)
+          ) {
+            this.committedLodScaleFractionValue = target.detailLevel;
+            this.presentationReadyRevision = revision;
+            cleanup();
+            const snapshot = this.getPresentationQuality();
+            options.onProgress?.(snapshot);
+            resolve(snapshot);
+            return;
+          }
+          if (candidate === undefined || inspection.demandKey !== candidate.demandKey) {
+            candidate = {
+              demandKey: inspection.demandKey,
+              renderRevision,
+            };
+          }
+          this.options.invalidateLod();
+        } else {
+          candidate = undefined;
+          this.options.invalidateLod();
+        }
+        scheduleCheck(16);
+      };
+
+      options.signal?.addEventListener("abort", handleAbort, { once: true });
+      check();
+    });
+  }
+
+  getPresentationQuality(): FramePresentationQuality {
+    const inspection = this.inspectPresentationQuality();
+    return this.presentationReadyRevision === this.qualityTargetRevision &&
+      inspection.settled
+      ? { ...inspection.snapshot, state: "presentable" }
+      : inspection.snapshot;
+  }
+
   cancel(): void {
     this.abortController?.abort();
   }
@@ -206,13 +365,21 @@ export class SparkFrameSlot {
     this.lodScaleValue = scale;
     const mesh = this.meshValue;
     if (mesh !== undefined) {
-      mesh.lodScale = this.presentedValue ? scale : this.getWarmLodScale();
+      mesh.lodScale = this.presentedValue
+        ? scale * this.committedLodScaleFractionValue
+        : this.getWarmLodScale();
       this.options.invalidateLod();
     }
   }
 
   setWarmLodScaleFraction(fraction: number): void {
     this.warmLodScaleFractionValue = Math.max(0, fraction);
+    this.qualityTargetRevision += 1;
+    this.presentationReadyRevision = -1;
+    this.qualityTargetValue = {
+      detailLevel: this.warmLodScaleFractionValue,
+      minimumSplatCount: 0,
+    };
     const mesh = this.meshValue;
     if (mesh !== undefined && !this.presentedValue) {
       mesh.lodScale = this.getWarmLodScale();
@@ -256,6 +423,7 @@ export class SparkFrameSlot {
       return;
     }
     this.stateValue = "released";
+    this.qualityTargetRevision += 1;
     this.abortController?.abort();
     this.disposeMesh();
     this.frameValue = undefined;
@@ -266,12 +434,18 @@ export class SparkFrameSlot {
   private clearFrame(): void {
     this.disposeMesh();
     this.errorValue = undefined;
+    this.chunkBytesValue = [];
+    this.committedLodScaleFractionValue = 1;
     this.frameValue = undefined;
     this.loadedBytesValue = undefined;
+    this.maximumSplatCountValue = undefined;
     this.presentedValue = false;
     this.sourceValue = undefined;
     this.sequenceIdValue = undefined;
     this.totalBytesValue = undefined;
+    this.presentationReadyRevision = -1;
+    this.qualityTargetRevision += 1;
+    this.qualityTargetValue = { detailLevel: 0, minimumSplatCount: 0 };
   }
 
   private disposeMesh(): void {
@@ -281,6 +455,123 @@ export class SparkFrameSlot {
       mesh.removeFromParent();
       mesh.dispose();
     }
+  }
+
+  private async loadPagedMetadata(mesh: SplatMesh, signal: AbortSignal): Promise<void> {
+    const paged = mesh.paged;
+    if (paged === undefined || typeof paged.getRadMeta !== "function") {
+      return;
+    }
+    const { meta } = await waitWithAbort(paged.getRadMeta(), signal, () => undefined);
+    this.chunkBytesValue = meta.chunks.map(({ bytes }) => bytes);
+    this.maximumSplatCountValue = meta.count;
+    this.totalBytesValue = this.chunkBytesValue.reduce(
+      (total, bytes) => total + bytes,
+      0,
+    );
+  }
+
+  private inspectPresentationQuality(): FrameQualityInspection {
+    const mesh = this.meshValue;
+    const detailLevel = this.qualityTargetValue.detailLevel;
+    if (mesh === undefined) {
+      return {
+        demandKey: "",
+        mappingVersion: 0,
+        settled: false,
+        snapshot: { detailLevel, state: "refining" },
+      };
+    }
+
+    const paged = mesh.paged;
+    if (paged === undefined) {
+      const selectedSplatCount = mesh.numSplats;
+      const settled =
+        this.stateValue === "ready" &&
+        selectedSplatCount >= this.qualityTargetValue.minimumSplatCount;
+      return {
+        demandKey: "non-paged",
+        mappingVersion: mesh.mappingVersion,
+        settled,
+        snapshot: {
+          detailLevel,
+          selectedSplatCount,
+          state: settled ? "presentable" : "refining",
+        },
+      };
+    }
+
+    const pager = paged.pager;
+    const mappings = pager?.splatsChunkToPage?.get(paged) ?? [];
+    const pendingUploadPages = new Set<number>([
+      ...(pager?.newUploads ?? []).map(({ page }) => page),
+      ...(pager?.readyUploads ?? []).map(({ page }) => page),
+    ]);
+    const residentChunks = new Set<number>();
+    const frameUploadPendingPages = new Set<number>();
+    let loadedBytes = 0;
+    mappings.forEach((mapping, chunk) => {
+      if (mapping !== undefined) {
+        if (pendingUploadPages.has(mapping.page)) {
+          frameUploadPendingPages.add(mapping.page);
+        } else {
+          residentChunks.add(chunk);
+          loadedBytes += this.chunkBytesValue[chunk] ?? 0;
+        }
+      }
+    });
+
+    const demandedChunks = new Set<number>([0]);
+    for (const priority of pager?.fetchPriority ?? []) {
+      if (priority.splats === paged) {
+        demandedChunks.add(priority.chunk);
+      }
+    }
+    const fetchingPageCount = (pager?.fetchers ?? []).filter(
+      ({ chunk, splats }) => splats === paged && demandedChunks.has(chunk),
+    ).length;
+    const fetchedPageCount = (pager?.fetched ?? []).filter(
+      ({ chunk, splats }) => splats === paged && demandedChunks.has(chunk),
+    ).length;
+    const pendingTreeUpdateCount = (pager?.lodTreeUpdates ?? []).filter(
+      ({ chunk, splats }) => splats === paged && demandedChunks.has(chunk),
+    ).length;
+    const demandedResident = [...demandedChunks].every((chunk) =>
+      residentChunks.has(chunk),
+    );
+    const rootReady = residentChunks.has(0);
+    const selectedSplatCount = paged.numSplats;
+    const settled =
+      rootReady &&
+      demandedResident &&
+      fetchingPageCount === 0 &&
+      fetchedPageCount === 0 &&
+      pendingTreeUpdateCount === 0 &&
+      selectedSplatCount >= this.qualityTargetValue.minimumSplatCount;
+    const totalBytes =
+      this.chunkBytesValue.length === 0
+        ? undefined
+        : this.chunkBytesValue.reduce((total, bytes) => total + bytes, 0);
+
+    return {
+      demandKey: [...demandedChunks].sort((a, b) => a - b).join(","),
+      mappingVersion: mesh.mappingVersion,
+      settled,
+      snapshot: {
+        demandedPageCount: demandedChunks.size,
+        detailLevel,
+        fetchingPageCount: fetchingPageCount + fetchedPageCount,
+        ...(this.chunkBytesValue.length === 0 ? {} : { loadedBytes }),
+        ...(this.maximumSplatCountValue === undefined
+          ? {}
+          : { maximumSplatCount: this.maximumSplatCountValue }),
+        residentPageCount: residentChunks.size,
+        selectedSplatCount,
+        state: rootReady && detailLevel === 0 ? "root-ready" : "refining",
+        ...(totalBytes === undefined ? {} : { totalBytes }),
+        uploadPendingPageCount: frameUploadPendingPages.size + pendingTreeUpdateCount,
+      },
+    };
   }
 
   private waitForMinimumRenderablePage(
