@@ -6,6 +6,7 @@ import type {
   DynamicGaussianSequence,
   FramePreparationOptions,
   FramePresentationQuality,
+  FrameRingBufferTraceEvent,
   FrameRefinementOptions,
   GaussianRendererAdapter,
   PreparedFrame,
@@ -50,7 +51,7 @@ function createRendererHarness({ automaticQuality = true } = {}) {
       source: { frameIndex: number },
       _options: FramePreparationOptions,
     ) => {
-      void _options;
+      _options.onTrace?.({ elapsedMs: 1, phase: "resource-created" });
       const pending = deferred<PreparedFrame>();
       preparations.set(source.frameIndex, pending);
       return pending.promise;
@@ -461,6 +462,56 @@ describe("FrameRingBuffer", () => {
     await expect(switching).resolves.toBe(frame1);
     expect(harness.presentFrame).toHaveBeenLastCalledWith(frame1);
     expect(harness.setFrameTransform).toHaveBeenCalledWith(frame1, transform);
+  });
+
+  it("reports preparation, refinement, and presentation timings without affecting playback", async () => {
+    const harness = createRendererHarness();
+    const events: FrameRingBufferTraceEvent[] = [];
+    let now = 100;
+    const buffer = new FrameRingBuffer({
+      futureFrameCount: 1,
+      now: () => now,
+      onTrace: (event) => events.push(event),
+      previousFrameCount: 0,
+      renderer: harness.renderer,
+      sequence: createSequence(),
+    });
+
+    const initialising = buffer.initialise(0);
+    now = 125;
+    harness.resolve(0);
+    await initialising;
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ frameIndex: 0, type: "base-requested" }),
+        expect.objectContaining({
+          durationMs: 1,
+          frameIndex: 0,
+          phase: "resource-created",
+          type: "renderer-phase",
+        }),
+        expect.objectContaining({
+          durationMs: 25,
+          frameIndex: 0,
+          type: "base-ready",
+        }),
+        expect.objectContaining({
+          frameIndex: 0,
+          type: "refinement-started",
+        }),
+        expect.objectContaining({
+          frameIndex: 0,
+          quality: expect.objectContaining({
+            detailLevel: 0.25,
+            state: "presentable",
+          }),
+          type: "presentation-ready",
+        }),
+        expect.objectContaining({ frameIndex: 0, type: "presented" }),
+      ]),
+    );
+    expect(harness.presentFrame).toHaveBeenCalledOnce();
   });
 
   it("cancels in-flight frames and releases prepared frames on disposal", async () => {

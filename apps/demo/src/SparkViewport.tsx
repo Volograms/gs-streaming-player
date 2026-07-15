@@ -19,6 +19,7 @@ import { SceneScaleControls } from "./SceneScaleControls.js";
 import { SparkQualityControls } from "./SparkQualityControls.js";
 
 import type {
+  FrameRingBufferTraceEvent,
   PlayerLifecycleState,
   RendererMetrics,
   SequencePlaybackSnapshot,
@@ -41,14 +42,19 @@ function createInitialQuality(): SparkRenderQualityConfiguration {
 }
 
 interface SparkViewportProps {
+  onBufferTrace?(event: Readonly<FrameRingBufferTraceEvent>): void;
   onPlaybackSnapshot?(snapshot: Readonly<SequencePlaybackSnapshot>): void;
 }
 
-export function SparkViewport({ onPlaybackSnapshot }: SparkViewportProps) {
+export function SparkViewport({
+  onBufferTrace,
+  onPlaybackSnapshot,
+}: SparkViewportProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const adapterRef = useRef<SparkGaussianRendererAdapter | null>(null);
   const bufferRef = useRef<FrameRingBuffer | null>(null);
   const playbackRef = useRef<SequencePlaybackController | null>(null);
+  const bufferTraceListenerRef = useRef(onBufferTrace);
   const playbackSnapshotListenerRef = useRef(onPlaybackSnapshot);
   const [dynamicAssetStatus, setDynamicAssetStatus] = useState<DynamicAssetStatus>(
     dynamicSequence === undefined ? "not-configured" : "loading",
@@ -67,6 +73,10 @@ export function SparkViewport({ onPlaybackSnapshot }: SparkViewportProps) {
   const [staticAssetStatus, setStaticAssetStatus] = useState<StaticAssetStatus>(
     staticRadUrl === undefined ? "not-configured" : "loading",
   );
+
+  useEffect(() => {
+    bufferTraceListenerRef.current = onBufferTrace;
+  }, [onBufferTrace]);
 
   useEffect(() => {
     playbackSnapshotListenerRef.current = onPlaybackSnapshot;
@@ -151,6 +161,7 @@ export function SparkViewport({ onPlaybackSnapshot }: SparkViewportProps) {
           const buffer = new FrameRingBuffer({
             futureFrameCount: 3,
             loop: true,
+            onTrace: (event) => bufferTraceListenerRef.current?.(event),
             previousFrameCount: 1,
             renderer: adapter,
             sequence: dynamicSequence,

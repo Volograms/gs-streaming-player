@@ -370,6 +370,106 @@ h1 {
   font-weight: 600;
 }
 
+.playback-trace {
+  margin-top: 1rem;
+  overflow: hidden;
+  border: 1px solid #29404b;
+  border-radius: 0.9rem;
+  background: #0c1a21;
+}
+
+.playback-trace header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid #29404b;
+}
+
+.playback-trace header div {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.playback-trace header span {
+  color: #73e4c9;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.playback-trace header strong {
+  color: #8297a1;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.playback-trace button {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid #36545f;
+  border-radius: 0.4rem;
+  color: #dce6eb;
+  background: #10232c;
+  cursor: pointer;
+}
+
+.playback-trace button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.playback-trace > p {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  color: #758993;
+  font-size: 0.72rem;
+}
+
+.playback-trace ol {
+  max-height: 22rem;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  border-top: 1px solid #213640;
+  list-style: none;
+}
+
+.playback-trace li {
+  display: grid;
+  grid-template-columns: 6rem minmax(12rem, 0.7fr) minmax(0, 1.8fr);
+  gap: 0.8rem;
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid #172b34;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem;
+}
+
+.playback-trace li time {
+  color: #6e858f;
+  font-variant-numeric: tabular-nums;
+}
+
+.playback-trace li strong {
+  color: #dbe7ec;
+  font-weight: 600;
+}
+
+.playback-trace li span {
+  overflow-wrap: anywhere;
+  color: #92a7b0;
+}
+
+.playback-trace li[data-trace-type="failed"] strong {
+  color: #ff8b86;
+}
+
+.playback-trace li[data-trace-type="presented"] strong,
+.playback-trace li[data-trace-type="presentation-ready"] strong {
+  color: #73e4c9;
+}
+
 footer {
   padding: 1.5rem 0;
   color: #566a74;
@@ -399,5 +499,13 @@ footer {
   .dynamic-sequence-controls {
     bottom: 3.8rem;
     max-width: calc(100% - 2rem);
+  }
+
+  .playback-trace li {
+    grid-template-columns: 5.4rem 1fr;
+  }
+
+  .playback-trace li span {
+    grid-column: 1 / -1;
   }
 }

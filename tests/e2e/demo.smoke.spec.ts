@@ -30,6 +30,7 @@ test("loads the demo application and workspace packages", async ({ page }) => {
   await expect(page.getByRole("group", { name: "Render quality" })).toBeEnabled();
   await expect(page.getByRole("group", { name: "Object scale" })).toBeEnabled();
   await expect(page.getByLabel("Renderer metrics")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Playback trace" })).toBeVisible();
 
   await page.getByLabel("Static detail").fill("0.75");
   await expect(page.locator('output[for="static-detail"]')).toHaveText("0.75×");
@@ -61,6 +62,9 @@ test("loads the demo application and workspace packages", async ({ page }) => {
 
   if (process.env.VITE_DYNAMIC_RAD_BASE_URL !== undefined) {
     await expect(page.getByText(/Dynamic RAD ready/)).toBeVisible({
+      timeout: 120_000,
+    });
+    await expect(page.locator('[data-trace-type="presented"]')).toHaveCount(1, {
       timeout: 120_000,
     });
     const expectedInitialWindow = new Set([

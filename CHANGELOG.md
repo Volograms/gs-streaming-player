@@ -59,6 +59,9 @@ All notable changes to this project will be documented here. The project uses
 - Independent uniform-scale controls for the static scene and dynamic actor. Runtime
   scale changes preserve the capture-axis rotation, update prepared and future dynamic
   frames, and revalidate their Spark presentation readiness.
+- Opt-in frame-buffer timing traces and a live demo diagnostic panel covering buffer
+  window state, Spark resource/metadata/root-page milestones, range-transfer progress,
+  LoD page demand, GPU upload queues, presentation readiness, handoff, and eviction.
 
 ### Fixed
 

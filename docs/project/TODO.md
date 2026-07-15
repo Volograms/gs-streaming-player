@@ -11,7 +11,10 @@ acceptance criteria are covered by implementation and verification.
       static-scene and dynamic-actor scale controls are available for calibration; final
       origin and floor alignment still require visual confirmation.
 - [ ] E03-T04 — Validate dynamic alpha and background masking behaviour.
-- [ ] E03-T05 — Measure dynamic switching performance.
+- [ ] E03-T05 — Measure dynamic switching performance. An opt-in monotonic playback
+      trace now separates Spark resource initialisation, metadata, root-page readiness,
+      refinement fetch/upload progress, the presentation gate, handoff, and eviction;
+      capture and analyse a sustained real-asset run next.
 - [ ] E05-T02/T08 — Add media-element and audio-master clocks. The monotonic injectable
       clock and deterministic test clock are now implemented.
 - [ ] E05-T03/T06/T07 — Complete timestamp-based selection, playback-rate support, and
@@ -19,7 +22,8 @@ acceptance criteria are covered by implementation and verification.
 - [ ] E06-T04/T05 — Extend the base-first buffer scheduler with request cost estimates,
       per-request priorities, deadline-aware ordering, and network-selected quality
       targets. The isolated five-frame real-asset Chromium check now completes in about
-      five seconds; sustained playback profiling remains.
+      five seconds; the demo now exposes the per-frame timing evidence needed for
+      sustained playback profiling.
 - [ ] E06-T06/T09 — Complete independent in-flight refinement cancellation and memory
       budget integration beyond frame-count eviction.
 

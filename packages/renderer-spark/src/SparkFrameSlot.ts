@@ -9,6 +9,7 @@ import type {
   FrameRefinementOptions,
   GaussianFrameSource,
   PreparedFrame,
+  RendererFramePreparationPhase,
   RendererResourceMetrics,
 } from "@6g-path/gaussian-player";
 import type { Transform } from "@6g-path/shared";
@@ -34,6 +35,7 @@ export interface SparkFrameSlotSnapshot {
 
 export interface SparkFrameSlotOptions {
   createSplatMesh(options: SplatMeshOptions): SplatMesh;
+  getNow(): number;
   getRenderRevision(): number;
   invalidateLod(): void;
   scene: Scene;
@@ -138,6 +140,17 @@ export class SparkFrameSlot {
     const controller = new AbortController();
     this.abortController = controller;
     const unlinkExternalSignal = this.linkExternalSignal(options.signal, controller);
+    const preparationStartedAt = this.options.getNow();
+    const trace = (
+      phase: RendererFramePreparationPhase,
+      quality?: FramePresentationQuality,
+    ) => {
+      options.onTrace?.({
+        elapsedMs: this.options.getNow() - preparationStartedAt,
+        phase,
+        ...(quality === undefined ? {} : { quality }),
+      });
+    };
 
     try {
       const mesh = this.options.createSplatMesh({
@@ -165,14 +178,18 @@ export class SparkFrameSlot {
       });
       mesh.visible = false;
       this.meshValue = mesh;
+      trace("resource-created");
       await waitWithAbort(mesh.initialized, controller.signal, () => undefined);
+      trace("resource-initialized");
       if (this.isReleased()) {
         throw new SparkRendererStateError(`Frame slot ${this.slotId} was released.`);
       }
       await this.loadPagedMetadata(mesh, controller.signal);
+      trace("metadata-ready");
       applyTransform(mesh, options.transform);
       this.options.scene.add(mesh);
       await this.waitForMinimumRenderablePage(mesh, controller.signal);
+      trace("minimum-renderable", this.getPresentationQuality());
       const frame: PreparedFrame = {
         frameIndex: source.frameIndex,
         qualityLevel: options.targetQualityLevel ?? 0,

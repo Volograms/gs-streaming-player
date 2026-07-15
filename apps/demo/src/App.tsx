@@ -6,7 +6,10 @@ import { createIdentityTransform } from "@6g-path/shared";
 import { useState } from "react";
 
 import { getFoundationStatus } from "./foundationStatus.js";
+import { PlaybackTracePanel } from "./PlaybackTracePanel.js";
 import { SparkViewport } from "./SparkViewport.js";
+
+import type { FrameRingBufferTraceEvent } from "@6g-path/gaussian-player";
 
 const origin = createIdentityTransform();
 
@@ -14,7 +17,14 @@ export function App() {
   const [playbackLifecycle, setPlaybackLifecycle] = useState(
     () => createInitialPlaybackState().lifecycle,
   );
+  const [playbackTrace, setPlaybackTrace] = useState<
+    readonly Readonly<FrameRingBufferTraceEvent>[]
+  >([]);
   const statusItems = getFoundationStatus();
+  const handlePlaybackTrace = (event: Readonly<FrameRingBufferTraceEvent>) => {
+    console.debug("[playback-trace]", event);
+    setPlaybackTrace((current) => [...current.slice(-199), event]);
+  };
 
   return (
     <main>
@@ -29,6 +39,7 @@ export function App() {
 
       <section className="viewer-shell" aria-label="Player preview">
         <SparkViewport
+          onBufferTrace={handlePlaybackTrace}
           onPlaybackSnapshot={({ lifecycle }) => setPlaybackLifecycle(lifecycle)}
         />
         <aside className="status-panel">
@@ -66,6 +77,8 @@ export function App() {
           </strong>
         </article>
       </section>
+
+      <PlaybackTracePanel events={playbackTrace} onClear={() => setPlaybackTrace([])} />
 
       <footer>{SIX_G_TELEMETRY_PACKAGE_ID}</footer>
     </main>

@@ -61,3 +61,6 @@ used during day-to-day implementation.
 - Playback uses absolute deadlines from a monotonic, injectable clock. A missing
   presentation-ready frame holds the current frame and enters `BUFFERING`; the initial
   no-audio clock pauses media time across that stall.
+- Playback tracing is opt-in and uses the same monotonic clock. Core events remain
+  renderer-neutral while adapters may report preparation milestones; observer failures
+  never affect playback.

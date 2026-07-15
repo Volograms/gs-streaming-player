@@ -141,6 +141,32 @@ the global render budget. This gate guarantees stable handoff, but sustained 30 
 still requires enough network/decode/upload throughput for that target. Generic
 throughput-driven target selection is the next adaptive-quality slice.
 
+### Playback timing trace
+
+The demo's `Playback trace` panel shows the newest 50 buffer events and mirrors the same
+structured objects to the browser console under `[playback-trace]`. Use the stage gaps
+to locate a slow handoff:
+
+- `base requested` to Spark `resource initialized` covers initial URL/cache access and
+  Spark resource creation;
+- `metadata ready` to `minimum renderable` covers the paged RAD metadata and root-page
+  path;
+- `refinement started` to `refinement ready` covers the 25% presentation target. Its
+  page counters distinguish outstanding fetches from `GPU queue` uploads; a remaining
+  delay with both at zero is Spark's stable-render confirmation;
+- `presentation gate passed` to `presented` is the actual visibility handoff and should
+  be effectively immediate.
+
+`base ready` is deliberately weaker than `presentation gate passed`. The renderer's
+prepared-frame metric counts root-ready Spark slots, so it can rise to five before all
+five frames are safe to present. A browser `304` response can likewise represent only a
+small cached range validation; the trace's loaded/total byte values come from RAD page
+metadata and resident chunks, not the response-header size shown by DevTools.
+
+Library integrations can subscribe without the demo by passing `onTrace` to
+`FrameRingBuffer`. The callback is optional, uses the buffer's injected monotonic clock,
+and is isolated so diagnostic code cannot interrupt playback.
+
 Run the opt-in real-asset browser check with the same environment variables:
 
 ```bash

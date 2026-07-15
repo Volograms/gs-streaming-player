@@ -17,6 +17,10 @@ export type {
   BufferedFrameStatus,
   FrameRingBufferConfiguration,
   FrameRingBufferSnapshot,
+  FrameRingBufferTraceEvent,
+  FrameRingBufferTraceEventType,
+  FrameRingBufferTraceFrame,
+  FrameRingBufferTraceListener,
 } from "./buffering/types.js";
 export {
   GAUSSIAN_SEQUENCE_MANIFEST_VERSION,
@@ -71,6 +75,9 @@ export type {
   RendererLoadOptions,
   RendererLoadProgress,
   RendererLoadProgressCallback,
+  RendererFramePreparationPhase,
+  RendererFramePreparationTraceCallback,
+  RendererFramePreparationTraceEvent,
   RendererMetrics,
   RendererObjectHandle,
   RendererObjectKind,

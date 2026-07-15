@@ -263,6 +263,7 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
     throwIfAborted(options.signal);
     const slot = new SparkFrameSlot({
       createSplatMesh: (slotOptions) => this.runtime.createSplatMesh(slotOptions),
+      getNow: () => this.runtime.now(),
       getRenderRevision: () => this.renderRevision,
       invalidateLod: () => this.invalidateLod(),
       scene: this.scene,

@@ -11,6 +11,8 @@ export interface FramePreparationOptions {
   /** Stop after the renderer's minimum drawable quality instead of refinement. */
   minimumQualityOnly?: boolean;
   onProgress?: RendererLoadProgressCallback;
+  /** Optional renderer-internal milestones used by diagnostic tooling. */
+  onTrace?: RendererFramePreparationTraceCallback;
   targetQualityLevel?: number;
   /** Local-to-world transform shared by every frame in the dynamic sequence. */
   transform?: Transform;
@@ -40,6 +42,20 @@ export interface FramePresentationQuality {
 
 export type FrameQualityProgressCallback = (
   quality: Readonly<FramePresentationQuality>,
+) => void;
+
+export type RendererFramePreparationPhase =
+  "resource-created" | "resource-initialized" | "metadata-ready" | "minimum-renderable";
+
+export interface RendererFramePreparationTraceEvent {
+  /** Time since prepareFrame started, measured with the renderer's monotonic clock. */
+  elapsedMs: number;
+  phase: RendererFramePreparationPhase;
+  quality?: Readonly<FramePresentationQuality>;
+}
+
+export type RendererFramePreparationTraceCallback = (
+  event: Readonly<RendererFramePreparationTraceEvent>,
 ) => void;
 
 export interface FrameRefinementOptions {

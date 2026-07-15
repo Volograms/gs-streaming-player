@@ -3,6 +3,8 @@ import type {
   FrameRingBufferSnapshot,
   BufferedFrame,
   BufferedFrameStatus,
+  FrameRingBufferTraceEvent,
+  FrameRingBufferTraceListener,
 } from "./types.js";
 import type {
   DynamicGaussianSequence,
@@ -26,6 +28,7 @@ interface FrameRecord {
   refinement: Promise<void> | undefined;
   refinementController: AbortController | undefined;
   refinementEnabled: boolean;
+  traceProgressKey: string;
   requestedBytes: number;
   source: GaussianFrameSource;
   status: BufferedFrameStatus;
@@ -34,6 +37,7 @@ interface FrameRecord {
 
 export interface FrameRingBufferOptions extends FrameRingBufferConfiguration {
   now?: () => number;
+  onTrace?: FrameRingBufferTraceListener;
   presentationQualityTarget?: FrameQualityTarget;
   renderer: GaussianRendererAdapter;
   sequence: DynamicGaussianSequence;
@@ -50,6 +54,7 @@ export class FrameRingBuffer {
   private readonly listeners = new Set<SnapshotListener>();
   private readonly loop: boolean;
   private readonly now: () => number;
+  private readonly onTrace: FrameRingBufferTraceListener | undefined;
   private readonly previousFrameCount: number;
   private readonly presentationQualityTarget: FrameQualityTarget;
   private readonly records = new Map<number, FrameRecord>();
@@ -70,6 +75,7 @@ export class FrameRingBuffer {
     this.previousFrameCount = options.previousFrameCount ?? 1;
     this.loop = options.loop ?? false;
     this.now = options.now ?? (() => performance.now());
+    this.onTrace = options.onTrace;
     this.presentationQualityTarget = options.presentationQualityTarget ?? {
       detailLevel: 0.25,
       minimumSplatCount: 0,
@@ -128,11 +134,16 @@ export class FrameRingBuffer {
     requestedFrameIndex: number,
     options: FramePresentationOptions = {},
   ): Promise<PreparedFrame> {
+    const presentationStartedAt = this.now();
     const requestRevision = this.presentationRequestRevision + 1;
     this.presentationRequestRevision = requestRevision;
     if (this.isAborted(options.signal)) {
       throw this.presentationAbortError();
     }
+    this.trace({
+      frameIndex: requestedFrameIndex,
+      type: "presentation-requested",
+    });
     let preparedFrame: PreparedFrame;
     try {
       preparedFrame = await this.prepareForPresentation(requestedFrameIndex);
@@ -143,6 +154,12 @@ export class FrameRingBuffer {
       ) {
         throw this.presentationAbortError();
       }
+      this.trace({
+        durationMs: this.now() - presentationStartedAt,
+        errorMessage: this.errorMessage(error),
+        frameIndex: requestedFrameIndex,
+        type: "failed",
+      });
       throw error;
     }
     const frameIndex = preparedFrame.frameIndex;
@@ -162,6 +179,12 @@ export class FrameRingBuffer {
       ) {
         throw this.presentationAbortError();
       }
+      this.trace({
+        durationMs: this.now() - presentationStartedAt,
+        errorMessage: this.errorMessage(error),
+        frameIndex,
+        type: "failed",
+      });
       throw error;
     }
     if (
@@ -170,6 +193,15 @@ export class FrameRingBuffer {
     ) {
       throw this.presentationAbortError();
     }
+
+    const presentationQuality =
+      this.renderer.getFramePresentationQuality(preparedFrame);
+    this.trace({
+      durationMs: this.now() - presentationStartedAt,
+      frameIndex,
+      quality: this.copyQuality(presentationQuality),
+      type: "presentation-ready",
+    });
 
     const previousFrameIndex = this.currentFrameIndexValue;
     if (previousFrameIndex !== undefined && previousFrameIndex !== frameIndex) {
@@ -183,6 +215,14 @@ export class FrameRingBuffer {
     record.status = "presented";
     record.targetQualityLevel = this.presentationQualityTarget.detailLevel;
     this.currentFrameIndexValue = frameIndex;
+    this.trace({
+      durationMs: this.now() - presentationStartedAt,
+      frameIndex,
+      quality: this.copyQuality(
+        this.renderer.getFramePresentationQuality(preparedFrame),
+      ),
+      type: "presented",
+    });
     this.reconcileWindow(frameIndex);
     this.emit();
     return preparedFrame;
@@ -305,13 +345,14 @@ export class FrameRingBuffer {
       throw new RangeError(`Frame ${frameIndex} does not exist in the sequence.`);
     }
     const controller = new AbortController();
+    const baseRequestedAtMs = this.now();
     const requestedTransform = this.transformValue;
     const requestedTransformRevision = this.transformRevision;
     const temporalDistance = this.temporalDistance(frameIndex);
     const record = {} as FrameRecord;
     record.controller = controller;
     record.deadlineMs =
-      this.now() + (temporalDistance / this.sequence.frameRate) * 1000;
+      baseRequestedAtMs + (temporalDistance / this.sequence.frameRate) * 1000;
     record.downloadedBytes = 0;
     record.qualityLevel = -1;
     record.refinementEnabled = false;
@@ -319,6 +360,13 @@ export class FrameRingBuffer {
     record.source = source;
     record.status = "loading-base";
     record.targetQualityLevel = 0;
+    record.traceProgressKey = "";
+    this.trace({
+      frameIndex,
+      loadedBytes: 0,
+      totalBytes: record.requestedBytes,
+      type: "base-requested",
+    });
     record.preparation = this.renderer
       .prepareFrame(this.sequence.id, source, {
         signal: controller.signal,
@@ -326,7 +374,27 @@ export class FrameRingBuffer {
         onProgress: ({ loadedBytes, totalBytes }) => {
           record.downloadedBytes = loadedBytes;
           record.requestedBytes = totalBytes ?? record.requestedBytes;
+          const progressKey = `${loadedBytes}:${record.requestedBytes}`;
+          if (progressKey !== record.traceProgressKey) {
+            record.traceProgressKey = progressKey;
+            this.trace({
+              durationMs: this.now() - baseRequestedAtMs,
+              frameIndex,
+              loadedBytes,
+              totalBytes: record.requestedBytes,
+              type: "base-progress",
+            });
+          }
           this.emit();
+        },
+        onTrace: ({ elapsedMs, phase, quality }) => {
+          this.trace({
+            durationMs: elapsedMs,
+            frameIndex,
+            phase,
+            ...(quality === undefined ? {} : { quality: this.copyQuality(quality) }),
+            type: "renderer-phase",
+          });
         },
         ...(requestedTransform === undefined ? {} : { transform: requestedTransform }),
       })
@@ -337,16 +405,28 @@ export class FrameRingBuffer {
         record.preparedFrame = preparedFrame;
         record.qualityLevel = preparedFrame.qualityLevel;
         record.status = "base-ready";
-        this.applyQualitySnapshot(
-          record,
-          this.renderer.getFramePresentationQuality(preparedFrame),
-        );
+        const quality = this.renderer.getFramePresentationQuality(preparedFrame);
+        this.applyQualitySnapshot(record, quality);
+        this.trace({
+          durationMs: this.now() - baseRequestedAtMs,
+          frameIndex,
+          quality: this.copyQuality(quality),
+          type: "base-ready",
+        });
         this.applyRefinementPolicies();
         this.emit();
         return preparedFrame;
       })
       .catch((error: unknown) => {
         record.status = controller.signal.aborted ? "expired" : "failed";
+        if (!controller.signal.aborted) {
+          this.trace({
+            durationMs: this.now() - baseRequestedAtMs,
+            errorMessage: this.errorMessage(error),
+            frameIndex,
+            type: "failed",
+          });
+        }
         this.emit();
         throw error;
       });
@@ -372,6 +452,10 @@ export class FrameRingBuffer {
         if (record.preparedFrame !== undefined) {
           this.renderer.releaseFrame(record.preparedFrame);
         }
+        this.trace({
+          frameIndex: bufferedFrameIndex,
+          type: "evicted",
+        });
         this.records.delete(bufferedFrameIndex);
         continue;
       }
@@ -384,6 +468,13 @@ export class FrameRingBuffer {
         this.now() + (deadlineDistance / this.sequence.frameRate) * 1000;
     }
     this.applyRefinementPolicies();
+    this.trace({
+      frames: [...this.records.values()]
+        .map(({ source, status }) => ({ frameIndex: source.frameIndex, status }))
+        .sort((a, b) => a.frameIndex - b.frameIndex),
+      frameIndex,
+      type: "window-updated",
+    });
     this.emit();
   }
 
@@ -472,16 +563,35 @@ export class FrameRingBuffer {
     }
 
     const controller = new AbortController();
+    const refinementStartedAtMs = this.now();
     record.refinementController = controller;
     record.refinementEnabled = true;
     record.status = "refining";
     record.targetQualityLevel = this.presentationQualityTarget.detailLevel;
+    record.traceProgressKey = "";
+    this.trace({
+      frameIndex,
+      quality: this.copyQuality(
+        this.renderer.getFramePresentationQuality(preparedFrame),
+      ),
+      type: "refinement-started",
+    });
     const refinement = this.renderer
       .refineFrame(preparedFrame, this.presentationQualityTarget, {
         signal: controller.signal,
         onProgress: (quality) => {
           if (record.refinementController === controller) {
             this.applyQualitySnapshot(record, quality);
+            const progressKey = JSON.stringify(quality);
+            if (progressKey !== record.traceProgressKey) {
+              record.traceProgressKey = progressKey;
+              this.trace({
+                durationMs: this.now() - refinementStartedAtMs,
+                frameIndex,
+                quality: this.copyQuality(quality),
+                type: "refinement-progress",
+              });
+            }
             this.emit();
           }
         },
@@ -501,14 +611,32 @@ export class FrameRingBuffer {
         } else {
           record.status = "ready";
         }
+        this.trace({
+          durationMs: this.now() - refinementStartedAtMs,
+          frameIndex,
+          quality: this.copyQuality(quality),
+          type: "refinement-ready",
+        });
         this.applyRefinementPolicies();
         this.emit();
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted && record.refinementController === controller) {
           record.status = "failed";
+          this.trace({
+            durationMs: this.now() - refinementStartedAtMs,
+            errorMessage: this.errorMessage(error),
+            frameIndex,
+            type: "failed",
+          });
           this.emit();
           throw error;
+        } else if (controller.signal.aborted) {
+          this.trace({
+            durationMs: this.now() - refinementStartedAtMs,
+            frameIndex,
+            type: "refinement-cancelled",
+          });
         }
       })
       .finally(() => {
@@ -690,6 +818,31 @@ export class FrameRingBuffer {
     const snapshot = this.snapshot;
     for (const listener of this.listeners) {
       listener(snapshot);
+    }
+  }
+
+  private copyQuality(
+    quality: Readonly<FramePresentationQuality>,
+  ): FramePresentationQuality {
+    return { ...quality };
+  }
+
+  private errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  private trace(event: Omit<FrameRingBufferTraceEvent, "atMs">): void {
+    if (this.onTrace === undefined || this.disposed) {
+      return;
+    }
+    const traceEvent = Object.freeze({
+      ...event,
+      atMs: this.now(),
+    });
+    try {
+      this.onTrace(traceEvent);
+    } catch {
+      // Diagnostic observers must never interrupt playback.
     }
   }
 

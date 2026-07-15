@@ -371,16 +371,31 @@ describe("SparkGaussianRendererAdapter", () => {
       scene: harness.scene,
     });
     await adapter.initialise();
+    const preparationTrace = vi.fn();
     const first = await adapter.prepareFrame(
       "actor",
       { frameIndex: 0, timestampSeconds: 0, url: "/frame-0.rad" },
       {
+        onTrace: preparationTrace,
         transform: {
           position: { x: 1, y: 2, z: 3 },
           rotation: { w: 0, x: 1, y: 0, z: 0 },
           scale: { x: 2, y: 2, z: 2 },
         },
       },
+    );
+    expect(preparationTrace.mock.calls.map(([event]) => event.phase)).toEqual([
+      "resource-created",
+      "resource-initialized",
+      "metadata-ready",
+      "minimum-renderable",
+    ]);
+    expect(preparationTrace).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        elapsedMs: expect.any(Number),
+        phase: "minimum-renderable",
+        quality: expect.objectContaining({ state: expect.any(String) }),
+      }),
     );
     const second = await adapter.prepareFrame(
       "actor",
