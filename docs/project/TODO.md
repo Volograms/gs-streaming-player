@@ -13,21 +13,65 @@ acceptance criteria are covered by implementation and verification.
 - [ ] E03-T04 — Validate dynamic alpha and background masking behaviour.
 - [ ] E03-T05 — Measure dynamic switching performance. An opt-in monotonic playback
       trace now separates Spark resource initialisation, metadata, root-page readiness,
-      refinement fetch/upload progress, the presentation gate, handoff, and eviction;
-      capture and analyse a sustained real-asset run next.
+      root chunk fetch/decode, page allocation/reuse, GPU upload, tree registration,
+      tree update/traversal, refinement progress, the presentation gate, handoff, and
+      eviction. The demo now calculates p50/p95 stage distributions and an opt-in
+      Playwright benchmark records a machine-readable summary. A local desktop run with
+      two base preparations measured root-ready p50/p95 at 1.45/3.37 seconds, refinement
+      at 0.48/1.21 seconds, and handoff at 0.10/0.20 milliseconds; sustained
+      device-matrix runs and maximum stable playback-rate measurements remain.
 - [ ] E05-T02/T08 — Add media-element and audio-master clocks. The monotonic injectable
       clock and deterministic test clock are now implemented.
 - [ ] E05-T03/T06/T07 — Complete timestamp-based selection, playback-rate support, and
       the public event model beyond observable state snapshots.
-- [ ] E06-T04/T05 — Extend the base-first buffer scheduler with request cost estimates,
-      per-request priorities, deadline-aware ordering, and network-selected quality
-      targets. The isolated five-frame real-asset Chromium check now completes in about
-      five seconds; the demo now exposes the per-frame timing evidence needed for
-      sustained playback profiling.
 - [ ] E06-T06/T09 — Complete independent in-flight refinement cancellation and memory
       budget integration beyond frame-count eviction.
+- [ ] E06-T03/E07-T08 follow-on — Generate camera-independent logical quality cuts for
+      dynamic RAD frames so network policy can select required chunks and draw indices
+      without runtime camera-driven tree traversal. Spark's explicit chunk preparation
+      API and phase timing foundation is complete; the offline cut format and runtime
+      index remapping remain.
+- [ ] E13-T02/T04 — Complete the target-device renderer budget matrix and add
+      independent static-refinement concurrency. Dynamic base and refinement concurrency
+      are now configurable and measured.
 
 ## Completed
+
+### Explicit Spark page preparation and phase timing (2026-07-15)
+
+- [x] Add a reproducible Spark 2.1 patch exposing cancellable `prepareChunk()`.
+- [x] Keep explicitly requested dynamic root chunks pinned in pager priority until their
+      preallocated GPU page upload completes.
+- [x] Measure root fetch, worker decode, page allocation/reuse, GPU upload, shared-tree
+      registration/update, and traversal separately in the playback trace.
+
+Spark retains its shared preallocated page textures. Normal dynamic turnover consumes a
+free page or reuses an evicted page; it does not allocate a new per-frame GPU buffer.
+The GPU-upload timer includes lazy SH texture creation, making first-use allocation
+costs visible. Trace emission is limited to the first observation of each phase/chunk
+for a frame so render-loop traversal does not flood diagnostics.
+
+### Deadline-aware scheduling and adaptive quality foundation (2026-07-15)
+
+- [x] E06-T04 — Implement minimum-quality-first prefetch scheduling.
+- [x] E06-T05 — Track deadlines, temporal distance, estimated bytes, and preparation
+      concurrency.
+- [x] E07-T01/T02 — Provide the quality-controller boundary and fixed manual baseline.
+- [x] E07-T04 — Add a conservative multi-window client throughput estimator.
+- [x] E07-T05/T06/T07 — Add buffer-aware decisions, a safety margin, and immediate-down
+      / delayed-up hysteresis.
+- [x] E07-T08 — Separate requested, resident, and achieved rendering quality.
+
+The preparation scheduler bounds concurrent Spark frame creation and reprioritises
+queued work by temporal distance, deadline, and estimated byte cost whenever the window
+moves. The demo uses two base preparations and one refinement by default. Automatic
+quality is opt-in and adjusts presentation detail, render budget, static weight, and
+base/refinement concurrency using measured throughput, buffer occupancy, and render FPS.
+
+Requested LoD is no longer accepted as achieved LoD. The library default requires at
+least two selected splats and the current demo requires 100, preventing a single root
+splat from being reported as a 25% frame. The gate remains configurable for measured
+content profiles.
 
 ### Stable presentation and playback clock foundation (2026-07-15)
 

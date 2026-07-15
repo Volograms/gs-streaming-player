@@ -136,10 +136,19 @@ than applying it only to the visible frame.
 
 The deterministic baseline target is 0.25 spatial detail. It is configurable through the
 `FrameRingBuffer` API, including an optional selected-splat floor for controlled
-experiments. The floor defaults to zero because a valid count depends on camera view and
-the global render budget. This gate guarantees stable handoff, but sustained 30 fps
-still requires enough network/decode/upload throughput for that target. Generic
-throughput-driven target selection is the next adaptive-quality slice.
+experiments. The default floor is two, preventing Spark's single root splat from being
+mistaken for an achieved 25% frame. Content-specific experiments should raise the floor
+to a measured minimum acceptable representation; the current demo uses 100 splats for
+the unoptimised `rafa-pitch` sequence.
+
+The demo limits dynamic base preparation to two frames and refinement to one frame at a
+time. `FrameRingBuffer.setPreparationConcurrency` can change both limits at runtime;
+queued base requests are reordered by temporal distance, deadline, and estimated bytes.
+
+Enable `Automatic buffer-aware quality` in the render-quality panel to use the
+multi-window client throughput estimate, buffer occupancy, and renderer FPS. The policy
+reduces quality immediately when buffer risk rises and requires repeated healthy samples
+before increasing it. Manual controls remain the deterministic fixed-quality baseline.
 
 ### Playback timing trace
 
@@ -150,7 +159,10 @@ to locate a slow handoff:
 - `base requested` to Spark `resource initialized` covers initial URL/cache access and
   Spark resource creation;
 - `metadata ready` to `minimum renderable` covers the paged RAD metadata and root-page
-  path;
+  path. Patched Spark milestones break that interval into `chunk-fetch`, `chunk-decode`,
+  `page-allocation`, `gpu-upload`, `tree-registration`, `tree-update`, and
+  `tree-traversal`. Each line shows both its position in total preparation time (`at`)
+  and its internally measured stage duration;
 - `refinement started` to `refinement ready` covers the 25% presentation target. Its
   page counters distinguish outstanding fetches from `GPU queue` uploads; a remaining
   delay with both at zero is Spark's stable-render confirmation;
@@ -166,6 +178,43 @@ metadata and resident chunks, not the response-header size shown by DevTools.
 Library integrations can subscribe without the demo by passing `onTrace` to
 `FrameRingBuffer`. The callback is optional, uses the buffer's injected monotonic clock,
 and is isolated so diagnostic code cannot interrupt playback.
+
+Dynamic frame preparation calls the patched Spark pager's cancellable `prepareChunk(0)`
+API. The request remains ahead of camera-driven refinement until chunk 0 has reached its
+GPU page. Spark's page textures are allocated as a shared pool and reused; a
+`preallocated free page` trace means a free pool slot was consumed, while
+`reused evicted page` means an existing slot was reassigned. `gpu-upload` includes lazy
+SH texture creation and is therefore the timer to inspect for first-use allocation
+spikes.
+
+The Spark change is committed at `patches/@sparkjsdev__spark@2.1.0.patch` through pnpm's
+`patchedDependencies`. Running `pnpm install` applies it automatically. When upgrading
+Spark, rebase and remeasure this patch rather than copying the old diff blindly.
+
+The `Measured playback performance` panel reduces trace history into p50/p95 queue,
+root-ready, refinement, and handoff durations, together with observed base throughput
+and switching rate. Run the opt-in real-asset benchmark with:
+
+```bash
+RUN_PLAYBACK_BENCHMARK=1 \
+VITE_DYNAMIC_RAD_BASE_URL=/assets/local-dynamic \
+pnpm test:e2e:performance
+```
+
+The benchmark advances five frames and prints `PLAYBACK_PERFORMANCE_SUMMARY` as JSON.
+The 2026-07-15 local Chromium baseline with the unoptimised frames 40–50 measured:
+
+- root-ready p50/p95: 1.45/3.37 seconds;
+- refinement p50/p95: 0.48/1.21 seconds;
+- presentation wait p50/p95: 22.9/896.2 milliseconds;
+- visibility handoff p50/p95: 0.10/0.20 milliseconds;
+- selected splats at handoff: approximately 8,300–8,600.
+
+These are pipeline measurements for one development machine, not target-device results.
+The reported manual switching rate includes time spent waiting between button presses
+and must not be interpreted as the maximum renderer frame rate. The captured baseline is
+committed at
+[`project/measurements/2026-07-15-local-chromium.json`](project/measurements/2026-07-15-local-chromium.json).
 
 Run the opt-in real-asset browser check with the same environment variables:
 

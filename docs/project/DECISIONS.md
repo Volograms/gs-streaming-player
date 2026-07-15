@@ -64,3 +64,22 @@ used during day-to-day implementation.
 - Playback tracing is opt-in and uses the same monotonic clock. Core events remain
   renderer-neutral while adapters may report preparation milestones; observer failures
   never affect playback.
+- Requested frame detail, resident data, and achieved presentation detail are separate
+  states. A requested LoD value is never evidence that Spark has produced a useful
+  frame.
+- Dynamic base work is queued by temporal distance, deadline, then estimated byte cost;
+  preparation and refinement concurrency remain runtime-configurable policy outputs.
+- The current per-frame RAD size is accepted for the 6G experiments, particularly
+  because the first dynamic sequence is unoptimised. Container changes and temporal
+  compression remain last-resort follow-on work after scheduling, renderer, and quality
+  measurements.
+- Dynamic quality is ultimately network/deadline selected rather than camera selected.
+  The current RAD hierarchy still supplies valid parent/child cuts; a follow-on offline
+  step will serialize fixed logical quality cuts so runtime traversal can be removed for
+  dynamic frames without drawing overlapping hierarchy levels. Static scenes retain
+  camera-aware spatial LoD.
+- Spark 2.1 is extended through a committed pnpm patch, not ad-hoc `node_modules` edits.
+  The extension preserves Spark's shared preallocated GPU page pool, exposes cancellable
+  explicit chunk preparation, and reports fetch, decode, page reuse/upload, and LoD-tree
+  phase timings. A full custom renderer remains unnecessary unless measurements show
+  this boundary cannot meet playback deadlines.

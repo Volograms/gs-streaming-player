@@ -155,6 +155,16 @@ h1 {
   font-size: 0.7rem;
 }
 
+.quality-controls .quality-mode {
+  align-items: center;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid #29404b;
+}
+
+.quality-controls .quality-mode input {
+  accent-color: #73e4c9;
+}
+
 .quality-controls output,
 .scene-scale-controls output {
   color: #e8eef4;
@@ -378,6 +388,62 @@ h1 {
   background: #0c1a21;
 }
 
+.performance-summary {
+  margin-top: 1rem;
+  overflow: hidden;
+  border: 1px solid #29404b;
+  border-radius: 0.9rem;
+  background: #0c1a21;
+}
+
+.performance-summary header {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid #29404b;
+}
+
+.performance-summary header span {
+  color: #73e4c9;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.performance-summary header strong {
+  color: #8297a1;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.performance-summary dl {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  margin: 0;
+  background: #29404b;
+}
+
+.performance-summary dl div {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.8rem 1rem;
+  background: #0c1a21;
+}
+
+.performance-summary dt {
+  color: #758993;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.performance-summary dd {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+}
+
 .playback-trace header {
   display: flex;
   align-items: center;
@@ -503,6 +569,10 @@ footer {
 
   .playback-trace li {
     grid-template-columns: 5.4rem 1fr;
+  }
+
+  .performance-summary dl {
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .playback-trace li span {

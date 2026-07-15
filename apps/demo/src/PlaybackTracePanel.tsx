@@ -4,6 +4,7 @@ const eventLabels: Record<FrameRingBufferTraceEvent["type"], string> = {
   "base-progress": "base transfer",
   "base-ready": "base ready",
   "base-requested": "base requested",
+  "base-started": "base started",
   evicted: "evicted",
   failed: "failed",
   "presentation-ready": "presentation gate passed",
@@ -38,7 +39,23 @@ function describeEvent(event: Readonly<FrameRingBufferTraceEvent>): string {
     details.push(event.phase);
   }
   if (event.durationMs !== undefined) {
-    details.push(`${event.durationMs.toFixed(1)} ms`);
+    details.push(
+      event.type === "renderer-phase"
+        ? `at ${event.durationMs.toFixed(1)} ms`
+        : `${event.durationMs.toFixed(1)} ms`,
+    );
+  }
+  if (event.stageDurationMs !== undefined) {
+    details.push(`stage ${event.stageDurationMs.toFixed(1)} ms`);
+  }
+  if (event.chunkIndex !== undefined) {
+    details.push(`chunk ${event.chunkIndex}`);
+  }
+  if (event.pageIndex !== undefined) {
+    details.push(`page ${event.pageIndex}`);
+  }
+  if (event.reusedPage !== undefined) {
+    details.push(event.reusedPage ? "reused evicted page" : "preallocated free page");
   }
   if (event.loadedBytes !== undefined) {
     details.push(
@@ -49,7 +66,13 @@ function describeEvent(event: Readonly<FrameRingBufferTraceEvent>): string {
   }
   const quality = event.quality;
   if (quality !== undefined) {
-    details.push(quality.state, `detail ${(quality.detailLevel * 100).toFixed(0)}%`);
+    const achievedDetail = quality.achievedDetailLevel ?? quality.detailLevel;
+    const requestedDetail = quality.requestedDetailLevel ?? quality.detailLevel;
+    details.push(
+      quality.state,
+      `achieved ${(achievedDetail * 100).toFixed(0)}%`,
+      `requested ${(requestedDetail * 100).toFixed(0)}%`,
+    );
     if (quality.demandedPageCount !== undefined) {
       details.push(
         `pages ${quality.residentPageCount ?? 0}/${quality.demandedPageCount}`,

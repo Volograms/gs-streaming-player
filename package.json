@@ -20,6 +20,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:e2e:performance": "playwright test tests/e2e/playback.performance.spec.ts",
     "typecheck": "pnpm --recursive --if-present typecheck"
   },
   "devDependencies": {

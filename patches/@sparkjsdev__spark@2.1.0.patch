@@ -1,0 +1,527 @@
+diff --git a/dist/spark.cjs.js b/dist/spark.cjs.js
+index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690d055dbe0 100644
+--- a/dist/spark.cjs.js
++++ b/dist/spark.cjs.js
+@@ -10506,7 +10506,18 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+       if (this.lodUpdates.length > 0) {
+         const lodUpdates = this.lodUpdates;
+         this.lodUpdates = [];
++        const treeUpdateStartedAt = performance.now();
+         await worker.call("updateLodTrees", { ranges: lodUpdates });
++        const treeUpdateDurationMs = performance.now() - treeUpdateStartedAt;
++        for (const update of lodUpdates) {
++          const splats = this.lodIdToSplats.get(update.lodId);
++          if (splats instanceof PagedSplats) {
++            splats.reportPreparation({
++              durationMs: treeUpdateDurationMs,
++              phase: "tree-update"
++            });
++          }
++        }
+         this.lodDirty = true;
+       }
+       if (this.lodDirty) {
+@@ -10548,9 +10559,14 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+       this.lodIds.set(splats, { lodId, lastTouched: performance.now() });
+       this.lodIdToSplats.set(lodId, splats);
+     } else {
++      const registrationStartedAt = performance.now();
+       const { lodId } = await worker.call("newSharedLodTree", {
+         lodId: this.pagerId
+       });
++      splats.reportPreparation({
++        durationMs: performance.now() - registrationStartedAt,
++        phase: "tree-registration"
++      });
+       this.lodIds.set(splats, { lodId, lastTouched: performance.now() });
+       this.lodIdToSplats.set(lodId, splats);
+     }
+@@ -10601,6 +10617,17 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+       instances
+     });
+     this.lastTraverseTime = performance.now() - traverseStart;
++    const traversedSplats = new Set();
++    for (const instance of Object.values(instances)) {
++      const splats = this.lodIdToSplats.get(instance.lodId);
++      if (splats instanceof PagedSplats && !traversedSplats.has(splats)) {
++        traversedSplats.add(splats);
++        splats.reportPreparation({
++          durationMs: this.lastTraverseTime,
++          phase: "tree-traversal"
++        });
++      }
++    }
+     const { keyIndices, chunks, pixelLimit } = result;
+     this.lastPixelLimit = pixelLimit;
+     const totalLodSplats = Object.values(keyIndices).reduce(
+@@ -11101,6 +11128,7 @@ class PagedSplats {
+   constructor(options) {
+     var _a2;
+     this.pager = options.pager;
++    this.onPreparation = options.onPreparation;
+     this.rootUrl = options.rootUrl ?? "";
+     this.requestHeader = options.requestHeader;
+     this.withCredentials = options.withCredentials;
+@@ -11143,6 +11171,12 @@ class PagedSplats {
+   setMaxSh(maxSh) {
+     this.maxSh = maxSh;
+   }
++  reportPreparation(event) {
++    this.onPreparation == null ? void 0 : this.onPreparation({
++      ...event,
++      atMs: performance.now()
++    });
++  }
+   getRadMeta() {
+     if (this.radMetaPromise) {
+       return this.radMetaPromise;
+@@ -11185,6 +11219,7 @@ class PagedSplats {
+     return this.rootUrl.replace(/-lod-0\./, `-lod-${chunk}.`);
+   }
+   async fetchDecodeChunk(chunk) {
++    const fetchStartedAt = performance.now();
+     let decodeBytes = void 0;
+     if (this.fileType === SplatFileType.RAD) {
+       const { meta, chunksStart } = await this.getRadMeta();
+@@ -11246,7 +11281,13 @@ class PagedSplats {
+     } else {
+       throw new Error("No url or fileBytes provided");
+     }
+-    return await workerPool.withWorker(async (worker) => {
++    this.reportPreparation({
++      chunk,
++      durationMs: performance.now() - fetchStartedAt,
++      phase: "chunk-fetch"
++    });
++    const decodeStartedAt = performance.now();
++    const decoded = await workerPool.withWorker(async (worker) => {
+       var _a2, _b2, _c, _d, _e;
+       if (!this.pager) {
+         throw new Error("PagedSplats.pager not set");
+@@ -11299,6 +11340,12 @@ class PagedSplats {
+       this.sh3Codes = lodSplats.extra.sh3Codes ?? this.sh3Codes;
+       return lodSplats;
+     });
++    this.reportPreparation({
++      chunk,
++      durationMs: performance.now() - decodeStartedAt,
++      phase: "chunk-decode"
++    });
++    return decoded;
+   }
+   update(numSplats, indices) {
+     if (!this.pager) {
+@@ -11462,6 +11509,7 @@ const _SplatPager = class _SplatPager {
+     this.fetchers = [];
+     this.fetched = [];
+     this.fetchPriority = [];
++    this.requestedChunks = [];
+     this.packedTexture = new DynoUsampler2DArray({
+       value: this.newUint32ArrayTexture(
+         new Uint32Array(this.maxPages * 256 * 256 * 4),
+@@ -11802,6 +11850,48 @@ const _SplatPager = class _SplatPager {
+     }
+     return chunks[chunk];
+   }
++  prepareChunk(splats, chunk = 0, options = {}) {
++    const existing = this.getSplatsChunk(splats, chunk);
++    const uploadPending = (page) => this.newUploads.some(({ page: queuedPage }) => queuedPage === page) || this.readyUploads.some(({ page: queuedPage }) => queuedPage === page);
++    if (existing && !uploadPending(existing.page)) {
++      return Promise.resolve({ chunk, page: existing.page, reusedPage: true });
++    }
++    if (!this.requestedChunks.some(({ splats: queuedSplats, chunk: queuedChunk }) => queuedSplats === splats && queuedChunk === chunk)) {
++      this.requestedChunks.push({ splats, chunk });
++    }
++    return new Promise((resolve, reject) => {
++      let timer;
++      const cleanup = () => {
++        if (timer !== void 0) clearTimeout(timer);
++        options.signal == null ? void 0 : options.signal.removeEventListener("abort", abort);
++      };
++      const removeRequest = () => {
++        this.requestedChunks = this.requestedChunks.filter(({ splats: queuedSplats, chunk: queuedChunk }) => queuedSplats !== splats || queuedChunk !== chunk);
++      };
++      const abort = () => {
++        cleanup();
++        removeRequest();
++        reject(new DOMException("Chunk preparation was aborted", "AbortError"));
++      };
++      const check = () => {
++        if ((options.signal == null ? void 0 : options.signal.aborted) === true) {
++          abort();
++          return;
++        }
++        const mapping = this.getSplatsChunk(splats, chunk);
++        if (mapping && !uploadPending(mapping.page)) {
++          cleanup();
++          removeRequest();
++          resolve({ chunk, page: mapping.page, reusedPage: false });
++          return;
++        }
++        this.driveFetchers();
++        timer = setTimeout(check, 16);
++      };
++      options.signal == null ? void 0 : options.signal.addEventListener("abort", abort, { once: true });
++      check();
++    });
++  }
+   insertSplatsChunkPage(splats, chunk, page, now) {
+     if (!this.splatsChunkToPage.has(splats)) {
+       this.splatsChunkToPage.set(splats, []);
+@@ -11922,7 +12012,11 @@ const _SplatPager = class _SplatPager {
+     const needed = [];
+     const overflow = [];
+     let numPages = 0;
+-    for (const { splats, chunk } of this.fetchPriority) {
++    const priorities = [
++      ...this.requestedChunks,
++      ...this.fetchPriority.filter(({ splats, chunk }) => !this.requestedChunks.some(({ splats: requestedSplats, chunk: requestedChunk }) => requestedSplats === splats && requestedChunk === chunk))
++    ];
++    for (const { splats, chunk } of priorities) {
+       const pageLru = this.getSplatsChunk(splats, chunk);
+       if (pageLru) {
+         if (numPages >= this.maxPages) {
+@@ -12013,14 +12107,24 @@ const _SplatPager = class _SplatPager {
+         break;
+       }
+       const { splats, chunk, data } = fetched;
++      const allocationStartedAt = performance.now();
+       let page = this.allocatePage();
++      let reusedPage = false;
+       if (page === void 0) {
+         page = this.allocateFreeable();
++        reusedPage = page !== void 0;
+         if (page === void 0) {
+           return;
+         }
+       }
+       this.insertSplatsChunkPage(splats, chunk, page, now);
++      splats.reportPreparation({
++        chunk,
++        durationMs: performance.now() - allocationStartedAt,
++        page,
++        phase: "page-allocation",
++        reusedPage
++      });
+       const { numSplats, extra } = data;
+       this.lodTreeUpdates.push({
+         splats,
+@@ -12047,7 +12151,17 @@ const _SplatPager = class _SplatPager {
+         break;
+       }
+       const { page, numSplats, packedArray, extArray, extra } = upload;
++      const uploadStartedAt = performance.now();
+       this.uploadPage(page, packedArray, extra, extArray);
++      const mapping = this.pageToSplatsChunk[page];
++      if (mapping) {
++        mapping.splats.reportPreparation({
++          chunk: mapping.chunk,
++          durationMs: performance.now() - uploadStartedAt,
++          page,
++          phase: "gpu-upload"
++        });
++      }
+     }
+   }
+   consumeLodTreeUpdates() {
+diff --git a/dist/spark.module.js b/dist/spark.module.js
+index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab98bbc2a9c 100644
+--- a/dist/spark.module.js
++++ b/dist/spark.module.js
+@@ -10487,7 +10487,18 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+       if (this.lodUpdates.length > 0) {
+         const lodUpdates = this.lodUpdates;
+         this.lodUpdates = [];
++        const treeUpdateStartedAt = performance.now();
+         await worker.call("updateLodTrees", { ranges: lodUpdates });
++        const treeUpdateDurationMs = performance.now() - treeUpdateStartedAt;
++        for (const update of lodUpdates) {
++          const splats = this.lodIdToSplats.get(update.lodId);
++          if (splats instanceof PagedSplats) {
++            splats.reportPreparation({
++              durationMs: treeUpdateDurationMs,
++              phase: "tree-update"
++            });
++          }
++        }
+         this.lodDirty = true;
+       }
+       if (this.lodDirty) {
+@@ -10529,9 +10540,14 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+       this.lodIds.set(splats, { lodId, lastTouched: performance.now() });
+       this.lodIdToSplats.set(lodId, splats);
+     } else {
++      const registrationStartedAt = performance.now();
+       const { lodId } = await worker.call("newSharedLodTree", {
+         lodId: this.pagerId
+       });
++      splats.reportPreparation({
++        durationMs: performance.now() - registrationStartedAt,
++        phase: "tree-registration"
++      });
+       this.lodIds.set(splats, { lodId, lastTouched: performance.now() });
+       this.lodIdToSplats.set(lodId, splats);
+     }
+@@ -10582,6 +10598,17 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+       instances
+     });
+     this.lastTraverseTime = performance.now() - traverseStart;
++    const traversedSplats = new Set();
++    for (const instance of Object.values(instances)) {
++      const splats = this.lodIdToSplats.get(instance.lodId);
++      if (splats instanceof PagedSplats && !traversedSplats.has(splats)) {
++        traversedSplats.add(splats);
++        splats.reportPreparation({
++          durationMs: this.lastTraverseTime,
++          phase: "tree-traversal"
++        });
++      }
++    }
+     const { keyIndices, chunks, pixelLimit } = result;
+     this.lastPixelLimit = pixelLimit;
+     const totalLodSplats = Object.values(keyIndices).reduce(
+@@ -11082,6 +11109,7 @@ class PagedSplats {
+   constructor(options) {
+     var _a2;
+     this.pager = options.pager;
++    this.onPreparation = options.onPreparation;
+     this.rootUrl = options.rootUrl ?? "";
+     this.requestHeader = options.requestHeader;
+     this.withCredentials = options.withCredentials;
+@@ -11124,6 +11152,12 @@ class PagedSplats {
+   setMaxSh(maxSh) {
+     this.maxSh = maxSh;
+   }
++  reportPreparation(event) {
++    this.onPreparation == null ? void 0 : this.onPreparation({
++      ...event,
++      atMs: performance.now()
++    });
++  }
+   getRadMeta() {
+     if (this.radMetaPromise) {
+       return this.radMetaPromise;
+@@ -11166,6 +11200,7 @@ class PagedSplats {
+     return this.rootUrl.replace(/-lod-0\./, `-lod-${chunk}.`);
+   }
+   async fetchDecodeChunk(chunk) {
++    const fetchStartedAt = performance.now();
+     let decodeBytes = void 0;
+     if (this.fileType === SplatFileType.RAD) {
+       const { meta, chunksStart } = await this.getRadMeta();
+@@ -11227,7 +11262,13 @@ class PagedSplats {
+     } else {
+       throw new Error("No url or fileBytes provided");
+     }
+-    return await workerPool.withWorker(async (worker) => {
++    this.reportPreparation({
++      chunk,
++      durationMs: performance.now() - fetchStartedAt,
++      phase: "chunk-fetch"
++    });
++    const decodeStartedAt = performance.now();
++    const decoded = await workerPool.withWorker(async (worker) => {
+       var _a2, _b2, _c, _d, _e;
+       if (!this.pager) {
+         throw new Error("PagedSplats.pager not set");
+@@ -11280,6 +11321,12 @@ class PagedSplats {
+       this.sh3Codes = lodSplats.extra.sh3Codes ?? this.sh3Codes;
+       return lodSplats;
+     });
++    this.reportPreparation({
++      chunk,
++      durationMs: performance.now() - decodeStartedAt,
++      phase: "chunk-decode"
++    });
++    return decoded;
+   }
+   update(numSplats, indices) {
+     if (!this.pager) {
+@@ -11443,6 +11490,7 @@ const _SplatPager = class _SplatPager {
+     this.fetchers = [];
+     this.fetched = [];
+     this.fetchPriority = [];
++    this.requestedChunks = [];
+     this.packedTexture = new DynoUsampler2DArray({
+       value: this.newUint32ArrayTexture(
+         new Uint32Array(this.maxPages * 256 * 256 * 4),
+@@ -11783,6 +11831,48 @@ const _SplatPager = class _SplatPager {
+     }
+     return chunks[chunk];
+   }
++  prepareChunk(splats, chunk = 0, options = {}) {
++    const existing = this.getSplatsChunk(splats, chunk);
++    const uploadPending = (page) => this.newUploads.some(({ page: queuedPage }) => queuedPage === page) || this.readyUploads.some(({ page: queuedPage }) => queuedPage === page);
++    if (existing && !uploadPending(existing.page)) {
++      return Promise.resolve({ chunk, page: existing.page, reusedPage: true });
++    }
++    if (!this.requestedChunks.some(({ splats: queuedSplats, chunk: queuedChunk }) => queuedSplats === splats && queuedChunk === chunk)) {
++      this.requestedChunks.push({ splats, chunk });
++    }
++    return new Promise((resolve, reject) => {
++      let timer;
++      const cleanup = () => {
++        if (timer !== void 0) clearTimeout(timer);
++        options.signal == null ? void 0 : options.signal.removeEventListener("abort", abort);
++      };
++      const removeRequest = () => {
++        this.requestedChunks = this.requestedChunks.filter(({ splats: queuedSplats, chunk: queuedChunk }) => queuedSplats !== splats || queuedChunk !== chunk);
++      };
++      const abort = () => {
++        cleanup();
++        removeRequest();
++        reject(new DOMException("Chunk preparation was aborted", "AbortError"));
++      };
++      const check = () => {
++        if ((options.signal == null ? void 0 : options.signal.aborted) === true) {
++          abort();
++          return;
++        }
++        const mapping = this.getSplatsChunk(splats, chunk);
++        if (mapping && !uploadPending(mapping.page)) {
++          cleanup();
++          removeRequest();
++          resolve({ chunk, page: mapping.page, reusedPage: false });
++          return;
++        }
++        this.driveFetchers();
++        timer = setTimeout(check, 16);
++      };
++      options.signal == null ? void 0 : options.signal.addEventListener("abort", abort, { once: true });
++      check();
++    });
++  }
+   insertSplatsChunkPage(splats, chunk, page, now) {
+     if (!this.splatsChunkToPage.has(splats)) {
+       this.splatsChunkToPage.set(splats, []);
+@@ -11903,7 +11993,11 @@ const _SplatPager = class _SplatPager {
+     const needed = [];
+     const overflow = [];
+     let numPages = 0;
+-    for (const { splats, chunk } of this.fetchPriority) {
++    const priorities = [
++      ...this.requestedChunks,
++      ...this.fetchPriority.filter(({ splats, chunk }) => !this.requestedChunks.some(({ splats: requestedSplats, chunk: requestedChunk }) => requestedSplats === splats && requestedChunk === chunk))
++    ];
++    for (const { splats, chunk } of priorities) {
+       const pageLru = this.getSplatsChunk(splats, chunk);
+       if (pageLru) {
+         if (numPages >= this.maxPages) {
+@@ -11994,14 +12088,24 @@ const _SplatPager = class _SplatPager {
+         break;
+       }
+       const { splats, chunk, data } = fetched;
++      const allocationStartedAt = performance.now();
+       let page = this.allocatePage();
++      let reusedPage = false;
+       if (page === void 0) {
+         page = this.allocateFreeable();
++        reusedPage = page !== void 0;
+         if (page === void 0) {
+           return;
+         }
+       }
+       this.insertSplatsChunkPage(splats, chunk, page, now);
++      splats.reportPreparation({
++        chunk,
++        durationMs: performance.now() - allocationStartedAt,
++        page,
++        phase: "page-allocation",
++        reusedPage
++      });
+       const { numSplats, extra } = data;
+       this.lodTreeUpdates.push({
+         splats,
+@@ -12028,7 +12132,17 @@ const _SplatPager = class _SplatPager {
+         break;
+       }
+       const { page, numSplats, packedArray, extArray, extra } = upload;
++      const uploadStartedAt = performance.now();
+       this.uploadPage(page, packedArray, extra, extArray);
++      const mapping = this.pageToSplatsChunk[page];
++      if (mapping) {
++        mapping.splats.reportPreparation({
++          chunk: mapping.chunk,
++          durationMs: performance.now() - uploadStartedAt,
++          page,
++          phase: "gpu-upload"
++        });
++      }
+     }
+   }
+   consumeLodTreeUpdates() {
+diff --git a/dist/types/SplatPager.d.ts b/dist/types/SplatPager.d.ts
+index 968e4534933abc3772056fd21068eb5ff76b0f67..04636a02a9468261f1ab3b4135bd5a9936692bb6 100644
+--- a/dist/types/SplatPager.d.ts
++++ b/dist/types/SplatPager.d.ts
+@@ -2,6 +2,16 @@ import { dyno } from '.';
+ import { SplatSource } from './SplatMesh';
+ import { ExtResult, PackedResult, RadMeta, SplatEncoding, SplatFileType } from './defines';
+ import * as THREE from "three";
++export type PagedSplatsPreparationPhase = "chunk-fetch" | "chunk-decode" | "page-allocation" | "gpu-upload" | "tree-registration" | "tree-update" | "tree-traversal";
++export interface PagedSplatsPreparationEvent {
++    atMs: number;
++    chunk?: number;
++    durationMs: number;
++    page?: number;
++    phase: PagedSplatsPreparationPhase;
++    reusedPage?: boolean;
++}
++export type PagedSplatsPreparationCallback = (event: Readonly<PagedSplatsPreparationEvent>) => void;
+ export interface PagedSplatsOptions {
+     pager?: SplatPager;
+     rootUrl?: string;
+@@ -10,9 +20,11 @@ export interface PagedSplatsOptions {
+     fileBytes?: Uint8Array;
+     fileType?: SplatFileType;
+     maxSh?: number;
++    onPreparation?: PagedSplatsPreparationCallback;
+ }
+ export declare class PagedSplats implements SplatSource {
+     pager?: SplatPager;
++    onPreparation: PagedSplatsPreparationCallback | undefined;
+     rootUrl: string;
+     requestHeader?: Record<string, string>;
+     withCredentials?: boolean;
+@@ -38,6 +50,7 @@ export declare class PagedSplats implements SplatSource {
+     constructor(options: PagedSplatsOptions);
+     dispose(): void;
+     setMaxSh(maxSh: number): void;
++    reportPreparation(event: Omit<PagedSplatsPreparationEvent, "atMs">): void;
+     getRadMeta(): Promise<{
+         meta: RadMeta;
+         chunksStart: number;
+@@ -86,6 +99,14 @@ export interface SplatPagerOptions {
+      */
+     numFetchers?: number;
+ }
++export interface SplatPagerPrepareChunkOptions {
++    signal?: AbortSignal;
++}
++export interface SplatPagerPreparedChunk {
++    chunk: number;
++    page: number;
++    reusedPage: boolean;
++}
+ export declare class SplatPager {
+     renderer: THREE.WebGLRenderer;
+     extSplats: boolean;
+@@ -147,6 +168,10 @@ export declare class SplatPager {
+         splats: PagedSplats;
+         chunk: number;
+     }[];
++    requestedChunks: {
++        splats: PagedSplats;
++        chunk: number;
++    }[];
+     packedTexture: dyno.DynoUsampler2DArray<"packedTexture", THREE.DataArrayTexture>;
+     extTexture: dyno.DynoUsampler2DArray<"extTexture", THREE.DataArrayTexture>;
+     sh1Texture: dyno.DynoUsampler2DArray<"sh1", THREE.DataArrayTexture>;
+@@ -198,6 +223,7 @@ export declare class SplatPager {
+         page: number;
+         lru: number;
+     } | undefined;
++    prepareChunk(splats: PagedSplats, chunk?: number, options?: SplatPagerPrepareChunkOptions): Promise<SplatPagerPreparedChunk>;
+     private insertSplatsChunkPage;
+     private removeSplatsChunkPage;
+     private uploadPage;

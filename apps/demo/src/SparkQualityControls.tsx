@@ -4,8 +4,10 @@ import type {
 } from "@6g-path/gaussian-renderer-spark";
 
 export interface SparkQualityControlsProps {
+  adaptive: boolean;
   configuration: SparkRenderQualityConfiguration;
   disabled: boolean;
+  onAdaptiveChange(adaptive: boolean): void;
   onChange(configuration: SparkRenderQualityConfiguration): void;
 }
 
@@ -14,15 +16,29 @@ function formatScale(value: number): string {
 }
 
 export function SparkQualityControls({
+  adaptive,
   configuration,
   disabled,
+  onAdaptiveChange,
   onChange,
 }: SparkQualityControlsProps) {
-  const dynamicWeight = configuration.dynamicSequenceWeights.actor ?? 1;
+  const dynamicSequenceId =
+    Object.keys(configuration.dynamicSequenceWeights)[0] ?? "actor";
+  const dynamicWeight = configuration.dynamicSequenceWeights[dynamicSequenceId] ?? 1;
 
   return (
     <fieldset className="quality-controls" disabled={disabled}>
       <legend>Render quality</legend>
+
+      <label className="quality-mode" htmlFor="adaptive-quality">
+        Automatic buffer-aware quality
+        <input
+          checked={adaptive}
+          id="adaptive-quality"
+          onChange={(event) => onAdaptiveChange(event.currentTarget.checked)}
+          type="checkbox"
+        />
+      </label>
 
       <label htmlFor="splat-budget">
         Splat budget
@@ -31,6 +47,7 @@ export function SparkQualityControls({
         </output>
       </label>
       <input
+        disabled={adaptive}
         id="splat-budget"
         type="range"
         min="100000"
@@ -52,6 +69,7 @@ export function SparkQualityControls({
         </output>
       </label>
       <input
+        disabled={adaptive}
         id="static-detail"
         type="range"
         min="0.25"
@@ -71,6 +89,7 @@ export function SparkQualityControls({
         <output htmlFor="dynamic-detail">{formatScale(dynamicWeight)}</output>
       </label>
       <input
+        disabled={adaptive}
         id="dynamic-detail"
         type="range"
         min="0.25"
@@ -82,7 +101,7 @@ export function SparkQualityControls({
             ...configuration,
             dynamicSequenceWeights: {
               ...configuration.dynamicSequenceWeights,
-              actor: Number(event.currentTarget.value),
+              [dynamicSequenceId]: Number(event.currentTarget.value),
             },
           })
         }

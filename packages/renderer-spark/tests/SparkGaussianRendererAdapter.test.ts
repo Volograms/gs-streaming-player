@@ -457,10 +457,11 @@ describe("SparkGaussianRendererAdapter", () => {
     });
     await adapter.initialise();
     let rootPageReady = false;
+    const preparationTrace = vi.fn();
     const preparation = adapter.prepareFrame(
       "actor",
       { frameIndex: 0, timestampSeconds: 0, url: "/frame-0.rad" },
-      {},
+      { onTrace: preparationTrace },
     );
     const mesh = harness.splatMeshes[0];
     if (mesh === undefined) {
@@ -470,8 +471,9 @@ describe("SparkGaussianRendererAdapter", () => {
     const getSplatsChunk = vi.fn(() =>
       rootPageReady ? { lru: 0, page: 0 } : undefined,
     );
+    const prepareChunk = vi.fn(async () => ({ chunk: 0, page: 0, reusedPage: false }));
     mesh.paged = {
-      pager: { getSplatsChunk, newUploads: [], readyUploads },
+      pager: { getSplatsChunk, newUploads: [], prepareChunk, readyUploads },
     } as unknown as NonNullable<SplatMesh["paged"]>;
     initialiser.resolve();
 
@@ -485,6 +487,24 @@ describe("SparkGaussianRendererAdapter", () => {
       });
     });
 
+    mesh.paged.onPreparation?.({
+      atMs: 1,
+      chunk: 0,
+      durationMs: 12.5,
+      page: 0,
+      phase: "gpu-upload",
+      reusedPage: false,
+    });
+    expect(preparationTrace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chunkIndex: 0,
+        pageIndex: 0,
+        phase: "gpu-upload",
+        reusedPage: false,
+        stageDurationMs: 12.5,
+      }),
+    );
+
     rootPageReady = true;
     readyUploads.push({ page: 0 });
     let preparationResolved = false;
@@ -495,6 +515,9 @@ describe("SparkGaussianRendererAdapter", () => {
     expect(preparationResolved).toBe(false);
     readyUploads.pop();
     const prepared = await preparation;
+    expect(prepareChunk).toHaveBeenCalledWith(mesh.paged, 0, {
+      signal: expect.any(AbortSignal),
+    });
     expect(getSplatsChunk).toHaveBeenCalled();
     expect(adapter.getFrameSlotSnapshots()[0]).toMatchObject({
       state: "ready",
@@ -564,6 +587,7 @@ describe("SparkGaussianRendererAdapter", () => {
     const prepared = await preparation;
 
     expect(adapter.getFramePresentationQuality(prepared)).toMatchObject({
+      achievedDetailLevel: 0,
       loadedBytes: 100,
       selectedSplatCount: 1,
       state: "root-ready",
@@ -597,11 +621,13 @@ describe("SparkGaussianRendererAdapter", () => {
     mesh.mappingVersion = 3;
     adapter.render();
     await expect(refinement).resolves.toMatchObject({
+      achievedDetailLevel: 0.25,
       demandedPageCount: 2,
       detailLevel: 0.25,
       loadedBytes: 400,
       selectedSplatCount: 100,
       state: "presentable",
+      requestedDetailLevel: 0.25,
     });
 
     adapter.setFrameTransform(prepared, {
@@ -609,6 +635,7 @@ describe("SparkGaussianRendererAdapter", () => {
     });
     expect(mesh.scale.toArray()).toEqual([1.25, 1.25, 1.25]);
     expect(adapter.getFramePresentationQuality(prepared)).toMatchObject({
+      achievedDetailLevel: 0,
       detailLevel: 0.25,
       state: "refining",
     });

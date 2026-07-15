@@ -6,6 +6,7 @@ import { createIdentityTransform } from "@6g-path/shared";
 import { useState } from "react";
 
 import { getFoundationStatus } from "./foundationStatus.js";
+import { PlaybackPerformancePanel } from "./PlaybackPerformancePanel.js";
 import { PlaybackTracePanel } from "./PlaybackTracePanel.js";
 import { SparkViewport } from "./SparkViewport.js";
 
@@ -78,6 +79,7 @@ export function App() {
         </article>
       </section>
 
+      <PlaybackPerformancePanel events={playbackTrace} />
       <PlaybackTracePanel events={playbackTrace} onClear={() => setPlaybackTrace([])} />
 
       <footer>{SIX_G_TELEMETRY_PACKAGE_ID}</footer>

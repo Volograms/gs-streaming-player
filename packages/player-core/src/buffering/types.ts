@@ -25,22 +25,27 @@ export interface BufferedFrame {
 }
 
 export interface FrameRingBufferSnapshot {
+  activeBasePreparationCount: number;
   capacity: number;
   currentFrameIndex?: number;
   frames: readonly BufferedFrame[];
   futureFrameCount: number;
   previousFrameCount: number;
+  queuedBasePreparationCount: number;
 }
 
 export interface FrameRingBufferConfiguration {
   futureFrameCount?: number;
   loop?: boolean;
+  maximumBasePreparationConcurrency?: number;
+  maximumRefinementConcurrency?: number;
   previousFrameCount?: number;
 }
 
 export type FrameRingBufferTraceEventType =
   | "window-updated"
   | "base-requested"
+  | "base-started"
   | "base-progress"
   | "renderer-phase"
   | "base-ready"
@@ -69,8 +74,12 @@ export interface FrameRingBufferTraceEvent {
   frameIndex?: number;
   frames?: readonly FrameRingBufferTraceFrame[];
   loadedBytes?: number;
+  chunkIndex?: number;
+  pageIndex?: number;
   phase?: RendererFramePreparationPhase;
   quality?: Readonly<FramePresentationQuality>;
+  reusedPage?: boolean;
+  stageDurationMs?: number;
   totalBytes?: number;
   type: FrameRingBufferTraceEventType;
 }

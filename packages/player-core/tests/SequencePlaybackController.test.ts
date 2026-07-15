@@ -140,6 +140,7 @@ function createBufferHarness(options: { allReady?: boolean } = {}) {
   const buffer = {
     get snapshot(): FrameRingBufferSnapshot {
       return {
+        activeBasePreparationCount: 0,
         capacity: 5,
         currentFrameIndex,
         frames: [...ready].map((frameIndex) => ({
@@ -154,6 +155,7 @@ function createBufferHarness(options: { allReady?: boolean } = {}) {
         })),
         futureFrameCount: 3,
         previousFrameCount: 1,
+        queuedBasePreparationCount: 0,
       };
     },
     isPresentationReady: vi.fn((frameIndex: number) => ready.has(frameIndex)),

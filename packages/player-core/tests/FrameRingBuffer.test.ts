@@ -514,6 +514,40 @@ describe("FrameRingBuffer", () => {
     expect(harness.presentFrame).toHaveBeenCalledOnce();
   });
 
+  it("revalidates buffered frames when adaptive presentation targets change", async () => {
+    const harness = createRendererHarness();
+    const buffer = new FrameRingBuffer({
+      futureFrameCount: 1,
+      previousFrameCount: 0,
+      renderer: harness.renderer,
+      sequence: createSequence(),
+    });
+    const initialising = buffer.initialise(0);
+    harness.resolve(0);
+    await initialising;
+    const frame1 = harness.resolve(1);
+    await buffer.whenBuffered();
+    await vi.waitFor(() => {
+      expect(
+        buffer.snapshot.frames.find(({ frameIndex }) => frameIndex === 1)?.status,
+      ).toBe("ready");
+    });
+
+    buffer.setPresentationQualityTarget({
+      detailLevel: 0.15,
+      minimumSplatCount: 50,
+    });
+
+    expect(harness.setFrameRefinement).toHaveBeenCalledWith(frame1, false);
+    await vi.waitFor(() => {
+      expect(harness.refineFrame).toHaveBeenCalledWith(
+        frame1,
+        { detailLevel: 0.15, minimumSplatCount: 50 },
+        expect.anything(),
+      );
+    });
+  });
+
   it("cancels in-flight frames and releases prepared frames on disposal", async () => {
     const harness = createRendererHarness();
     const buffer = new FrameRingBuffer({

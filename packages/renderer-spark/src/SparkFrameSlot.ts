@@ -10,6 +10,7 @@ import type {
   GaussianFrameSource,
   PreparedFrame,
   RendererFramePreparationPhase,
+  RendererFramePreparationTraceEvent,
   RendererResourceMetrics,
 } from "@6g-path/gaussian-player";
 import type { Transform } from "@6g-path/shared";
@@ -144,12 +145,40 @@ export class SparkFrameSlot {
     const trace = (
       phase: RendererFramePreparationPhase,
       quality?: FramePresentationQuality,
+      details: Partial<
+        Pick<
+          RendererFramePreparationTraceEvent,
+          "chunkIndex" | "pageIndex" | "reusedPage" | "stageDurationMs"
+        >
+      > = {},
     ) => {
       options.onTrace?.({
+        ...details,
         elapsedMs: this.options.getNow() - preparationStartedAt,
         phase,
         ...(quality === undefined ? {} : { quality }),
       });
+    };
+    const reportedPreparationPhases = new Set<string>();
+    const onPagedPreparation: NonNullable<
+      NonNullable<SplatMesh["paged"]>["onPreparation"]
+    > = ({ chunk, durationMs, page, phase, reusedPage }) => {
+      const traceKey = `${phase}:${chunk ?? "shared"}`;
+      if (reportedPreparationPhases.has(traceKey)) {
+        return;
+      }
+      reportedPreparationPhases.add(traceKey);
+      trace(phase, undefined, {
+        ...(chunk === undefined ? {} : { chunkIndex: chunk }),
+        ...(page === undefined ? {} : { pageIndex: page }),
+        ...(reusedPage === undefined ? {} : { reusedPage }),
+        stageDurationMs: durationMs,
+      });
+    };
+    const installPreparationTrace = (mesh: SplatMesh) => {
+      if (mesh.paged !== undefined) {
+        mesh.paged.onPreparation = onPagedPreparation;
+      }
     };
 
     try {
@@ -178,8 +207,10 @@ export class SparkFrameSlot {
       });
       mesh.visible = false;
       this.meshValue = mesh;
+      installPreparationTrace(mesh);
       trace("resource-created");
       await waitWithAbort(mesh.initialized, controller.signal, () => undefined);
+      installPreparationTrace(mesh);
       trace("resource-initialized");
       if (this.isReleased()) {
         throw new SparkRendererStateError(`Frame slot ${this.slotId} was released.`);
@@ -208,6 +239,9 @@ export class SparkFrameSlot {
       }
       throw error;
     } finally {
+      if (this.meshValue?.paged?.onPreparation === onPagedPreparation) {
+        this.meshValue.paged.onPreparation = undefined;
+      }
       unlinkExternalSignal();
       if (this.abortController === controller) {
         this.abortController = undefined;
@@ -369,10 +403,15 @@ export class SparkFrameSlot {
 
   getPresentationQuality(): FramePresentationQuality {
     const inspection = this.inspectPresentationQuality();
-    return this.presentationReadyRevision === this.qualityTargetRevision &&
-      inspection.settled
-      ? { ...inspection.snapshot, state: "presentable" }
-      : inspection.snapshot;
+    const presentable =
+      this.presentationReadyRevision === this.qualityTargetRevision &&
+      inspection.settled;
+    return {
+      ...inspection.snapshot,
+      achievedDetailLevel: presentable ? this.qualityTargetValue.detailLevel : 0,
+      requestedDetailLevel: this.qualityTargetValue.detailLevel,
+      ...(presentable ? { state: "presentable" } : {}),
+    };
   }
 
   cancel(): void {
@@ -520,7 +559,9 @@ export class SparkFrameSlot {
         mappingVersion: mesh.mappingVersion,
         settled,
         snapshot: {
+          achievedDetailLevel: settled ? detailLevel : 0,
           detailLevel,
+          requestedDetailLevel: detailLevel,
           selectedSplatCount,
           state: settled ? "presentable" : "refining",
         },
@@ -584,6 +625,7 @@ export class SparkFrameSlot {
       mappingVersion: mesh.mappingVersion,
       settled,
       snapshot: {
+        achievedDetailLevel: 0,
         demandedPageCount: demandedChunks.size,
         detailLevel,
         fetchingPageCount: fetchingPageCount + fetchedPageCount,
@@ -596,6 +638,7 @@ export class SparkFrameSlot {
         state: rootReady && detailLevel === 0 ? "root-ready" : "refining",
         ...(totalBytes === undefined ? {} : { totalBytes }),
         uploadPendingPageCount: frameUploadPendingPages.size + pendingTreeUpdateCount,
+        requestedDetailLevel: detailLevel,
       },
     };
   }
@@ -618,6 +661,7 @@ export class SparkFrameSlot {
 
     return new Promise<void>((resolve, reject) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
+      let explicitPreparationStarted = false;
       const cleanup = () => {
         if (timer !== undefined) {
           clearTimeout(timer);
@@ -634,6 +678,20 @@ export class SparkFrameSlot {
           return;
         }
         const pager = paged.pager;
+        if (
+          pager !== undefined &&
+          !explicitPreparationStarted &&
+          typeof pager.prepareChunk === "function"
+        ) {
+          explicitPreparationStarted = true;
+          void pager
+            .prepareChunk(paged, 0, { signal })
+            .then(check, (error: unknown) => {
+              cleanup();
+              reject(signal.aborted ? new SparkRendererAbortError() : error);
+            });
+          return;
+        }
         const rootPage = pager?.getSplatsChunk(paged, 0);
         const rootUploadPending =
           rootPage !== undefined &&

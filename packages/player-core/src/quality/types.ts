@@ -2,10 +2,14 @@ import type { NetworkState } from "../network/types.js";
 import type { PlaybackState } from "../player/playbackState.js";
 
 export interface PlayerMetrics {
+  bufferOccupancyRatio?: number;
   downloadedBytes: number;
   droppedFrames: number;
+  estimatedBaseFrameBytes?: number;
   renderFramesPerSecond?: number;
   stallDurationSeconds: number;
+  targetFramesPerSecond?: number;
+  timeUntilNextDeadlineSeconds?: number;
 }
 
 export interface QualityDecision {
@@ -15,6 +19,10 @@ export interface QualityDecision {
   targetBufferSeconds: number;
   maximumRefinementBytes: number;
   allowStaticRefinement: boolean;
+  dynamicFrameDetailLevel?: number;
+  maximumBasePreparationConcurrency?: number;
+  maximumRefinementConcurrency?: number;
+  minimumDynamicSplatCount?: number;
 }
 
 export interface QualityController {

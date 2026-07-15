@@ -47,6 +47,15 @@ export {
 } from "./manifest/validation.js";
 export type { NetworkState, NetworkStateSource } from "./network/types.js";
 export {
+  ClientThroughputEstimator,
+  type ClientThroughputEstimatorConfiguration,
+} from "./network/ClientThroughputEstimator.js";
+export {
+  summariseFrameTimings,
+  type FrameTimingSummary,
+  type TimingDistribution,
+} from "./diagnostics/FrameTimingSummary.js";
+export {
   createInitialPlaybackState,
   type PlaybackState,
   type PlayerLifecycleState,
@@ -63,6 +72,11 @@ export type {
   QualityController,
   QualityDecision,
 } from "./quality/types.js";
+export {
+  BufferAwareQualityController,
+  type BufferAwareQualityControllerConfiguration,
+  type BufferQualityTier,
+} from "./quality/BufferAwareQualityController.js";
 export type {
   FramePresentationQuality,
   FramePresentationQualityState,

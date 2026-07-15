@@ -28,7 +28,10 @@ export interface FrameQualityTarget {
 export type FramePresentationQualityState = "refining" | "root-ready" | "presentable";
 
 export interface FramePresentationQuality {
+  /** Detail that has passed the renderer's presentation-readiness checks. */
+  achievedDetailLevel?: number;
   demandedPageCount?: number;
+  /** Requested detail retained for compatibility; use achievedDetailLevel for gates. */
   detailLevel: number;
   fetchingPageCount?: number;
   loadedBytes?: number;
@@ -38,6 +41,8 @@ export interface FramePresentationQuality {
   state: FramePresentationQualityState;
   totalBytes?: number;
   uploadPendingPageCount?: number;
+  /** Current renderer demand, whether or not it has finished loading. */
+  requestedDetailLevel?: number;
 }
 
 export type FrameQualityProgressCallback = (
@@ -45,13 +50,28 @@ export type FrameQualityProgressCallback = (
 ) => void;
 
 export type RendererFramePreparationPhase =
-  "resource-created" | "resource-initialized" | "metadata-ready" | "minimum-renderable";
+  | "resource-created"
+  | "resource-initialized"
+  | "metadata-ready"
+  | "chunk-fetch"
+  | "chunk-decode"
+  | "page-allocation"
+  | "gpu-upload"
+  | "tree-registration"
+  | "tree-update"
+  | "tree-traversal"
+  | "minimum-renderable";
 
 export interface RendererFramePreparationTraceEvent {
+  chunkIndex?: number;
   /** Time since prepareFrame started, measured with the renderer's monotonic clock. */
   elapsedMs: number;
+  pageIndex?: number;
   phase: RendererFramePreparationPhase;
   quality?: Readonly<FramePresentationQuality>;
+  reusedPage?: boolean;
+  /** Duration measured inside the renderer for this individual phase. */
+  stageDurationMs?: number;
 }
 
 export type RendererFramePreparationTraceCallback = (

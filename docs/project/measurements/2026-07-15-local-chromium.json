@@ -1,0 +1,53 @@
+{
+  "content": {
+    "frameEnd": 50,
+    "frameStart": 40,
+    "notes": "Unoptimised rafa-pitch quality-LoD RAD sequence",
+    "targetFramesPerSecond": 30
+  },
+  "environment": {
+    "browser": "Chromium via Playwright",
+    "profile": "local development machine"
+  },
+  "policy": {
+    "basePreparationConcurrency": 2,
+    "minimumSelectedSplats": 100,
+    "presentationDetailLevel": 0.25,
+    "refinementConcurrency": 1
+  },
+  "result": {
+    "basePreparation": {
+      "count": 9,
+      "medianMs": 1857.5,
+      "p95Ms": 3366.2
+    },
+    "estimatedEffectiveBaseThroughputBps": 6725627.29,
+    "handoff": {
+      "count": 6,
+      "medianMs": 0.1,
+      "p95Ms": 0.2
+    },
+    "minimumRenderable": {
+      "count": 9,
+      "medianMs": 1449.8,
+      "p95Ms": 3365.3
+    },
+    "presentationWait": {
+      "count": 6,
+      "medianMs": 22.9,
+      "p95Ms": 896.2
+    },
+    "queueWait": {
+      "count": 10,
+      "medianMs": 0.3,
+      "p95Ms": 1463.4
+    },
+    "refinement": {
+      "count": 7,
+      "medianMs": 484.7,
+      "p95Ms": 1212.2
+    },
+    "selectedSplatsAtObservedHandoffs": [8580, 8605, 8355]
+  },
+  "timestamp": "2026-07-15"
+}

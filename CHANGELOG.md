@@ -62,6 +62,17 @@ All notable changes to this project will be documented here. The project uses
 - Opt-in frame-buffer timing traces and a live demo diagnostic panel covering buffer
   window state, Spark resource/metadata/root-page milestones, range-transfer progress,
   LoD page demand, GPU upload queues, presentation readiness, handoff, and eviction.
+- Deadline- and cost-aware base-frame scheduling with runtime-configurable preparation
+  and refinement concurrency, plus queued/active preparation diagnostics.
+- Multi-window client throughput estimation and a buffer-aware quality controller with
+  conservative safety margin, immediate downgrade, delayed upgrade, and separate
+  transfer/resident/render quality decisions.
+- Live p50/p95 playback performance summaries and an opt-in real-asset Playwright
+  benchmark that emits machine-readable switching measurements.
+- Reproducible Spark 2.1 pager extension with cancellable explicit chunk preparation,
+  persistent request priority through GPU readiness, and phase timers for chunk fetch,
+  worker decode, preallocated page allocation/reuse, GPU upload, LoD-tree registration,
+  tree update, and traversal.
 
 ### Fixed
 
@@ -72,5 +83,9 @@ All notable changes to this project will be documented here. The project uses
 - Dynamic frames no longer hand off at root-only quality or retain stale readiness after
   Spark page eviction. The active frame remains visible until the replacement's current
   presentation target is resident and stable.
+- Requested detail is no longer treated as achieved detail, and the default presentation
+  gate rejects the one-splat root representation that previously appeared as a grey
+  cloud before Spark completed useful LoD selection. The current demo applies a
+  content-specific 100-splat minimum.
 - Demo playback no longer uses a drifting React interval or serialises frame rate behind
   async loads; timing and buffering now remain in the player core.

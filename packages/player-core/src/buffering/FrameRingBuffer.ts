@@ -1,3 +1,5 @@
+import { FramePreparationScheduler } from "./FramePreparationScheduler.js";
+
 import type {
   FrameRingBufferConfiguration,
   FrameRingBufferSnapshot,
@@ -50,13 +52,15 @@ export interface FramePresentationOptions {
 type SnapshotListener = (snapshot: FrameRingBufferSnapshot) => void;
 
 export class FrameRingBuffer {
+  private readonly basePreparationScheduler: FramePreparationScheduler;
   private readonly futureFrameCount: number;
   private readonly listeners = new Set<SnapshotListener>();
   private readonly loop: boolean;
+  private maximumRefinementConcurrency: number;
   private readonly now: () => number;
   private readonly onTrace: FrameRingBufferTraceListener | undefined;
   private readonly previousFrameCount: number;
-  private readonly presentationQualityTarget: FrameQualityTarget;
+  private presentationQualityTarget: FrameQualityTarget;
   private readonly records = new Map<number, FrameRecord>();
   private readonly renderer: GaussianRendererAdapter;
   private readonly sequence: DynamicGaussianSequence;
@@ -74,11 +78,15 @@ export class FrameRingBuffer {
     this.futureFrameCount = options.futureFrameCount ?? 3;
     this.previousFrameCount = options.previousFrameCount ?? 1;
     this.loop = options.loop ?? false;
+    this.basePreparationScheduler = new FramePreparationScheduler(
+      options.maximumBasePreparationConcurrency ?? 4,
+    );
+    this.maximumRefinementConcurrency = options.maximumRefinementConcurrency ?? 1;
     this.now = options.now ?? (() => performance.now());
     this.onTrace = options.onTrace;
     this.presentationQualityTarget = options.presentationQualityTarget ?? {
       detailLevel: 0.25,
-      minimumSplatCount: 0,
+      minimumSplatCount: 2,
     };
     if (this.futureFrameCount < 0 || !Number.isInteger(this.futureFrameCount)) {
       throw new RangeError("futureFrameCount must be a non-negative integer.");
@@ -87,26 +95,17 @@ export class FrameRingBuffer {
       throw new RangeError("previousFrameCount must be a non-negative integer.");
     }
     if (
-      !Number.isFinite(this.presentationQualityTarget.detailLevel) ||
-      this.presentationQualityTarget.detailLevel <= 0 ||
-      this.presentationQualityTarget.detailLevel > 1
+      !Number.isInteger(this.maximumRefinementConcurrency) ||
+      this.maximumRefinementConcurrency <= 0
     ) {
-      throw new RangeError(
-        "presentationQualityTarget.detailLevel must be greater than 0 and at most 1.",
-      );
+      throw new RangeError("maximumRefinementConcurrency must be a positive integer.");
     }
-    if (
-      !Number.isInteger(this.presentationQualityTarget.minimumSplatCount) ||
-      this.presentationQualityTarget.minimumSplatCount < 0
-    ) {
-      throw new RangeError(
-        "presentationQualityTarget.minimumSplatCount must be a non-negative integer.",
-      );
-    }
+    this.validatePresentationQualityTarget(this.presentationQualityTarget);
   }
 
   get snapshot(): FrameRingBufferSnapshot {
     return {
+      activeBasePreparationCount: this.basePreparationScheduler.activeCount,
       capacity: 1 + this.futureFrameCount + this.previousFrameCount,
       ...(this.currentFrameIndexValue === undefined
         ? {}
@@ -116,7 +115,63 @@ export class FrameRingBuffer {
         .sort((a, b) => a.frameIndex - b.frameIndex),
       futureFrameCount: this.futureFrameCount,
       previousFrameCount: this.previousFrameCount,
+      queuedBasePreparationCount: this.basePreparationScheduler.queuedCount,
     };
+  }
+
+  setPreparationConcurrency(
+    maximumBasePreparationConcurrency: number,
+    maximumRefinementConcurrency = this.maximumRefinementConcurrency,
+  ): void {
+    this.assertNotDisposed();
+    if (
+      !Number.isInteger(maximumRefinementConcurrency) ||
+      maximumRefinementConcurrency <= 0
+    ) {
+      throw new RangeError("maximumRefinementConcurrency must be a positive integer.");
+    }
+    if (
+      maximumBasePreparationConcurrency ===
+        this.basePreparationScheduler.maximumConcurrency &&
+      maximumRefinementConcurrency === this.maximumRefinementConcurrency
+    ) {
+      return;
+    }
+    this.basePreparationScheduler.setMaximumConcurrency(
+      maximumBasePreparationConcurrency,
+    );
+    this.maximumRefinementConcurrency = maximumRefinementConcurrency;
+    this.applyRefinementPolicies();
+    this.emit();
+  }
+
+  setPresentationQualityTarget(target: FrameQualityTarget): void {
+    this.assertNotDisposed();
+    this.validatePresentationQualityTarget(target);
+    if (
+      target.detailLevel === this.presentationQualityTarget.detailLevel &&
+      target.minimumSplatCount === this.presentationQualityTarget.minimumSplatCount
+    ) {
+      return;
+    }
+    this.presentationQualityTarget = { ...target };
+    for (const [frameIndex, record] of this.records) {
+      if (record.preparedFrame === undefined) {
+        continue;
+      }
+      record.refinementController?.abort();
+      record.refinementController = undefined;
+      record.refinement = undefined;
+      record.refinementEnabled = false;
+      this.renderer.setFrameRefinement(record.preparedFrame, false);
+      record.targetQualityLevel = 0;
+      if (frameIndex !== this.currentFrameIndexValue) {
+        record.status = "base-ready";
+        record.qualityLevel = record.preparedFrame.qualityLevel;
+      }
+    }
+    this.applyRefinementPolicies();
+    this.emit();
   }
 
   subscribe(listener: SnapshotListener): () => void {
@@ -367,37 +422,71 @@ export class FrameRingBuffer {
       totalBytes: record.requestedBytes,
       type: "base-requested",
     });
-    record.preparation = this.renderer
-      .prepareFrame(this.sequence.id, source, {
-        signal: controller.signal,
-        minimumQualityOnly: true,
-        onProgress: ({ loadedBytes, totalBytes }) => {
-          record.downloadedBytes = loadedBytes;
-          record.requestedBytes = totalBytes ?? record.requestedBytes;
-          const progressKey = `${loadedBytes}:${record.requestedBytes}`;
-          if (progressKey !== record.traceProgressKey) {
-            record.traceProgressKey = progressKey;
-            this.trace({
-              durationMs: this.now() - baseRequestedAtMs,
-              frameIndex,
-              loadedBytes,
-              totalBytes: record.requestedBytes,
-              type: "base-progress",
-            });
-          }
-          this.emit();
-        },
-        onTrace: ({ elapsedMs, phase, quality }) => {
+    record.preparation = this.basePreparationScheduler
+      .enqueue(
+        () => ({
+          deadlineMs: record.deadlineMs,
+          estimatedBytes:
+            record.requestedBytes > 0 ? record.requestedBytes : Number.MAX_SAFE_INTEGER,
+          frameIndex,
+          temporalDistance: this.preparationPriority(frameIndex),
+        }),
+        controller.signal,
+        () => {
           this.trace({
-            durationMs: elapsedMs,
+            durationMs: this.now() - baseRequestedAtMs,
             frameIndex,
-            phase,
-            ...(quality === undefined ? {} : { quality: this.copyQuality(quality) }),
-            type: "renderer-phase",
+            type: "base-started",
+          });
+          this.emit();
+          return this.renderer.prepareFrame(this.sequence.id, source, {
+            signal: controller.signal,
+            minimumQualityOnly: true,
+            onProgress: ({ loadedBytes, totalBytes }) => {
+              record.downloadedBytes = loadedBytes;
+              record.requestedBytes = totalBytes ?? record.requestedBytes;
+              const progressKey = `${loadedBytes}:${record.requestedBytes}`;
+              if (progressKey !== record.traceProgressKey) {
+                record.traceProgressKey = progressKey;
+                this.trace({
+                  durationMs: this.now() - baseRequestedAtMs,
+                  frameIndex,
+                  loadedBytes,
+                  totalBytes: record.requestedBytes,
+                  type: "base-progress",
+                });
+              }
+              this.emit();
+            },
+            onTrace: ({
+              chunkIndex,
+              elapsedMs,
+              pageIndex,
+              phase,
+              quality,
+              reusedPage,
+              stageDurationMs,
+            }) => {
+              this.trace({
+                ...(chunkIndex === undefined ? {} : { chunkIndex }),
+                durationMs: elapsedMs,
+                frameIndex,
+                ...(pageIndex === undefined ? {} : { pageIndex }),
+                phase,
+                ...(quality === undefined
+                  ? {}
+                  : { quality: this.copyQuality(quality) }),
+                ...(reusedPage === undefined ? {} : { reusedPage }),
+                ...(stageDurationMs === undefined ? {} : { stageDurationMs }),
+                type: "renderer-phase",
+              });
+            },
+            ...(requestedTransform === undefined
+              ? {}
+              : { transform: requestedTransform }),
           });
         },
-        ...(requestedTransform === undefined ? {} : { transform: requestedTransform }),
-      })
+      )
       .then((preparedFrame) => {
         if (requestedTransformRevision !== this.transformRevision) {
           this.renderer.setFrameTransform(preparedFrame, this.transformValue);
@@ -467,6 +556,7 @@ export class FrameRingBuffer {
       record.deadlineMs =
         this.now() + (deadlineDistance / this.sequence.frameRate) * 1000;
     }
+    this.basePreparationScheduler.reprioritise();
     this.applyRefinementPolicies();
     this.trace({
       frames: [...this.records.values()]
@@ -538,6 +628,7 @@ export class FrameRingBuffer {
     windowFrameIndex: number,
     distance: number,
   ): boolean {
+    let unreadyFrameCount = 0;
     for (let offset = 1; offset < distance; offset += 1) {
       const frameIndex = this.offsetFrameIndex(windowFrameIndex, offset);
       if (frameIndex === undefined) {
@@ -545,7 +636,10 @@ export class FrameRingBuffer {
       }
       const status = this.records.get(frameIndex)?.status;
       if (status !== "ready" && status !== "presented") {
-        return false;
+        unreadyFrameCount += 1;
+        if (unreadyFrameCount >= this.maximumRefinementConcurrency) {
+          return false;
+        }
       }
     }
     return true;
@@ -688,7 +782,8 @@ export class FrameRingBuffer {
   ): boolean {
     return (
       quality.state === "presentable" &&
-      quality.detailLevel >= this.presentationQualityTarget.detailLevel &&
+      (quality.achievedDetailLevel ?? quality.detailLevel) >=
+        this.presentationQualityTarget.detailLevel &&
       (quality.selectedSplatCount ?? 0) >=
         this.presentationQualityTarget.minimumSplatCount
     );
@@ -701,7 +796,7 @@ export class FrameRingBuffer {
     record.downloadedBytes = quality.loadedBytes ?? record.downloadedBytes;
     record.requestedBytes = quality.totalBytes ?? record.requestedBytes;
     if (quality.state === "presentable") {
-      record.qualityLevel = quality.detailLevel;
+      record.qualityLevel = quality.achievedDetailLevel ?? quality.detailLevel;
     }
   }
 
@@ -780,6 +875,16 @@ export class FrameRingBuffer {
     return this.forwardDistance(frameIndex);
   }
 
+  private preparationPriority(frameIndex: number): number {
+    const anchorFrameIndex =
+      this.windowFrameIndexValue ?? this.currentFrameIndexValue ?? 0;
+    const forwardDistance = this.forwardDistanceFrom(anchorFrameIndex, frameIndex);
+    if (forwardDistance >= 0 && forwardDistance <= this.futureFrameCount) {
+      return forwardDistance;
+    }
+    return 1_000 + Math.abs(frameIndex - anchorFrameIndex);
+  }
+
   private forwardDistance(frameIndex: number): number {
     const currentFrameIndex = this.currentFrameIndexValue ?? 0;
     return this.forwardDistanceFrom(currentFrameIndex, frameIndex);
@@ -843,6 +948,23 @@ export class FrameRingBuffer {
       this.onTrace(traceEvent);
     } catch {
       // Diagnostic observers must never interrupt playback.
+    }
+  }
+
+  private validatePresentationQualityTarget(target: FrameQualityTarget): void {
+    if (
+      !Number.isFinite(target.detailLevel) ||
+      target.detailLevel <= 0 ||
+      target.detailLevel > 1
+    ) {
+      throw new RangeError(
+        "presentationQualityTarget.detailLevel must be greater than 0 and at most 1.",
+      );
+    }
+    if (!Number.isInteger(target.minimumSplatCount) || target.minimumSplatCount < 0) {
+      throw new RangeError(
+        "presentationQualityTarget.minimumSplatCount must be a non-negative integer.",
+      );
     }
   }
 

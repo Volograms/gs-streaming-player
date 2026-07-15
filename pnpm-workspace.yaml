@@ -6,3 +6,6 @@ packages:
 allowBuilds:
   esbuild: true
   unrs-resolver: true
+
+patchedDependencies:
+  "@sparkjsdev/spark@2.1.0": patches/@sparkjsdev__spark@2.1.0.patch

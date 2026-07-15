@@ -1,4 +1,9 @@
-import { FrameRingBuffer, SequencePlaybackController } from "@6g-path/gaussian-player";
+import {
+  BufferAwareQualityController,
+  ClientThroughputEstimator,
+  FrameRingBuffer,
+  SequencePlaybackController,
+} from "@6g-path/gaussian-player";
 import {
   cloneSparkRenderQuality,
   DEFAULT_SPARK_RENDER_QUALITY,
@@ -32,11 +37,12 @@ type DynamicAssetStatus = "failed" | "loading" | "not-configured" | "ready";
 
 const staticRadUrl = import.meta.env.VITE_STATIC_RAD_URL;
 const dynamicSequence = createLocalDynamicSequence(import.meta.env);
+const minimumDynamicSplatCount = 100;
 
 function createInitialQuality(): SparkRenderQualityConfiguration {
   return {
     ...cloneSparkRenderQuality(DEFAULT_SPARK_RENDER_QUALITY),
-    dynamicSequenceWeights: { actor: 1 },
+    dynamicSequenceWeights: { [dynamicSequence?.id ?? "actor"]: 1 },
     splatBudget: 1_500_000,
   };
 }
@@ -56,6 +62,8 @@ export function SparkViewport({
   const playbackRef = useRef<SequencePlaybackController | null>(null);
   const bufferTraceListenerRef = useRef(onBufferTrace);
   const playbackSnapshotListenerRef = useRef(onPlaybackSnapshot);
+  const [adaptiveQualityEnabled, setAdaptiveQualityEnabled] = useState(false);
+  const adaptiveQualityEnabledRef = useRef(adaptiveQualityEnabled);
   const [dynamicAssetStatus, setDynamicAssetStatus] = useState<DynamicAssetStatus>(
     dynamicSequence === undefined ? "not-configured" : "loading",
   );
@@ -73,6 +81,10 @@ export function SparkViewport({
   const [staticAssetStatus, setStaticAssetStatus] = useState<StaticAssetStatus>(
     staticRadUrl === undefined ? "not-configured" : "loading",
   );
+
+  useEffect(() => {
+    adaptiveQualityEnabledRef.current = adaptiveQualityEnabled;
+  }, [adaptiveQualityEnabled]);
 
   useEffect(() => {
     bufferTraceListenerRef.current = onBufferTrace;
@@ -96,6 +108,14 @@ export function SparkViewport({
     let unsubscribePlayback: (() => void) | undefined;
     const controller = new AbortController();
     const adapter = new SparkGaussianRendererAdapter({ autoRender: false, canvas });
+    const throughputEstimator = new ClientThroughputEstimator();
+    const qualityController = new BufferAwareQualityController({
+      dynamicObjectId: dynamicSequence?.id ?? "actor",
+      minimumSplatCount: minimumDynamicSplatCount,
+      targetBufferSeconds:
+        dynamicSequence === undefined ? 0.2 : 2 / dynamicSequence.frameRate,
+    });
+    let latestBaseFrameBytes: number | undefined;
 
     async function initialiseRenderer() {
       try {
@@ -117,7 +137,65 @@ export function SparkViewport({
         });
         metricsTimer = window.setInterval(() => {
           if (active) {
-            setMetrics(adapter.getMetrics());
+            const rendererMetrics = adapter.getMetrics();
+            setMetrics(rendererMetrics);
+            const buffer = bufferRef.current;
+            const playback = playbackRef.current;
+            const network = throughputEstimator.getState(performance.now());
+            if (
+              adaptiveQualityEnabledRef.current &&
+              buffer !== null &&
+              playback !== null &&
+              network !== undefined &&
+              dynamicSequence !== undefined
+            ) {
+              const playbackSnapshot = playback.snapshot;
+              const decision = qualityController.update(
+                {
+                  bufferAheadSeconds:
+                    playbackSnapshot.bufferAheadFrames / dynamicSequence.frameRate,
+                  currentFrameIndex: playbackSnapshot.currentFrameIndex,
+                  currentTimeSeconds: playbackSnapshot.currentTimeSeconds,
+                  isPlaying: playbackSnapshot.isPlaying,
+                  lifecycle: playbackSnapshot.lifecycle,
+                  minimumReadyFrames: 2,
+                  playbackRate: 1,
+                },
+                network,
+                {
+                  bufferOccupancyRatio:
+                    playbackSnapshot.bufferAheadFrames /
+                    Math.max(1, buffer.snapshot.futureFrameCount),
+                  downloadedBytes: buffer.snapshot.frames.reduce(
+                    (sum, frame) => sum + frame.downloadedBytes,
+                    0,
+                  ),
+                  droppedFrames: playbackSnapshot.droppedFrameCount,
+                  ...(latestBaseFrameBytes === undefined
+                    ? {}
+                    : { estimatedBaseFrameBytes: latestBaseFrameBytes }),
+                  ...(rendererMetrics.renderFramesPerSecond === undefined
+                    ? {}
+                    : {
+                        renderFramesPerSecond: rendererMetrics.renderFramesPerSecond,
+                      }),
+                  stallDurationSeconds: 0,
+                  targetFramesPerSecond: dynamicSequence.frameRate,
+                },
+              );
+              buffer.setPreparationConcurrency(
+                decision.maximumBasePreparationConcurrency ?? 2,
+                decision.maximumRefinementConcurrency ?? 1,
+              );
+              buffer.setPresentationQualityTarget({
+                detailLevel: decision.dynamicFrameDetailLevel ?? 0.25,
+                minimumSplatCount: decision.minimumDynamicSplatCount ?? 2,
+              });
+              adapter.setRenderQuality(decision);
+              const adaptedQuality = adapter.getSparkRenderQuality();
+              qualityRef.current = adaptedQuality;
+              setQuality(adaptedQuality);
+            }
           }
         }, 500);
 
@@ -161,8 +239,29 @@ export function SparkViewport({
           const buffer = new FrameRingBuffer({
             futureFrameCount: 3,
             loop: true,
-            onTrace: (event) => bufferTraceListenerRef.current?.(event),
+            maximumBasePreparationConcurrency: 2,
+            maximumRefinementConcurrency: 1,
+            onTrace: (event) => {
+              if (
+                event.type === "renderer-phase" &&
+                event.phase === "minimum-renderable" &&
+                event.durationMs !== undefined &&
+                event.quality?.loadedBytes !== undefined
+              ) {
+                latestBaseFrameBytes = event.quality.loadedBytes;
+                throughputEstimator.observe(
+                  event.quality.loadedBytes,
+                  event.durationMs,
+                  event.atMs,
+                );
+              }
+              bufferTraceListenerRef.current?.(event);
+            },
             previousFrameCount: 1,
+            presentationQualityTarget: {
+              detailLevel: 0.25,
+              minimumSplatCount: minimumDynamicSplatCount,
+            },
             renderer: adapter,
             sequence: dynamicSequence,
           });
@@ -304,8 +403,10 @@ export function SparkViewport({
       </p>
       <div className="viewport-control-stack">
         <SparkQualityControls
+          adaptive={adaptiveQualityEnabled}
           configuration={quality}
           disabled={status !== "ready"}
+          onAdaptiveChange={setAdaptiveQualityEnabled}
           onChange={updateQuality}
         />
         <SceneScaleControls

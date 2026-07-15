@@ -30,7 +30,15 @@ test("loads the demo application and workspace packages", async ({ page }) => {
   await expect(page.getByRole("group", { name: "Render quality" })).toBeEnabled();
   await expect(page.getByRole("group", { name: "Object scale" })).toBeEnabled();
   await expect(page.getByLabel("Renderer metrics")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Playback performance summary" }),
+  ).toBeVisible();
   await expect(page.getByRole("region", { name: "Playback trace" })).toBeVisible();
+  const automaticQuality = page.getByLabel("Automatic buffer-aware quality");
+  await expect(automaticQuality).not.toBeChecked();
+  await automaticQuality.check();
+  await expect(page.getByLabel("Splat budget")).toBeDisabled();
+  await automaticQuality.uncheck();
 
   await page.getByLabel("Static detail").fill("0.75");
   await expect(page.locator('output[for="static-detail"]')).toHaveText("0.75×");
