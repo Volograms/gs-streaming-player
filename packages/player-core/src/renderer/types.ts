@@ -11,6 +11,8 @@ export interface FramePreparationOptions {
   minimumQualityOnly?: boolean;
   onProgress?: RendererLoadProgressCallback;
   targetQualityLevel?: number;
+  /** Local-to-world transform shared by every frame in the dynamic sequence. */
+  transform?: Transform;
 }
 
 export interface RendererLoadProgress {

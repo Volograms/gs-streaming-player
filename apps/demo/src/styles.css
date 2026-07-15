@@ -200,6 +200,47 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
+.dynamic-sequence-controls {
+  position: absolute;
+  bottom: 1rem;
+  left: 50%;
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 0.35rem;
+  width: max-content;
+  max-width: calc(100% - 18rem);
+  padding: 0.45rem;
+  transform: translateX(-50%);
+  border: 1px solid #36545f;
+  border-radius: 0.75rem;
+  background: rgb(7 16 21 / 82%);
+  backdrop-filter: blur(8px);
+}
+
+.dynamic-sequence-controls button {
+  padding: 0.35rem 0.55rem;
+  border: 1px solid #3e756c;
+  border-radius: 0.4rem;
+  color: #c7f7ec;
+  background: #12312f;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.68rem;
+}
+
+.dynamic-sequence-controls button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.dynamic-sequence-controls output {
+  grid-column: 1 / -1;
+  color: #9eb0b9;
+  font-size: 0.64rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
 .renderer-status,
 .static-asset-status {
   position: absolute;
@@ -334,5 +375,10 @@ footer {
 
   .details {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .dynamic-sequence-controls {
+    bottom: 3.8rem;
+    max-width: calc(100% - 2rem);
   }
 }

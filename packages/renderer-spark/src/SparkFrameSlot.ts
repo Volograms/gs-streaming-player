@@ -1,5 +1,6 @@
 import { waitWithAbort } from "./abort.js";
 import { SparkRendererStateError } from "./errors.js";
+import { applyTransform } from "./transform.js";
 
 import type {
   FramePreparationOptions,
@@ -139,6 +140,7 @@ export class SparkFrameSlot {
       if (this.isReleased()) {
         throw new SparkRendererStateError(`Frame slot ${this.slotId} was released.`);
       }
+      applyTransform(mesh, options.transform);
       this.options.scene.add(mesh);
       const frame: PreparedFrame = {
         frameIndex: source.frameIndex,

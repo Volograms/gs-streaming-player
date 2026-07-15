@@ -79,9 +79,9 @@ Splats and meshes share the manifest transform convention:
 - a 16-value matrix uses Three.js column-major ordering and takes precedence over the
   component fields.
 
-The adapter performs no implicit OpenCV/OpenGL axis conversion. Content-specific
+The adapter performs no implicit capture/Three.js axis conversion. Content-specific
 alignment must be expressed in the manifest transform so splats and meshes remain
-consistent.
+consistent. See the [coordinate-system convention](coordinate-system.md).
 
 ## Current validation boundary
 
@@ -99,7 +99,10 @@ sequence and frame identity, load progress, readiness, quality level, visibility
 and cancellation state. The adapter exposes immutable diagnostic snapshots:
 
 ```ts
-const prepared = await adapter.prepareFrame("actor", frame, { signal });
+const prepared = await adapter.prepareFrame("actor", frame, {
+  signal,
+  transform: sequence.transform,
+});
 adapter.presentFrame(prepared);
 
 console.table(adapter.getFrameSlotSnapshots());
@@ -109,7 +112,9 @@ adapter.releaseFrame(prepared);
 ```
 
 Presenting a frame hides the previously active frame without recreating the scene.
-Releasing a frame removes its scene node and disposes its Spark resources.
+Releasing a frame removes its scene node and disposes its Spark resources. The sequence
+transform is applied to every slot before it enters the scene, preserving alignment
+across frame replacement.
 
 ## LoD and foveation controls
 

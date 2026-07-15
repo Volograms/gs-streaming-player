@@ -11,4 +11,5 @@ test-results/
 
 # Developer-provided renderer fixtures are staged here for local smoke tests only.
 apps/demo/public/assets/local-static.rad
+apps/demo/public/assets/local-dynamic
 test-data/*.rad

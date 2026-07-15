@@ -362,7 +362,13 @@ describe("SparkGaussianRendererAdapter", () => {
     const first = await adapter.prepareFrame(
       "actor",
       { frameIndex: 0, timestampSeconds: 0, url: "/frame-0.rad" },
-      {},
+      {
+        transform: {
+          position: { x: 1, y: 2, z: 3 },
+          rotation: { w: 0, x: 1, y: 0, z: 0 },
+          scale: { x: 2, y: 2, z: 2 },
+        },
+      },
     );
     const second = await adapter.prepareFrame(
       "actor",
@@ -371,6 +377,9 @@ describe("SparkGaussianRendererAdapter", () => {
     );
 
     expect(harness.splatMeshes[0]?.visible).toBe(false);
+    expect(harness.splatMeshes[0]?.position.toArray()).toEqual([1, 2, 3]);
+    expect(harness.splatMeshes[0]?.quaternion.toArray()).toEqual([1, 0, 0, 0]);
+    expect(harness.splatMeshes[0]?.scale.toArray()).toEqual([2, 2, 2]);
     adapter.presentFrame(first);
     expect(harness.splatMeshes[0]?.visible).toBe(true);
     adapter.presentFrame(second);

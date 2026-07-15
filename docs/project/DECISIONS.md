@@ -12,6 +12,7 @@ used during day-to-day implementation.
 | 0004 | Inject adaptive quality policy                   | Accepted |
 | 0005 | Make the sequence manifest player-owned          | Accepted |
 | 0006 | Normalise network telemetry behind a provider    | Accepted |
+| 0007 | Keep coordinate conversion in content transforms | Accepted |
 
 ## Working conventions
 
@@ -35,6 +36,9 @@ used during day-to-day implementation.
 - Manifest transforms are applied identically to splats and meshes. Matrices use
   Three.js column-major ordering, take precedence over components, and receive no
   implicit coordinate-system conversion.
+- The player world is right-handed and Y-up. Source-axis conversion is explicit asset
+  configuration, including the current fixtures' 180-degree X rotation; it is never a
+  renderer-wide RAD default.
 - Dynamic Spark resources are owned by explicit frame slots; presentation changes slot
   visibility, while release or cancellation disposes the slot's mesh without recreating
   the scene.

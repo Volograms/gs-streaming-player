@@ -75,8 +75,9 @@ support:
 - `scale`: `{ x, y, z }`;
 - `matrix`: exactly 16 numeric values.
 
-Coordinate-system semantics will be fixed during E03; this schema only defines the
-transport shape.
+The player uses the explicit Three.js world and transform conventions documented in
+[`coordinate-system.md`](coordinate-system.md). The renderer performs no implicit axis
+conversion. A dynamic sequence transform is shared by all its frames.
 
 ## Dynamic frames
 

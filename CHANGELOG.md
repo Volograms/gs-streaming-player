@@ -40,3 +40,9 @@ All notable changes to this project will be documented here. The project uses
   weights, per-object weights, foveation, and maximum spherical harmonics.
 - Renderer diagnostics for in-flight resources, failures, prepared frames, rendered
   splats, GPU pages, frame time, and FPS, plus interactive demo quality controls.
+- Explicit right-handed, Y-up player coordinate convention with content-owned axis,
+  origin, scale, quaternion, and matrix alignment for static splats, dynamic frames, and
+  meshes.
+- Configurable local dynamic RAD range preview with eager preparation, 30 fps looped
+  playback, manual frame stepping, source-frame diagnostics, and real Chromium
+  validation against frames 40-50 of `rafa-pitch`.

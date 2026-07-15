@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 
 test("loads the demo application and workspace packages", async ({ page }) => {
+  test.setTimeout(
+    process.env.VITE_DYNAMIC_RAD_BASE_URL === undefined ? 30_000 : 180_000,
+  );
   await page.goto("/");
 
   await expect(
@@ -37,5 +40,15 @@ test("loads the demo application and workspace packages", async ({ page }) => {
     await expect(page.getByText("Static RAD ready", { exact: true })).toBeVisible({
       timeout: 30_000,
     });
+  }
+
+  if (process.env.VITE_DYNAMIC_RAD_BASE_URL !== undefined) {
+    await expect(page.getByText(/Dynamic RAD ready/)).toBeVisible({
+      timeout: 120_000,
+    });
+    await page.getByRole("button", { name: "Next dynamic frame" }).click();
+    await expect(page.getByText(/Source 41/)).toBeVisible();
+    await page.getByRole("button", { name: "Previous dynamic frame" }).click();
+    await expect(page.getByText(/Source 40/)).toBeVisible();
   }
 });

@@ -91,6 +91,40 @@ The demo viewport uses Three.js `OrbitControls`: primary-button drag orbits,
 secondary-button drag pans, and the wheel zooms. Touch gestures are enabled by the
 control implementation.
 
+To exercise a local dynamic range, expose a directory containing files named
+`frameNNNN-lod.rad` through the ignored preview link:
+
+```bash
+ln -s /absolute/path/to/rafa-pitch apps/demo/public/assets/local-dynamic
+```
+
+Configure the inclusive source range and start the demo:
+
+```bash
+VITE_STATIC_RAD_URL=/assets/local-static.rad \
+VITE_DYNAMIC_RAD_BASE_URL=/assets/local-dynamic \
+VITE_DYNAMIC_RAD_START_FRAME=40 \
+VITE_DYNAMIC_RAD_END_FRAME=50 \
+VITE_DYNAMIC_RAD_FRAME_RATE=30 \
+pnpm dev
+```
+
+The demo maps the source range to zero-based logical frame indices, applies the shared
+capture-to-world transform, prepares the frames, and exposes Previous, Play/Pause, and
+Next diagnostic controls. This eager short-range preview is for composition validation;
+the temporal player will replace it with bounded buffering for long sequences.
+
+Run the opt-in real-asset browser check with the same environment variables:
+
+```bash
+VITE_STATIC_RAD_URL=/assets/local-static.rad \
+VITE_DYNAMIC_RAD_BASE_URL=/assets/local-dynamic \
+pnpm test:e2e
+```
+
+The source start/end default to `40`/`50` and the frame rate defaults to `30`, so only
+the two asset URLs are required for that range.
+
 ## Package boundaries
 
 - `player-core` must never import Spark or React.
