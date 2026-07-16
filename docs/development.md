@@ -48,6 +48,82 @@ available:
 pnpm gs-manifest validate content/lesson.json --check-assets
 ```
 
+## Dynamic RAD quality-cut generation
+
+Dynamic playback is moving to independent flat SPZ tiers so network/deadline policy can
+choose frame quality without running Spark's camera-driven RAD tree at runtime. Generate
+the default 10%, 25%, 50%, and 100% leaf-frontier tiers with:
+
+```bash
+pnpm gs-content extract-rad-cuts \
+  ../sparkjs/data-ply/dynamic/rafa-pitch/frame0040-lod.rad \
+  ../sparkjs/data-ply/dynamic/rafa-pitch/frame0041-lod.rad \
+  --output-dir ../sparkjs/data-ply/dynamic/rafa-pitch-cuts
+```
+
+Shell expansion is convenient for a complete local sequence:
+
+```bash
+pnpm gs-content extract-rad-cuts \
+  ../sparkjs/data-ply/dynamic/rafa-pitch/frame*-lod.rad \
+  --output-dir ../sparkjs/data-ply/dynamic/rafa-pitch-cuts
+```
+
+The first run compiles a small Rust helper and downloads the pinned Spark 2.1 source.
+Each RAD is then decoded independently, so processing a long sequence does not retain
+every frame in memory. Generated files are:
+
+- one flat SPZ per frame and tier, such as `frame0040-minimum.spz`;
+- `quality-cuts.json`, containing manifest-compatible `qualityLevels` entries.
+
+The default tiers are `preview=0.10,minimum=0.25,medium=0.50,full=1.00`; `minimum` is
+marked playable. Override them when visual calibration supports different cuts:
+
+```bash
+pnpm gs-content extract-rad-cuts frame0040-lod.rad \
+  --output-dir generated/rafa-pitch \
+  --tiers base=0.15,standard=0.35,full=1 \
+  --minimum-playable standard \
+  --max-sh 1
+```
+
+Existing outputs are protected unless `--force` is supplied. Tier ratios are relative to
+the RAD tree's leaf count. The exporter expands the largest current representative
+first, clears all child metadata, and applies Spark's footprint-preserving LoD-opacity
+conversion before SPZ encoding. The resulting files therefore load through
+`PackedSplats` as ordinary non-LoD assets.
+
+Expose the generated directory to the local demo:
+
+```bash
+ln -s /media/data/code/sparkjs/data-ply/dynamic/rafa-pitch-cuts \
+  apps/demo/public/assets/local-dynamic-cuts
+```
+
+Then select its quality index when starting the demo:
+
+```bash
+VITE_DYNAMIC_QUALITY_INDEX_URL=/assets/local-dynamic-cuts/quality-cuts.json \
+VITE_DYNAMIC_RAD_START_FRAME=40 \
+VITE_DYNAMIC_RAD_END_FRAME=50 \
+VITE_DYNAMIC_RAD_FRAME_RATE=30 \
+pnpm dev
+```
+
+`VITE_DYNAMIC_RAD_BASE_URL` is optional in this mode. When both variables are present,
+RAD remains the fallback frame URL while the buffer transfers the selected flat SPZ
+tier. The policy chooses the smallest tier meeting its target and never selects a tier
+below the index's `minimumPlayable` entry.
+
+Flat frames are hidden after their initial upload fence and made visible only for
+presentation. This is important: transparent-but-visible future frames still participate
+in Spark's generation and sorting pass.
+
+Use a hardware-accelerated browser for frame-rate measurements. Playwright's headless
+Chromium can fall back to software WebGL; on the current development machine it reports
+0 fps even for one approximately 70k-splat minimum tier, so its real-asset run validates
+loading/lifecycle diagnostics but is not a meaningful 30 fps performance result.
+
 ## Renderer development
 
 The demo initialises the real Spark renderer and loads the self-contained
@@ -105,7 +181,7 @@ To exercise a local dynamic range, expose a directory containing files named
 ln -s /absolute/path/to/rafa-pitch apps/demo/public/assets/local-dynamic
 ```
 
-Configure the inclusive source range and start the demo:
+Configure the inclusive source range and start the paged-RAD fallback demo:
 
 ```bash
 VITE_STATIC_RAD_URL=/assets/local-static.rad \
@@ -123,7 +199,7 @@ the presented frame, three future frames, and one previous frame. The current fr
 appears only after its presentation-quality target is resident and stable while the
 remaining window fills in the background. A root page is base readiness and is never
 shown as the final handoff quality. If a requested frame misses its absolute 30 fps
-deadline, the controls report `Buffering dynamic RAD` and the current frame remains
+deadline, the controls report `Buffering dynamic GS` and the current frame remains
 visible. Playback resumes from a new monotonic clock anchor after two future frames are
 presentation-ready.
 

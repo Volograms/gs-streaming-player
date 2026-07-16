@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { createLocalDynamicSequence } from "../src/localDynamicSequence.js";
+import {
+  createLocalDynamicSequence,
+  loadLocalDynamicSequence,
+} from "../src/localDynamicSequence.js";
 
 describe("createLocalDynamicSequence", () => {
   it("creates contiguous logical frames from the configured source range", () => {
@@ -49,5 +52,54 @@ describe("createLocalDynamicSequence", () => {
         VITE_DYNAMIC_RAD_START_FRAME: "41",
       }),
     ).toThrow(/END_FRAME/);
+  });
+
+  it("loads generated flat quality tiers and resolves their URLs", async () => {
+    const sequence = await loadLocalDynamicSequence(
+      {
+        VITE_DYNAMIC_QUALITY_INDEX_URL: "/assets/actor-cuts/quality-cuts.json",
+        VITE_DYNAMIC_RAD_END_FRAME: "41",
+        VITE_DYNAMIC_RAD_START_FRAME: "40",
+      },
+      {
+        baseUrl: "https://demo.example.test/",
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              format: "flat-spz-quality-cuts",
+              frames: [40, 41].map((sourceFrameIndex) => ({
+                qualityLevels: [
+                  {
+                    byteSize: 250,
+                    level: 1,
+                    metadata: { targetLeafRatio: 0.25 },
+                    minimumPlayable: true,
+                    splatCount: 2_500,
+                    url: `frame${sourceFrameIndex}-minimum.spz`,
+                  },
+                ],
+                sourceFile: `frame${sourceFrameIndex}-lod.rad`,
+              })),
+              version: 1,
+            }),
+          ),
+      },
+    );
+
+    expect(sequence?.frames[0]).toMatchObject({
+      frameIndex: 0,
+      qualityLevels: [
+        {
+          byteSize: 250,
+          detailLevel: 0.25,
+          level: 1,
+          minimumPlayable: true,
+          splatCount: 2_500,
+          url: "https://demo.example.test/assets/actor-cuts/frame40-minimum.spz",
+        },
+      ],
+      url: "https://demo.example.test/assets/actor-cuts/frame40-minimum.spz",
+    });
+    expect(sequence?.frames[1]?.metadata).toEqual({ sourceFrameIndex: 41 });
   });
 });

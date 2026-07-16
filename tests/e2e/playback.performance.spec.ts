@@ -3,12 +3,13 @@ import { expect, test } from "@playwright/test";
 test("measures real-asset frame preparation and switching", async ({ page }) => {
   test.skip(
     process.env.RUN_PLAYBACK_BENCHMARK !== "1" ||
-      process.env.VITE_DYNAMIC_RAD_BASE_URL === undefined,
-    "Set RUN_PLAYBACK_BENCHMARK=1 and VITE_DYNAMIC_RAD_BASE_URL to run the real-asset benchmark.",
+      (process.env.VITE_DYNAMIC_RAD_BASE_URL === undefined &&
+        process.env.VITE_DYNAMIC_QUALITY_INDEX_URL === undefined),
+    "Set RUN_PLAYBACK_BENCHMARK=1 and a dynamic RAD base or quality index to run the real-asset benchmark.",
   );
   test.setTimeout(240_000);
   await page.goto("/");
-  await expect(page.getByText(/Dynamic RAD ready/)).toBeVisible({
+  await expect(page.getByText(/Dynamic GS ready/)).toBeVisible({
     timeout: 180_000,
   });
 

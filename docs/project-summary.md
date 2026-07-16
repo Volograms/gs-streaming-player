@@ -1010,11 +1010,17 @@ Make the number configurable.
 
 A frame is playable when:
 
-* enough `.RAD` data is available to render a valid coarse representation;
+* the selected flat dynamic quality-tier asset is decoded and uploaded;
 * required metadata is parsed;
 * the renderer can present it without waiting for refinements.
 
 Enhancement data must not block playback.
+
+Implementation revision (2026-07-16): dynamic quality-LoD RAD files are content-pipeline
+inputs. An offline tool extracts valid camera-independent tree frontiers and writes each
+as a flat SPZ tier. Runtime dynamic playback selects one complete tier from network,
+deadline, and buffer state and loads it without Spark LoD traversal. Static RAD scenes
+continue using camera-aware paged LoD.
 
 ---
 
@@ -1194,6 +1200,11 @@ The controller must distinguish:
 * resident frame quality;
 * target rendering splat budget;
 * device rendering capability.
+
+For dynamic sequences, transfer quality selects a concrete flat SPZ tier URL from the
+frame manifest. Rendering quality may still cap the number of resident splats drawn, but
+must not reconstruct or traverse a camera-dependent LoD tree. Static-scene transfer and
+render LoD remain independently controlled.
 
 ---
 

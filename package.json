@@ -15,6 +15,7 @@
     "dev": "pnpm --filter @6g-path/demo dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "gs-content": "tsx packages/content-tools/src/cli.ts",
     "gs-manifest": "tsx packages/content-tools/src/cli.ts",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",

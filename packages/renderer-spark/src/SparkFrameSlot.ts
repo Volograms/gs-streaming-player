@@ -56,6 +56,7 @@ export class SparkFrameSlot {
   private chunkBytesValue: readonly number[] = [];
   private committedLodScaleFractionValue = 1;
   private errorValue: unknown;
+  private fixedDetailLevelValue: number | undefined;
   private frameValue: PreparedFrame | undefined;
   private loadedBytesValue: number | undefined;
   private lodScaleValue = 1;
@@ -142,6 +143,7 @@ export class SparkFrameSlot {
     this.abortController = controller;
     const unlinkExternalSignal = this.linkExternalSignal(options.signal, controller);
     const preparationStartedAt = this.options.getNow();
+    const fixedTransfer = options.transferQuality?.mode === "fixed";
     const trace = (
       phase: RendererFramePreparationPhase,
       quality?: FramePresentationQuality,
@@ -184,6 +186,7 @@ export class SparkFrameSlot {
     try {
       const mesh = this.options.createSplatMesh({
         editable: false,
+        ...(fixedTransfer ? { enableLod: false, lod: false, paged: false } : {}),
         onProgress: (event) => {
           if (controller.signal.aborted) {
             return;
@@ -202,24 +205,54 @@ export class SparkFrameSlot {
             url: source.url,
           });
         },
-        paged: true,
+        ...(!fixedTransfer ? { paged: true } : {}),
         url: source.url,
       });
       mesh.visible = false;
       this.meshValue = mesh;
       installPreparationTrace(mesh);
       trace("resource-created");
+      const resourceCreatedAt = this.options.getNow();
       await waitWithAbort(mesh.initialized, controller.signal, () => undefined);
       installPreparationTrace(mesh);
       trace("resource-initialized");
+      if (fixedTransfer) {
+        trace("flat-decode", undefined, {
+          stageDurationMs: this.options.getNow() - resourceCreatedAt,
+        });
+      }
       if (this.isReleased()) {
         throw new SparkRendererStateError(`Frame slot ${this.slotId} was released.`);
       }
-      await this.loadPagedMetadata(mesh, controller.signal);
-      trace("metadata-ready");
+      if (fixedTransfer) {
+        this.fixedDetailLevelValue = options.transferQuality?.detailLevel;
+        this.maximumSplatCountValue =
+          options.transferQuality?.splatCount ?? mesh.numSplats;
+        this.loadedBytesValue =
+          this.loadedBytesValue ?? source.byteSize ?? this.totalBytesValue;
+        this.totalBytesValue =
+          this.totalBytesValue ?? source.byteSize ?? this.loadedBytesValue;
+      } else {
+        await this.loadPagedMetadata(mesh, controller.signal);
+        trace("metadata-ready");
+      }
       applyTransform(mesh, options.transform);
       this.options.scene.add(mesh);
-      await this.waitForMinimumRenderablePage(mesh, controller.signal);
+      if (fixedTransfer) {
+        const renderFenceStartedAt = this.options.getNow();
+        await this.waitForFlatRenderFence(mesh, controller.signal);
+        trace("flat-render-fence", undefined, {
+          stageDurationMs: this.options.getNow() - renderFenceStartedAt,
+        });
+        // The flat tier is fully decoded and uploaded after the fence. Keeping every
+        // buffered mesh transparent-but-visible makes Spark sort and draw all future
+        // frames on every render, which can stall the main thread. Park it completely
+        // until presentation; unlike paged RAD it needs no visibility-driven warming.
+        mesh.opacity = 1;
+        mesh.visible = false;
+      } else {
+        await this.waitForMinimumRenderablePage(mesh, controller.signal);
+      }
       trace("minimum-renderable", this.getPresentationQuality());
       const frame: PreparedFrame = {
         frameIndex: source.frameIndex,
@@ -227,6 +260,9 @@ export class SparkFrameSlot {
         rendererResource: this,
         sequenceId,
         source,
+        ...(options.transferQuality === undefined
+          ? {}
+          : { transferQuality: { ...options.transferQuality } }),
       };
       this.frameValue = frame;
       this.stateValue = "ready";
@@ -268,6 +304,14 @@ export class SparkFrameSlot {
 
   warm(): void {
     const mesh = this.requireReadyMesh();
+    if (this.fixedDetailLevelValue !== undefined) {
+      mesh.lodScale = 0;
+      mesh.opacity = 1;
+      mesh.visible = false;
+      this.presentedValue = false;
+      this.options.invalidateLod();
+      return;
+    }
     mesh.lodScale = this.getWarmLodScale();
     mesh.opacity = 0;
     mesh.visible = true;
@@ -313,6 +357,14 @@ export class SparkFrameSlot {
     this.options.invalidateLod();
 
     if (mesh.paged === undefined) {
+      const fixedDetailLevel = this.fixedDetailLevelValue;
+      if (fixedDetailLevel !== undefined && fixedDetailLevel < target.detailLevel) {
+        return Promise.reject(
+          new SparkRendererStateError(
+            `Flat frame detail ${fixedDetailLevel} is below the requested ${target.detailLevel}.`,
+          ),
+        );
+      }
       if (mesh.numSplats < target.minimumSplatCount) {
         return Promise.reject(
           new SparkRendererStateError(
@@ -320,7 +372,8 @@ export class SparkFrameSlot {
           ),
         );
       }
-      this.committedLodScaleFractionValue = target.detailLevel;
+      this.committedLodScaleFractionValue =
+        fixedDetailLevel === undefined ? target.detailLevel : 1;
       this.presentationReadyRevision = revision;
       const snapshot = this.getPresentationQuality();
       options.onProgress?.(snapshot);
@@ -408,7 +461,11 @@ export class SparkFrameSlot {
       inspection.settled;
     return {
       ...inspection.snapshot,
-      achievedDetailLevel: presentable ? this.qualityTargetValue.detailLevel : 0,
+      achievedDetailLevel: presentable
+        ? this.fixedDetailLevelValue === undefined
+          ? this.qualityTargetValue.detailLevel
+          : (inspection.snapshot.achievedDetailLevel ?? this.fixedDetailLevelValue)
+        : 0,
       requestedDetailLevel: this.qualityTargetValue.detailLevel,
       ...(presentable ? { state: "presentable" } : {}),
     };
@@ -499,6 +556,7 @@ export class SparkFrameSlot {
   private clearFrame(): void {
     this.disposeMesh();
     this.errorValue = undefined;
+    this.fixedDetailLevelValue = undefined;
     this.chunkBytesValue = [];
     this.committedLodScaleFractionValue = 1;
     this.frameValue = undefined;
@@ -551,19 +609,31 @@ export class SparkFrameSlot {
     const paged = mesh.paged;
     if (paged === undefined) {
       const selectedSplatCount = mesh.numSplats;
+      const achievedDetailLevel =
+        this.fixedDetailLevelValue ?? this.qualityTargetValue.detailLevel;
       const settled =
         this.stateValue === "ready" &&
+        achievedDetailLevel >= this.qualityTargetValue.detailLevel &&
         selectedSplatCount >= this.qualityTargetValue.minimumSplatCount;
       return {
         demandKey: "non-paged",
         mappingVersion: mesh.mappingVersion,
         settled,
         snapshot: {
-          achievedDetailLevel: settled ? detailLevel : 0,
+          achievedDetailLevel: settled ? achievedDetailLevel : 0,
           detailLevel,
+          ...(this.loadedBytesValue === undefined
+            ? {}
+            : { loadedBytes: this.loadedBytesValue }),
+          ...(this.maximumSplatCountValue === undefined
+            ? {}
+            : { maximumSplatCount: this.maximumSplatCountValue }),
           requestedDetailLevel: detailLevel,
           selectedSplatCount,
           state: settled ? "presentable" : "refining",
+          ...(this.totalBytesValue === undefined
+            ? {}
+            : { totalBytes: this.totalBytesValue }),
         },
       };
     }
@@ -702,6 +772,43 @@ export class SparkFrameSlot {
           resolve();
           return;
         }
+        timer = setTimeout(check, 16);
+      };
+
+      signal.addEventListener("abort", handleAbort, { once: true });
+      check();
+    });
+  }
+
+  private waitForFlatRenderFence(mesh: SplatMesh, signal: AbortSignal): Promise<void> {
+    mesh.opacity = 0;
+    mesh.visible = true;
+    const startingRenderRevision = this.options.getRenderRevision();
+    this.options.invalidateLod();
+
+    return new Promise<void>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const cleanup = () => {
+        if (timer !== undefined) {
+          clearTimeout(timer);
+        }
+        signal.removeEventListener("abort", handleAbort);
+      };
+      const handleAbort = () => {
+        cleanup();
+        reject(new SparkRendererAbortError());
+      };
+      const check = () => {
+        if (signal.aborted) {
+          handleAbort();
+          return;
+        }
+        if (this.options.getRenderRevision() > startingRenderRevision) {
+          cleanup();
+          resolve();
+          return;
+        }
+        this.options.invalidateLod();
         timer = setTimeout(check, 16);
       };
 

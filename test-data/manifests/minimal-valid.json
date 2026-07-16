@@ -25,11 +25,15 @@
           "qualityLevels": [
             {
               "level": 0,
+              "url": "../splats/presenter/frame_00000-minimum.spz",
+              "detailLevel": 0.25,
               "byteSize": 1024,
               "minimumPlayable": true
             },
             {
               "level": 1,
+              "url": "../splats/presenter/frame_00000-full.spz",
+              "detailLevel": 1,
               "byteSize": 4096
             }
           ]

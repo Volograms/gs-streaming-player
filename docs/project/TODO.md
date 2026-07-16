@@ -4,7 +4,27 @@ This file tracks implementation against the epics in
 [`project-summary.md`](../project-summary.md). A task is checked only after its
 acceptance criteria are covered by implementation and verification.
 
-## Active implementation slice: Temporal buffering and scene composition
+## Active implementation slice: Flat dynamic quality-tier playback
+
+- [x] Integrate flat SPZ dynamic frames through Spark `PackedSplats` with LoD disabled,
+      while retaining the existing paged RAD path for static scenes.
+- [x] Resolve each frame's transfer URL from the quality-controller decision and its
+      manifest `qualityLevels`, then prefetch the selected minimum-playable tier before
+      presentation.
+- [ ] Reuse or preallocate `PackedSplats` GPU capacity across frame handoffs where Spark
+      permits it, with separate decode/upload/handoff timings.
+- [ ] Browser-validate 30 fps manual and clocked playback against the generated
+      `rafa-pitch` tier set on a hardware-accelerated browser, then compare it with the
+      paged RAD baseline. Headless Chromium's software WebGL path reports 0 fps for a
+      single approximately 70k-splat frame and is not a useful throughput benchmark.
+
+The offline source path is now fixed and consumed by the runtime. Quality-LoD RAD is
+decoded once during content preparation, valid camera-independent frontiers are exported
+as flat SPZ files, and the buffer selects the smallest minimum-playable-or-better tier
+for its current network quality target. Remaining work focuses on allocation reuse and
+real 30 fps measurements.
+
+## Parallel validation and composition work
 
 - [ ] E03-T01 — Complete visual alignment validation for the composed static GS, dynamic
       GS, and mesh scene. The real assets now load and switch together, and independent
@@ -26,16 +46,49 @@ acceptance criteria are covered by implementation and verification.
       the public event model beyond observable state snapshots.
 - [ ] E06-T06/T09 — Complete independent in-flight refinement cancellation and memory
       budget integration beyond frame-count eviction.
-- [ ] E06-T03/E07-T08 follow-on — Generate camera-independent logical quality cuts for
-      dynamic RAD frames so network policy can select required chunks and draw indices
-      without runtime camera-driven tree traversal. Spark's explicit chunk preparation
-      API and phase timing foundation is complete; the offline cut format and runtime
-      index remapping remain.
+- [ ] E06-T03/E07-T08 follow-on — Replace dynamic paged-RAD preparation with selection
+      and loading of one flat SPZ quality tier. Offline cut generation, manifest-level
+      URL/size metadata, runtime tier selection, and non-LoD presentation are complete;
+      GPU reuse and measurements remain.
 - [ ] E13-T02/T04 — Complete the target-device renderer budget matrix and add
       independent static-refinement concurrency. Dynamic base and refinement concurrency
       are now configurable and measured.
 
 ## Completed
+
+### Flat SPZ dynamic runtime path (2026-07-16)
+
+- [x] Select the smallest independently addressable tier satisfying the current dynamic
+      detail target, with the configured minimum-playable tier as a floor.
+- [x] Load fixed tiers through Spark's non-paged `PackedSplats` path with LoD disabled.
+- [x] Keep decoded frames transparent through a render fence before marking base
+      preparation complete.
+- [x] Park uploaded future flat frames as invisible resources so Spark does not sort or
+      draw the complete temporal window on every render.
+- [x] Report the tier's actual detail, splat count, byte size, decode duration, and
+      render-fence duration through existing buffer diagnostics.
+- [x] Load generated `quality-cuts.json` metadata in the demo while retaining per-frame
+      RAD as an optional fallback and retaining paged RAD for static objects.
+- [x] Retry callers waiting on a queued flat frame when an adaptive-quality change
+      replaces that frame with another transfer tier.
+
+### Offline flat dynamic quality cuts (2026-07-16)
+
+- [x] Decode existing quality-LoD RAD frames with a reproducibly pinned Spark 2.1 Rust
+      library.
+- [x] Generate configurable, non-overlapping camera-independent frontiers by leaf-count
+      ratio.
+- [x] Convert merged-node LoD opacity for flat rendering and export independent SPZ
+      assets with no child tree.
+- [x] Emit batch quality metadata containing tier URLs, byte sizes, splat counts, and
+      the minimum-playable tier.
+- [x] Extend manifest quality levels with optional tier URLs, including relative URL
+      resolution and referenced-asset validation.
+
+The real 7.2 MB SH3 RAD fixture decoded in approximately 102 ms in a release smoke run.
+With SH disabled for that run, its 25% frontier encoded to 377 KB and its leaf-only full
+tier to 1.48 MB. These are pipeline sanity figures, not final dynamic-sequence quality
+or compression measurements.
 
 ### Explicit Spark page preparation and phase timing (2026-07-15)
 

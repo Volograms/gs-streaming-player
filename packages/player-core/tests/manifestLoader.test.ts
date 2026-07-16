@@ -38,6 +38,13 @@ describe("loadManifest", () => {
             {
               ...validManifest.dynamicSequences[0]!.frames[0],
               metadataUrl: "../metadata/frame_00000.json",
+              qualityLevels:
+                validManifest.dynamicSequences[0]!.frames[0]!.qualityLevels?.map(
+                  (quality, index) => ({
+                    ...quality,
+                    url: `../splats/presenter/frame_00000-q${index}.spz`,
+                  }),
+                ),
             },
             ...validManifest.dynamicSequences[0]!.frames.slice(1),
           ],
@@ -66,6 +73,9 @@ describe("loadManifest", () => {
     );
     expect(manifest.dynamicSequences[0]?.frames[0]?.metadataUrl).toBe(
       "https://media.example.test/metadata/frame_00000.json",
+    );
+    expect(manifest.dynamicSequences[0]?.frames[0]?.qualityLevels?.[0]?.url).toBe(
+      "https://media.example.test/splats/presenter/frame_00000-q0.spz",
     );
     expect(manifest.audio?.url).toBe("https://media.example.test/audio/narration.mp3");
   });

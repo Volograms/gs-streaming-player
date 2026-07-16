@@ -1,0 +1,13 @@
+[package]
+name = "rad-quality-cuts"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+publish = false
+
+[dependencies]
+anyhow = "1.0.98"
+serde_json = "1.0.145"
+spark-lib = { git = "https://github.com/sparkjsdev/spark.git", rev = "f22236f95fdd8078f0c12e3aab479523d401daf6" }
+

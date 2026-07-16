@@ -178,6 +178,15 @@
                   "type": "integer",
                   "minimum": 0
                 },
+                "url": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "detailLevel": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 1
+                },
                 "byteSize": {
                   "type": "integer",
                   "minimum": 0
@@ -262,6 +271,15 @@
                       "level": {
                         "type": "integer",
                         "minimum": 0
+                      },
+                      "url": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "detailLevel": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 1
                       },
                       "byteSize": {
                         "type": "integer",

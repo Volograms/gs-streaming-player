@@ -14,6 +14,7 @@ used during day-to-day implementation.
 | 0006 | Normalise network telemetry behind a provider       | Accepted |
 | 0007 | Keep coordinate conversion in content transforms    | Accepted |
 | 0008 | Gate presentation quality and use an absolute clock | Accepted |
+| 0009 | Export flat dynamic quality tiers from RAD trees    | Accepted |
 
 ## Working conventions
 
@@ -69,15 +70,19 @@ used during day-to-day implementation.
   frame.
 - Dynamic base work is queued by temporal distance, deadline, then estimated byte cost;
   preparation and refinement concurrency remain runtime-configurable policy outputs.
-- The current per-frame RAD size is accepted for the 6G experiments, particularly
-  because the first dynamic sequence is unoptimised. Container changes and temporal
-  compression remain last-resort follow-on work after scheduling, renderer, and quality
-  measurements.
-- Dynamic quality is ultimately network/deadline selected rather than camera selected.
-  The current RAD hierarchy still supplies valid parent/child cuts; a follow-on offline
-  step will serialize fixed logical quality cuts so runtime traversal can be removed for
-  dynamic frames without drawing overlapping hierarchy levels. Static scenes retain
-  camera-aware spatial LoD.
+- The current RAD hierarchy is an authoring source for dynamic quality tiers, not the
+  intended runtime representation. The content pipeline expands valid non-overlapping
+  frontiers and exports each as flat SPZ with manifest-compatible quality metadata.
+- Dynamic quality is network/deadline selected rather than camera selected. Dynamic SPZ
+  tiers use Spark `PackedSplats` without LoD; static scenes retain paged, camera-aware
+  RAD LoD.
+- A flat tier receives one transparent render fence after decode so Spark can
+  materialise its GPU representation. Buffered future tiers are then fully invisible
+  until handoff; they do not remain in Spark's visible generator set as paged RAD frames
+  do for warming.
+- Separate tier files are accepted for the first measurable version. A packed
+  multi-frame container and temporal compression remain a later optimisation after the
+  flat-tier playback baseline is measured.
 - Spark 2.1 is extended through a committed pnpm patch, not ad-hoc `node_modules` edits.
   The extension preserves Spark's shared preallocated GPU page pool, exposes cancellable
   explicit chunk preparation, and reports fetch, decode, page reuse/upload, and LoD-tree

@@ -55,4 +55,52 @@ describe("gs-manifest CLI", () => {
     expect(exitCode).toBe(2);
     expect(output.stderr.join("\n")).toContain("Usage:");
   });
+
+  it("forwards RAD quality-cut options to the extractor", async () => {
+    const output = createIo();
+    const requests: unknown[] = [];
+    const exitCode = await runCli(
+      [
+        "extract-rad-cuts",
+        "frame0040-lod.rad",
+        "frame0041-lod.rad",
+        "--output-dir",
+        "generated",
+        "--tiers",
+        "base=0.25,full=1",
+        "--minimum-playable",
+        "base",
+        "--max-sh",
+        "1",
+        "--force",
+      ],
+      output.io,
+      {
+        runRadQualityCuts: async (request) => {
+          requests.push(request);
+          return 0;
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(requests).toEqual([
+      {
+        force: true,
+        inputPaths: ["frame0040-lod.rad", "frame0041-lod.rad"],
+        maxSh: 1,
+        minimumPlayable: "base",
+        outputDir: "generated",
+        tiers: "base=0.25,full=1",
+      },
+    ]);
+  });
+
+  it("requires an output directory for RAD quality cuts", async () => {
+    const output = createIo();
+    const exitCode = await runCli(["extract-rad-cuts", "frame0040-lod.rad"], output.io);
+
+    expect(exitCode).toBe(2);
+    expect(output.stderr.join("\n")).toContain("--output-dir");
+  });
 });

@@ -1,5 +1,6 @@
 export const CONTENT_TOOL_COMMANDS = [
   "build-manifest",
+  "extract-rad-cuts",
   "inspect-rad",
   "measure-quality-levels",
   "validate-sequence",

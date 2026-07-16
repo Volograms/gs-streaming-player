@@ -49,12 +49,20 @@ function createRendererHarness({ automaticQuality = true } = {}) {
     async (
       _sequenceId: string,
       source: { frameIndex: number },
-      _options: FramePreparationOptions,
+      options: FramePreparationOptions,
     ) => {
-      _options.onTrace?.({ elapsedMs: 1, phase: "resource-created" });
+      options.onTrace?.({ elapsedMs: 1, phase: "resource-created" });
       const pending = deferred<PreparedFrame>();
       preparations.set(source.frameIndex, pending);
-      return pending.promise;
+      const handleAbort = () => {
+        const error = new Error("Frame preparation was aborted.");
+        error.name = "AbortError";
+        pending.reject(error);
+      };
+      options.signal?.addEventListener("abort", handleAbort, { once: true });
+      return pending.promise.finally(() => {
+        options.signal?.removeEventListener("abort", handleAbort);
+      });
     },
   );
   const presentFrame = vi.fn();
@@ -154,6 +162,7 @@ function createRendererHarness({ automaticQuality = true } = {}) {
   }
 
   return {
+    prepareFrame,
     preparations,
     presentationQualities,
     presentFrame,
@@ -169,6 +178,124 @@ function createRendererHarness({ automaticQuality = true } = {}) {
 }
 
 describe("FrameRingBuffer", () => {
+  it("prepares the smallest flat tier that satisfies presentation quality", () => {
+    const harness = createRendererHarness();
+    const sequence = createSequence(1);
+    sequence.frames[0] = {
+      ...sequence.frames[0]!,
+      qualityLevels: [
+        {
+          byteSize: 100,
+          detailLevel: 0.1,
+          level: 0,
+          url: "/frame-0-preview.spz",
+        },
+        {
+          byteSize: 250,
+          detailLevel: 0.25,
+          level: 1,
+          minimumPlayable: true,
+          splatCount: 2_500,
+          url: "/frame-0-minimum.spz",
+        },
+      ],
+    };
+    const buffer = new FrameRingBuffer({
+      futureFrameCount: 0,
+      presentationQualityTarget: {
+        detailLevel: 0.1,
+        minimumSplatCount: 100,
+      },
+      renderer: harness.renderer,
+      sequence,
+    });
+
+    void buffer.initialise(0).catch(() => undefined);
+
+    expect(harness.renderer.prepareFrame).toHaveBeenCalledWith(
+      "actor",
+      expect.objectContaining({
+        byteSize: 250,
+        url: "/frame-0-minimum.spz",
+      }),
+      expect.objectContaining({
+        targetQualityLevel: 1,
+        transferQuality: {
+          detailLevel: 0.25,
+          level: 1,
+          mode: "fixed",
+          splatCount: 2_500,
+        },
+      }),
+    );
+    buffer.dispose();
+  });
+
+  it("follows a replacement flat tier while a caller waits for the frame", async () => {
+    const harness = createRendererHarness();
+    const sequence = createSequence(2);
+    sequence.frames = sequence.frames.map((frame) => ({
+      ...frame,
+      qualityLevels: [
+        {
+          byteSize: 250,
+          detailLevel: 0.25,
+          level: 0,
+          minimumPlayable: true,
+          url: `/frame-${frame.frameIndex}-minimum.spz`,
+        },
+        {
+          byteSize: 500,
+          detailLevel: 0.5,
+          level: 1,
+          url: `/frame-${frame.frameIndex}-medium.spz`,
+        },
+      ],
+    }));
+    const buffer = new FrameRingBuffer({
+      futureFrameCount: 1,
+      maximumBasePreparationConcurrency: 1,
+      previousFrameCount: 0,
+      renderer: harness.renderer,
+      sequence,
+    });
+
+    const initialising = buffer.initialise(0);
+    harness.resolve(0);
+    await initialising;
+    await vi.waitFor(() => {
+      expect(
+        harness.prepareFrame.mock.calls.filter(([, source]) => source.frameIndex === 1),
+      ).toHaveLength(1);
+    });
+    const waitingForBuffer = buffer.whenBuffered();
+    buffer.setPresentationQualityTarget({
+      detailLevel: 0.5,
+      minimumSplatCount: 2,
+    });
+    await vi.waitFor(() => {
+      expect(
+        harness.prepareFrame.mock.calls.filter(([, source]) => source.frameIndex === 1),
+      ).toHaveLength(2);
+    });
+    harness.resolve(1);
+
+    await expect(waitingForBuffer).resolves.toBeUndefined();
+    expect(harness.prepareFrame).toHaveBeenCalledWith(
+      "actor",
+      expect.objectContaining({
+        url: "/frame-1-medium.spz",
+      }),
+      expect.objectContaining({
+        transferQuality: expect.objectContaining({
+          detailLevel: 0.5,
+          mode: "fixed",
+        }),
+      }),
+    );
+    buffer.dispose();
+  });
+
   it("keeps the current frame presented until the requested replacement is playable", async () => {
     const harness = createRendererHarness({ automaticQuality: false });
     const buffer = new FrameRingBuffer({

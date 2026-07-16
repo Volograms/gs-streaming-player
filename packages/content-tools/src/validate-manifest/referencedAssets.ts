@@ -30,11 +30,27 @@ function collectReferencedAssets(
 
   for (const [index, object] of manifest.staticObjects.entries()) {
     assets.push({ path: `/staticObjects/${index}/url`, url: object.url });
+    for (const [qualityIndex, quality] of (object.qualityLevels ?? []).entries()) {
+      if (quality.url !== undefined) {
+        assets.push({
+          path: `/staticObjects/${index}/qualityLevels/${qualityIndex}/url`,
+          url: quality.url,
+        });
+      }
+    }
   }
   for (const [sequenceIndex, sequence] of manifest.dynamicSequences.entries()) {
     for (const [frameIndex, frame] of sequence.frames.entries()) {
       const framePath = `/dynamicSequences/${sequenceIndex}/frames/${frameIndex}`;
       assets.push({ path: `${framePath}/url`, url: frame.url });
+      for (const [qualityIndex, quality] of (frame.qualityLevels ?? []).entries()) {
+        if (quality.url !== undefined) {
+          assets.push({
+            path: `${framePath}/qualityLevels/${qualityIndex}/url`,
+            url: quality.url,
+          });
+        }
+      }
       if (frame.metadataUrl !== undefined) {
         assets.push({ path: `${framePath}/metadataUrl`, url: frame.metadataUrl });
       }

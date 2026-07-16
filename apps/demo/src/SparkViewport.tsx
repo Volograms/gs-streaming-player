@@ -13,7 +13,10 @@ import { useEffect, useRef, useState } from "react";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 import { DynamicSequenceControls } from "./DynamicSequenceControls.js";
-import { createLocalDynamicSequence } from "./localDynamicSequence.js";
+import {
+  hasLocalDynamicSequenceConfiguration,
+  loadLocalDynamicSequence,
+} from "./localDynamicSequence.js";
 import { RendererMetricsOverlay } from "./RendererMetricsOverlay.js";
 import {
   CAPTURE_TO_THREE_TRANSFORM,
@@ -24,6 +27,7 @@ import { SceneScaleControls } from "./SceneScaleControls.js";
 import { SparkQualityControls } from "./SparkQualityControls.js";
 
 import type {
+  DynamicGaussianSequence,
   FrameRingBufferTraceEvent,
   PlayerLifecycleState,
   RendererMetrics,
@@ -36,13 +40,14 @@ type StaticAssetStatus = "failed" | "loading" | "not-configured" | "ready";
 type DynamicAssetStatus = "failed" | "loading" | "not-configured" | "ready";
 
 const staticRadUrl = import.meta.env.VITE_STATIC_RAD_URL;
-const dynamicSequence = createLocalDynamicSequence(import.meta.env);
+const dynamicSequenceConfigured = hasLocalDynamicSequenceConfiguration(import.meta.env);
+const dynamicSequenceId = "local-dynamic-sequence";
 const minimumDynamicSplatCount = 100;
 
 function createInitialQuality(): SparkRenderQualityConfiguration {
   return {
     ...cloneSparkRenderQuality(DEFAULT_SPARK_RENDER_QUALITY),
-    dynamicSequenceWeights: { [dynamicSequence?.id ?? "actor"]: 1 },
+    dynamicSequenceWeights: { [dynamicSequenceId]: 1 },
     splatBudget: 1_500_000,
   };
 }
@@ -64,9 +69,11 @@ export function SparkViewport({
   const playbackSnapshotListenerRef = useRef(onPlaybackSnapshot);
   const [adaptiveQualityEnabled, setAdaptiveQualityEnabled] = useState(false);
   const adaptiveQualityEnabledRef = useRef(adaptiveQualityEnabled);
+  const dynamicSequenceRef = useRef<DynamicGaussianSequence | undefined>(undefined);
   const [dynamicAssetStatus, setDynamicAssetStatus] = useState<DynamicAssetStatus>(
-    dynamicSequence === undefined ? "not-configured" : "loading",
+    dynamicSequenceConfigured ? "loading" : "not-configured",
   );
+  const [dynamicSequence, setDynamicSequence] = useState<DynamicGaussianSequence>();
   const [dynamicFrameIndex, setDynamicFrameIndex] = useState(0);
   const [isDynamicPlaying, setIsDynamicPlaying] = useState(false);
   const [dynamicPlaybackLifecycle, setDynamicPlaybackLifecycle] =
@@ -109,12 +116,8 @@ export function SparkViewport({
     const controller = new AbortController();
     const adapter = new SparkGaussianRendererAdapter({ autoRender: false, canvas });
     const throughputEstimator = new ClientThroughputEstimator();
-    const qualityController = new BufferAwareQualityController({
-      dynamicObjectId: dynamicSequence?.id ?? "actor",
-      minimumSplatCount: minimumDynamicSplatCount,
-      targetBufferSeconds:
-        dynamicSequence === undefined ? 0.2 : 2 / dynamicSequence.frameRate,
-    });
+    let activeDynamicSequence: DynamicGaussianSequence | undefined;
+    let qualityController: BufferAwareQualityController | undefined;
     let latestBaseFrameBytes: number | undefined;
 
     async function initialiseRenderer() {
@@ -147,8 +150,10 @@ export function SparkViewport({
               buffer !== null &&
               playback !== null &&
               network !== undefined &&
-              dynamicSequence !== undefined
+              activeDynamicSequence !== undefined &&
+              qualityController !== undefined
             ) {
+              const dynamicSequence = activeDynamicSequence;
               const playbackSnapshot = playback.snapshot;
               const decision = qualityController.update(
                 {
@@ -235,7 +240,21 @@ export function SparkViewport({
           }
         }
 
-        if (dynamicSequence !== undefined) {
+        const loadedDynamicSequence = await loadLocalDynamicSequence(import.meta.env, {
+          signal: controller.signal,
+        });
+        if (loadedDynamicSequence !== undefined) {
+          activeDynamicSequence = loadedDynamicSequence;
+          dynamicSequenceRef.current = loadedDynamicSequence;
+          if (active) {
+            setDynamicSequence(loadedDynamicSequence);
+          }
+          qualityController = new BufferAwareQualityController({
+            dynamicObjectId: loadedDynamicSequence.id,
+            minimumSplatCount: minimumDynamicSplatCount,
+            targetBufferSeconds: 2 / loadedDynamicSequence.frameRate,
+          });
+          const dynamicSequence = loadedDynamicSequence;
           const buffer = new FrameRingBuffer({
             futureFrameCount: 3,
             loop: true,
@@ -307,7 +326,7 @@ export function SparkViewport({
             }
             if (active && !controller.signal.aborted) {
               console.error(
-                "Unable to load the configured dynamic RAD sequence.",
+                "Unable to load the configured dynamic GS sequence.",
                 error,
               );
               setDynamicAssetStatus("failed");
@@ -328,6 +347,7 @@ export function SparkViewport({
       active = false;
       controller.abort();
       adapterRef.current = null;
+      dynamicSequenceRef.current = undefined;
       unsubscribePlayback?.();
       playbackRef.current?.dispose();
       playbackRef.current = null;
@@ -369,13 +389,16 @@ export function SparkViewport({
     }
     setDynamicActorScale(scale);
     bufferRef.current?.setTransform(
-      withUniformScale(dynamicSequence?.transform ?? CAPTURE_TO_THREE_TRANSFORM, scale),
+      withUniformScale(
+        dynamicSequenceRef.current?.transform ?? CAPTURE_TO_THREE_TRANSFORM,
+        scale,
+      ),
     );
   }
 
   function stepDynamicFrame(delta: number) {
     void playbackRef.current?.step(delta).catch((error: unknown) => {
-      console.error("Unable to present the requested dynamic RAD frame.", error);
+      console.error("Unable to present the requested dynamic GS frame.", error);
       setDynamicAssetStatus("failed");
     });
   }

@@ -14,8 +14,21 @@ export interface FramePreparationOptions {
   /** Optional renderer-internal milestones used by diagnostic tooling. */
   onTrace?: RendererFramePreparationTraceCallback;
   targetQualityLevel?: number;
+  /** Independently addressable transfer representation selected before preparation. */
+  transferQuality?: FrameTransferQuality;
   /** Local-to-world transform shared by every frame in the dynamic sequence. */
   transform?: Transform;
+}
+
+export interface FrameTransferQuality {
+  /** Content detail represented by this complete asset in the range (0, 1]. */
+  detailLevel: number;
+  /** Manifest quality-level identifier. */
+  level: number;
+  /** Fixed assets are complete flat representations; progressive assets refine in place. */
+  mode: "fixed" | "progressive";
+  /** Expected decoded splat count, when supplied by content metadata. */
+  splatCount?: number;
 }
 
 export interface FrameQualityTarget {
@@ -52,6 +65,8 @@ export type FrameQualityProgressCallback = (
 export type RendererFramePreparationPhase =
   | "resource-created"
   | "resource-initialized"
+  | "flat-decode"
+  | "flat-render-fence"
   | "metadata-ready"
   | "chunk-fetch"
   | "chunk-decode"
@@ -122,6 +137,7 @@ export interface PreparedFrame {
   sequenceId: string;
   source: GaussianFrameSource;
   qualityLevel: number;
+  transferQuality?: FrameTransferQuality;
   rendererResource: unknown;
 }
 

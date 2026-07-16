@@ -117,7 +117,7 @@ export function PlaybackTracePanel({ events, onClear }: PlaybackTracePanelProps)
       <header>
         <div>
           <span>Playback trace</span>
-          <strong>{events.length === 0 ? "waiting for dynamic RAD" : "live"}</strong>
+          <strong>{events.length === 0 ? "waiting for dynamic GS" : "live"}</strong>
         </div>
         <button disabled={events.length === 0} onClick={onClear} type="button">
           Clear

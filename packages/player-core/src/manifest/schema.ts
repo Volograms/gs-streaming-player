@@ -59,6 +59,8 @@ export const TransformSchema = Type.Object(
 export const GaussianQualityLevelSchema = Type.Object(
   {
     level: NonNegativeIntegerSchema,
+    url: Type.Optional(NonEmptyStringSchema),
+    detailLevel: Type.Optional(Type.Number({ exclusiveMinimum: 0, maximum: 1 })),
     byteSize: Type.Optional(NonNegativeIntegerSchema),
     splatCount: Type.Optional(NonNegativeIntegerSchema),
     minimumPlayable: Type.Optional(Type.Boolean()),

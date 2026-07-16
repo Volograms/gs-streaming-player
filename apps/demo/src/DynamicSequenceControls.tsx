@@ -58,10 +58,10 @@ export function DynamicSequenceControls({
       </button>
       <output aria-live="polite">
         {status === "loading"
-          ? `Preparing dynamic RAD ${preparedFrameCount}/${frameCount}`
+          ? `Preparing dynamic GS ${preparedFrameCount}/${frameCount}`
           : status === "failed"
-            ? "Dynamic RAD failed"
-            : `${isBuffering ? "Buffering dynamic RAD" : "Dynamic RAD ready"} · Source ${sourceFrameIndex} · ${frameIndex + 1}/${frameCount}`}
+            ? "Dynamic GS failed"
+            : `${isBuffering ? "Buffering dynamic GS" : "Dynamic GS ready"} · Source ${sourceFrameIndex} · ${frameIndex + 1}/${frameCount}`}
       </output>
     </section>
   );

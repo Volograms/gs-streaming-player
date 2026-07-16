@@ -4,15 +4,20 @@ test("loads the demo application and workspace packages", async ({ page }) => {
   await page.setViewportSize({ height: 900, width: 1280 });
   const dynamicStartFrame = Number(process.env.VITE_DYNAMIC_RAD_START_FRAME ?? 40);
   const dynamicEndFrame = Number(process.env.VITE_DYNAMIC_RAD_END_FRAME ?? 50);
+  const dynamicSequenceConfigured =
+    process.env.VITE_DYNAMIC_RAD_BASE_URL !== undefined ||
+    process.env.VITE_DYNAMIC_QUALITY_INDEX_URL !== undefined;
   const requestedDynamicFrames = new Set<number>();
   page.on("request", (request) => {
-    const match = /\/frame(\d+)-lod\.rad(?:\?|$)/.exec(request.url());
+    const match = /\/frame(\d+)-(?:lod\.rad|[a-z0-9_-]+\.spz)(?:\?|$)/i.exec(
+      request.url(),
+    );
     if (match?.[1] !== undefined) {
       requestedDynamicFrames.add(Number(match[1]));
     }
   });
   test.setTimeout(
-    process.env.VITE_DYNAMIC_RAD_BASE_URL !== undefined
+    dynamicSequenceConfigured
       ? 180_000
       : process.env.VITE_STATIC_RAD_URL !== undefined
         ? 90_000
@@ -68,8 +73,8 @@ test("loads the demo application and workspace packages", async ({ page }) => {
     await expect(page.locator('output[for="static-object-scale"]')).toHaveText("1.10×");
   }
 
-  if (process.env.VITE_DYNAMIC_RAD_BASE_URL !== undefined) {
-    await expect(page.getByText(/Dynamic RAD ready/)).toBeVisible({
+  if (dynamicSequenceConfigured) {
+    await expect(page.getByText(/Dynamic GS ready/)).toBeVisible({
       timeout: 120_000,
     });
     await expect(page.locator('[data-trace-type="presented"]')).toHaveCount(1, {

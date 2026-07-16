@@ -77,6 +77,10 @@ export {
   type BufferAwareQualityControllerConfiguration,
   type BufferQualityTier,
 } from "./quality/BufferAwareQualityController.js";
+export {
+  selectFrameTransferQuality,
+  type SelectedFrameTransfer,
+} from "./quality/selectFrameTransferQuality.js";
 export type {
   FramePresentationQuality,
   FramePresentationQualityState,
@@ -84,6 +88,7 @@ export type {
   FrameQualityProgressCallback,
   FrameQualityTarget,
   FrameRefinementOptions,
+  FrameTransferQuality,
   GaussianRendererAdapter,
   PreparedFrame,
   RendererLoadOptions,

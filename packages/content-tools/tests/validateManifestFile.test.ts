@@ -45,9 +45,14 @@ describe("validateManifestFile", () => {
 
     expect(result.valid).toBe(false);
     if (!result.valid) {
-      expect(result.issues[0]).toMatchObject({
-        code: "asset-missing",
-      });
+      expect(result.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "asset-missing",
+            path: "/dynamicSequences/0/frames/0/qualityLevels/0/url",
+          }),
+        ]),
+      );
     }
   });
 });

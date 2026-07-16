@@ -1,3 +1,5 @@
+import { selectFrameTransferQuality } from "../quality/selectFrameTransferQuality.js";
+
 import { FramePreparationScheduler } from "./FramePreparationScheduler.js";
 
 import type {
@@ -27,6 +29,7 @@ interface FrameRecord {
   preparation: Promise<PreparedFrame>;
   preparedFrame?: PreparedFrame;
   qualityLevel: number;
+  preparedSource: GaussianFrameSource;
   refinement: Promise<void> | undefined;
   refinementController: AbortController | undefined;
   refinementEnabled: boolean;
@@ -155,8 +158,33 @@ export class FrameRingBuffer {
       return;
     }
     this.presentationQualityTarget = { ...target };
-    for (const [frameIndex, record] of this.records) {
+    for (const [frameIndex, record] of [...this.records]) {
+      const selectedTransfer = selectFrameTransferQuality(
+        record.source,
+        target.detailLevel,
+      );
+      if (
+        selectedTransfer !== undefined &&
+        selectedTransfer.source.url !== record.preparedSource.url &&
+        frameIndex !== this.currentFrameIndexValue
+      ) {
+        record.controller.abort();
+        record.refinementController?.abort();
+        if (record.preparedFrame !== undefined) {
+          this.renderer.releaseFrame(record.preparedFrame);
+        }
+        this.records.delete(frameIndex);
+        continue;
+      }
       if (record.preparedFrame === undefined) {
+        continue;
+      }
+      if (
+        selectedTransfer !== undefined &&
+        selectedTransfer.source.url !== record.preparedSource.url
+      ) {
+        // Keep the currently presented representation visible. The rolling window
+        // will replace it after handoff instead of exposing an empty current slot.
         continue;
       }
       record.refinementController?.abort();
@@ -169,6 +197,9 @@ export class FrameRingBuffer {
         record.status = "base-ready";
         record.qualityLevel = record.preparedFrame.qualityLevel;
       }
+    }
+    if (this.windowFrameIndexValue !== undefined) {
+      this.reconcileWindow(this.windowFrameIndexValue, this.currentFrameIndexValue);
     }
     this.applyRefinementPolicies();
     this.emit();
@@ -287,7 +318,7 @@ export class FrameRingBuffer {
     this.assertNotDisposed();
     const frameIndex = this.normaliseFrameIndex(requestedFrameIndex);
     this.reconcileWindow(frameIndex, this.currentFrameIndexValue);
-    const preparedFrame = await this.ensureFrame(frameIndex);
+    const preparedFrame = await this.ensureStableFrame(frameIndex);
     await this.ensurePresentationQuality(frameIndex);
     this.assertNotDisposed();
     return preparedFrame;
@@ -330,7 +361,7 @@ export class FrameRingBuffer {
       if (frameIndex === undefined) {
         return;
       }
-      await this.ensureFrame(frameIndex);
+      await this.ensureStableFrame(frameIndex);
       await this.ensurePresentationQuality(frameIndex);
     }
   }
@@ -339,7 +370,9 @@ export class FrameRingBuffer {
     this.assertNotDisposed();
     const currentFrameIndex = this.currentFrameIndexValue ?? 0;
     const desired = this.desiredFrameIndices(currentFrameIndex);
-    await Promise.all([...desired].map((frameIndex) => this.ensureFrame(frameIndex)));
+    await Promise.all(
+      [...desired].map((frameIndex) => this.ensureStableFrame(frameIndex)),
+    );
   }
 
   /**
@@ -400,6 +433,11 @@ export class FrameRingBuffer {
       throw new RangeError(`Frame ${frameIndex} does not exist in the sequence.`);
     }
     const controller = new AbortController();
+    const selectedTransfer = selectFrameTransferQuality(
+      source,
+      this.presentationQualityTarget.detailLevel,
+    );
+    const preparedSource = selectedTransfer?.source ?? source;
     const baseRequestedAtMs = this.now();
     const requestedTransform = this.transformValue;
     const requestedTransformRevision = this.transformRevision;
@@ -411,7 +449,8 @@ export class FrameRingBuffer {
     record.downloadedBytes = 0;
     record.qualityLevel = -1;
     record.refinementEnabled = false;
-    record.requestedBytes = source.byteSize ?? 0;
+    record.preparedSource = preparedSource;
+    record.requestedBytes = preparedSource.byteSize ?? 0;
     record.source = source;
     record.status = "loading-base";
     record.targetQualityLevel = 0;
@@ -439,7 +478,7 @@ export class FrameRingBuffer {
             type: "base-started",
           });
           this.emit();
-          return this.renderer.prepareFrame(this.sequence.id, source, {
+          return this.renderer.prepareFrame(this.sequence.id, preparedSource, {
             signal: controller.signal,
             minimumQualityOnly: true,
             onProgress: ({ loadedBytes, totalBytes }) => {
@@ -484,6 +523,12 @@ export class FrameRingBuffer {
             ...(requestedTransform === undefined
               ? {}
               : { transform: requestedTransform }),
+            ...(selectedTransfer === undefined
+              ? {}
+              : {
+                  targetQualityLevel: selectedTransfer.quality.level,
+                  transferQuality: selectedTransfer.quality,
+                }),
           });
         },
       )
@@ -522,6 +567,33 @@ export class FrameRingBuffer {
     this.records.set(frameIndex, record);
     this.emit();
     return record.preparation;
+  }
+
+  /**
+   * Adaptive quality may replace a queued or loading flat representation with a
+   * different transfer tier. Callers already waiting for that frame should follow
+   * the replacement record instead of surfacing the expected abort as a playback
+   * failure.
+   */
+  private async ensureStableFrame(frameIndex: number): Promise<PreparedFrame> {
+    while (true) {
+      const preparation = this.ensureFrame(frameIndex);
+      try {
+        const preparedFrame = await preparation;
+        if (this.records.get(frameIndex)?.preparation !== preparation) {
+          continue;
+        }
+        return preparedFrame;
+      } catch (error) {
+        if (
+          !this.disposed &&
+          this.records.get(frameIndex)?.preparation !== preparation
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
   }
 
   private reconcileWindow(frameIndex: number, preservedFrameIndex?: number): void {

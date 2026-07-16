@@ -445,6 +445,81 @@ describe("SparkGaussianRendererAdapter", () => {
     expect(adapter.getMetrics().preparedFrameCount).toBe(1);
   });
 
+  it("loads a fixed SPZ tier without paging or LoD traversal", async () => {
+    const harness = createHarness();
+    const adapter = new SparkGaussianRendererAdapter({
+      autoRender: false,
+      renderer: harness.renderer,
+      runtime: harness.runtime,
+      scene: harness.scene,
+    });
+    await adapter.initialise();
+    const preparationTrace = vi.fn();
+    const preparation = adapter.prepareFrame(
+      "actor",
+      {
+        byteSize: 845_127,
+        frameIndex: 0,
+        timestampSeconds: 0,
+        url: "/frame0001-minimum.spz",
+      },
+      {
+        onTrace: preparationTrace,
+        targetQualityLevel: 1,
+        transferQuality: {
+          detailLevel: 0.25,
+          level: 1,
+          mode: "fixed",
+          splatCount: 68_535,
+        },
+      },
+    );
+    const mesh = harness.splatMeshes[0];
+    if (mesh === undefined) {
+      throw new Error("Expected the flat frame mesh to be created synchronously.");
+    }
+    mesh.numSplats = 68_535;
+    await vi.waitFor(() => {
+      expect(mesh).toMatchObject({ opacity: 0, visible: true });
+    });
+    adapter.render();
+    const prepared = await preparation;
+
+    expect(harness.splatOptions[0]).toMatchObject({
+      enableLod: false,
+      lod: false,
+      paged: false,
+      url: "/frame0001-minimum.spz",
+    });
+    expect(preparationTrace.mock.calls.map(([event]) => event.phase)).toEqual([
+      "resource-created",
+      "resource-initialized",
+      "flat-decode",
+      "flat-render-fence",
+      "minimum-renderable",
+    ]);
+    expect(mesh).toMatchObject({ opacity: 1, visible: false });
+    await expect(
+      adapter.refineFrame(prepared, {
+        detailLevel: 0.25,
+        minimumSplatCount: 100,
+      }),
+    ).resolves.toMatchObject({
+      achievedDetailLevel: 0.25,
+      selectedSplatCount: 68_535,
+      state: "presentable",
+    });
+    await expect(
+      adapter.refineFrame(prepared, {
+        detailLevel: 0.5,
+        minimumSplatCount: 100,
+      }),
+    ).rejects.toThrow(/below the requested/);
+
+    adapter.presentFrame(prepared);
+    expect(mesh).toMatchObject({ opacity: 1, visible: true });
+  });
+
   it("keeps a paged frame transparent until its root LoD page is resident", async () => {
     const harness = createHarness();
     const initialiser = deferred<void>();

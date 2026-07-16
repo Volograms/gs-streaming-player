@@ -201,12 +201,28 @@ function resolveManifestAssetUrls(
     staticObjects: manifest.staticObjects.map((object) => ({
       ...object,
       url: resolve(object.url),
+      ...(object.qualityLevels === undefined
+        ? {}
+        : {
+            qualityLevels: object.qualityLevels.map((quality) => ({
+              ...quality,
+              ...(quality.url === undefined ? {} : { url: resolve(quality.url) }),
+            })),
+          }),
     })),
     dynamicSequences: manifest.dynamicSequences.map((sequence) => ({
       ...sequence,
       frames: sequence.frames.map((frame) => ({
         ...frame,
         url: resolve(frame.url),
+        ...(frame.qualityLevels === undefined
+          ? {}
+          : {
+              qualityLevels: frame.qualityLevels.map((quality) => ({
+                ...quality,
+                ...(quality.url === undefined ? {} : { url: resolve(quality.url) }),
+              })),
+            }),
         ...(frame.metadataUrl === undefined
           ? {}
           : { metadataUrl: resolve(frame.metadataUrl) }),

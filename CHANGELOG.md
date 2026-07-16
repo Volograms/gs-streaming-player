@@ -73,6 +73,14 @@ All notable changes to this project will be documented here. The project uses
   persistent request priority through GPU readiness, and phase timers for chunk fetch,
   worker decode, preallocated page allocation/reuse, GPU upload, LoD-tree registration,
   tree update, and traversal.
+- Offline dynamic RAD quality-cut extraction pinned to Spark 2.1, producing
+  camera-independent, non-overlapping flat SPZ tiers and batch metadata with URLs, byte
+  sizes, splat counts, and minimum-playable status.
+- Optional per-tier asset URLs in manifest quality levels, including relative URL
+  resolution and referenced-asset validation.
+- Dynamic flat-SPZ playback through Spark `PackedSplats` with LoD disabled, including
+  minimum-playable tier selection, fixed-tier achieved-quality reporting, decode/render
+  fence timing, and generated quality-index loading in the demo.
 
 ### Fixed
 
@@ -92,3 +100,9 @@ All notable changes to this project will be documented here. The project uses
   content-specific 100-splat minimum.
 - Demo playback no longer uses a drifting React interval or serialises frame rate behind
   async loads; timing and buffering now remain in the player core.
+- Prefetched flat SPZ frames are hidden after their initial upload fence instead of
+  remaining transparent-but-visible, preventing Spark from sorting and drawing the
+  complete temporal window every render.
+- Buffer readiness waits now follow a replacement SPZ preparation when adaptive quality
+  changes the selected transfer tier, rather than surfacing the expected cancellation as
+  a playback error.
