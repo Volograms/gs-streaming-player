@@ -11,12 +11,23 @@ acceptance criteria are covered by implementation and verification.
 - [x] Resolve each frame's transfer URL from the quality-controller decision and its
       manifest `qualityLevels`, then prefetch the selected minimum-playable tier before
       presentation.
+- [x] Expose explicit minimum/medium/full SPZ tier selection in the demo and report
+      selected versus currently presented quality during safe buffer handoff.
+- [x] Add an opt-in full-sequence preload mode for measuring playback/rendering without
+      concurrent network transfers.
+- [x] Measure presentation cadence, dropped frames, renderer call duration, Spark update
+      duration, and Spark sort duration without logging on the display-frame hot path.
 - [ ] Reuse or preallocate `PackedSplats` GPU capacity across frame handoffs where Spark
       permits it, with separate decode/upload/handoff timings.
 - [ ] Browser-validate 30 fps manual and clocked playback against the generated
       `rafa-pitch` tier set on a hardware-accelerated browser, then compare it with the
       paged RAD baseline. Headless Chromium's software WebGL path reports 0 fps for a
       single approximately 70k-splat frame and is not a useful throughput benchmark.
+
+Full-sequence hardware measurements currently reach approximately 23–25 fps at minimum
+quality and 20–23 fps at full quality. Presentation handoff is already approximately 1–4
+ms, so the next optimisation work should focus on Spark update/generation/sort cost and
+allocation reuse rather than the frame-ring handoff.
 
 The offline source path is now fixed and consumed by the runtime. Quality-LoD RAD is
 decoded once during content preparation, valid camera-independent frontiers are exported

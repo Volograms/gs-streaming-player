@@ -10,7 +10,10 @@ import { PlaybackPerformancePanel } from "./PlaybackPerformancePanel.js";
 import { PlaybackTracePanel } from "./PlaybackTracePanel.js";
 import { SparkViewport } from "./SparkViewport.js";
 
-import type { FrameRingBufferTraceEvent } from "@6g-path/gaussian-player";
+import type {
+  FrameRingBufferTraceEvent,
+  SequencePlaybackSnapshot,
+} from "@6g-path/gaussian-player";
 
 const origin = createIdentityTransform();
 
@@ -21,10 +24,11 @@ export function App() {
   const [playbackTrace, setPlaybackTrace] = useState<
     readonly Readonly<FrameRingBufferTraceEvent>[]
   >([]);
+  const [playbackSnapshot, setPlaybackSnapshot] = useState<SequencePlaybackSnapshot>();
   const statusItems = getFoundationStatus();
   const handlePlaybackTrace = (event: Readonly<FrameRingBufferTraceEvent>) => {
     console.debug("[playback-trace]", event);
-    setPlaybackTrace((current) => [...current.slice(-199), event]);
+    setPlaybackTrace((current) => [...current.slice(-1_999), event]);
   };
 
   return (
@@ -41,7 +45,10 @@ export function App() {
       <section className="viewer-shell" aria-label="Player preview">
         <SparkViewport
           onBufferTrace={handlePlaybackTrace}
-          onPlaybackSnapshot={({ lifecycle }) => setPlaybackLifecycle(lifecycle)}
+          onPlaybackSnapshot={(snapshot) => {
+            setPlaybackLifecycle(snapshot.lifecycle);
+            setPlaybackSnapshot(snapshot);
+          }}
         />
         <aside className="status-panel">
           <h2>Foundation status</h2>
@@ -79,7 +86,10 @@ export function App() {
         </article>
       </section>
 
-      <PlaybackPerformancePanel events={playbackTrace} />
+      <PlaybackPerformancePanel
+        events={playbackTrace}
+        {...(playbackSnapshot === undefined ? {} : { playback: playbackSnapshot })}
+      />
       <PlaybackTracePanel events={playbackTrace} onClear={() => setPlaybackTrace([])} />
 
       <footer>{SIX_G_TELEMETRY_PACKAGE_ID}</footer>

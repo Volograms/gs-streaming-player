@@ -123,6 +123,7 @@ h1 {
 }
 
 .quality-controls,
+.dynamic-transfer-controls,
 .scene-scale-controls {
   display: grid;
   grid-template-columns: minmax(7rem, 1fr) 5.5rem;
@@ -137,6 +138,7 @@ h1 {
 }
 
 .quality-controls legend,
+.dynamic-transfer-controls legend,
 .scene-scale-controls legend {
   padding: 0 0.35rem;
   color: #73e4c9;
@@ -147,6 +149,7 @@ h1 {
 }
 
 .quality-controls label,
+.dynamic-transfer-controls label,
 .scene-scale-controls label {
   display: flex;
   grid-column: 1 / -1;
@@ -166,6 +169,7 @@ h1 {
 }
 
 .quality-controls output,
+.dynamic-transfer-controls output,
 .scene-scale-controls output {
   color: #e8eef4;
   font-variant-numeric: tabular-nums;
@@ -187,8 +191,24 @@ h1 {
 }
 
 .quality-controls:disabled,
+.dynamic-transfer-controls:disabled,
 .scene-scale-controls:disabled {
   opacity: 0.55;
+}
+
+.dynamic-transfer-controls select {
+  max-width: 11rem;
+  margin-left: auto;
+  border: 1px solid #36545f;
+  border-radius: 0.35rem;
+  color: #e8eef4;
+  background: #10232c;
+}
+
+.dynamic-transfer-controls output {
+  grid-column: 1 / -1;
+  font-size: 0.64rem;
+  line-height: 1.35;
 }
 
 .scene-scale-controls input:disabled {

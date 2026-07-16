@@ -13,10 +13,14 @@ export interface FrameTimingSummary {
   estimatedBaseThroughputBps?: number;
   handoff: TimingDistribution;
   minimumRenderable: TimingDistribution;
+  presentationCadence: TimingDistribution;
   presentationWait: TimingDistribution;
   queueWait: TimingDistribution;
   refinement: TimingDistribution;
+  renderCall: TimingDistribution;
   sampleCount: number;
+  sort: TimingDistribution;
+  sparkUpdate: TimingDistribution;
   switchingFramesPerSecond?: number;
 }
 
@@ -54,6 +58,10 @@ export function summariseFrameTimings(
   const presentationWait: number[] = [];
   const queueWait: number[] = [];
   const refinement: number[] = [];
+  const renderCall: number[] = [];
+  const renderIntervals: number[] = [];
+  const sort: number[] = [];
+  const sparkUpdate: number[] = [];
   const presentationReadyAt = new Map<number, number>();
   const presentedAt: number[] = [];
 
@@ -95,6 +103,14 @@ export function summariseFrameTimings(
         }
       }
     }
+    if (event.type === "render-timing") {
+      renderCall.push(...(event.renderCallSamplesMs ?? []));
+      renderIntervals.push(
+        ...(event.renderIntervalSamplesMs ?? []).filter((duration) => duration > 0),
+      );
+      sort.push(...(event.sortSamplesMs ?? []));
+      sparkUpdate.push(...(event.sparkUpdateSamplesMs ?? []));
+    }
   }
 
   const switchingDurations = presentedAt
@@ -117,10 +133,14 @@ export function summariseFrameTimings(
     ...(estimatedBaseThroughputBps === undefined ? {} : { estimatedBaseThroughputBps }),
     handoff: distribution(handoff),
     minimumRenderable: distribution(minimumRenderable),
+    presentationCadence: distribution(switchingDurations),
     presentationWait: distribution(presentationWait),
     queueWait: distribution(queueWait),
     refinement: distribution(refinement),
+    renderCall: distribution(renderCall),
     sampleCount: basePreparation.length,
+    sort: distribution(sort),
+    sparkUpdate: distribution(sparkUpdate),
     ...(meanSwitchingDuration === undefined
       ? {}
       : { switchingFramesPerSecond: 1_000 / meanSwitchingDuration }),

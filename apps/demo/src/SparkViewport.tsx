@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 import { DynamicSequenceControls } from "./DynamicSequenceControls.js";
+import { DynamicTransferQualityControls } from "./DynamicTransferQualityControls.js";
 import {
   hasLocalDynamicSequenceConfiguration,
   loadLocalDynamicSequence,
@@ -29,6 +30,7 @@ import { SparkQualityControls } from "./SparkQualityControls.js";
 import type {
   DynamicGaussianSequence,
   FrameRingBufferTraceEvent,
+  GaussianQualityLevel,
   PlayerLifecycleState,
   RendererMetrics,
   SequencePlaybackSnapshot,
@@ -41,8 +43,11 @@ type DynamicAssetStatus = "failed" | "loading" | "not-configured" | "ready";
 
 const staticRadUrl = import.meta.env.VITE_STATIC_RAD_URL;
 const dynamicSequenceConfigured = hasLocalDynamicSequenceConfiguration(import.meta.env);
+const preloadCompleteDynamicSequence =
+  import.meta.env.VITE_DYNAMIC_PRELOAD_ALL_FRAMES === "true";
 const dynamicSequenceId = "local-dynamic-sequence";
 const minimumDynamicSplatCount = 100;
+const defaultDynamicTransferDetail = 0.25;
 
 function createInitialQuality(): SparkRenderQualityConfiguration {
   return {
@@ -74,6 +79,15 @@ export function SparkViewport({
     dynamicSequenceConfigured ? "loading" : "not-configured",
   );
   const [dynamicSequence, setDynamicSequence] = useState<DynamicGaussianSequence>();
+  const [dynamicTransferLevels, setDynamicTransferLevels] = useState<
+    readonly GaussianQualityLevel[]
+  >([]);
+  const [manualDynamicTransferDetail, setManualDynamicTransferDetail] = useState(
+    defaultDynamicTransferDetail,
+  );
+  const manualDynamicTransferDetailRef = useRef(defaultDynamicTransferDetail);
+  const transferChangeRevisionRef = useRef(0);
+  const [presentedTransferLevel, setPresentedTransferLevel] = useState<number>();
   const [dynamicFrameIndex, setDynamicFrameIndex] = useState(0);
   const [isDynamicPlaying, setIsDynamicPlaying] = useState(false);
   const [dynamicPlaybackLifecycle, setDynamicPlaybackLifecycle] =
@@ -114,7 +128,28 @@ export function SparkViewport({
     let unsubscribeBuffer: (() => void) | undefined;
     let unsubscribePlayback: (() => void) | undefined;
     const controller = new AbortController();
-    const adapter = new SparkGaussianRendererAdapter({ autoRender: false, canvas });
+    const adapter = new SparkGaussianRendererAdapter({
+      autoRender: false,
+      canvas,
+      onRenderTiming: ({
+        atMs,
+        frameIndex,
+        renderCallSamplesMs,
+        renderIntervalSamplesMs,
+        sortSamplesMs,
+        sparkUpdateSamplesMs,
+      }) => {
+        bufferTraceListenerRef.current?.({
+          atMs,
+          ...(frameIndex === undefined ? {} : { frameIndex }),
+          renderCallSamplesMs,
+          renderIntervalSamplesMs,
+          sortSamplesMs,
+          sparkUpdateSamplesMs,
+          type: "render-timing",
+        });
+      },
+    });
     const throughputEstimator = new ClientThroughputEstimator();
     let activeDynamicSequence: DynamicGaussianSequence | undefined;
     let qualityController: BufferAwareQualityController | undefined;
@@ -193,7 +228,8 @@ export function SparkViewport({
                 decision.maximumRefinementConcurrency ?? 1,
               );
               buffer.setPresentationQualityTarget({
-                detailLevel: decision.dynamicFrameDetailLevel ?? 0.25,
+                detailLevel:
+                  decision.dynamicFrameDetailLevel ?? defaultDynamicTransferDetail,
                 minimumSplatCount: decision.minimumDynamicSplatCount ?? 2,
               });
               adapter.setRenderQuality(decision);
@@ -249,14 +285,28 @@ export function SparkViewport({
           if (active) {
             setDynamicSequence(loadedDynamicSequence);
           }
+          const transferLevels = getDynamicTransferLevels(loadedDynamicSequence);
+          const initialTransferDetail =
+            transferLevels.find(({ minimumPlayable }) => minimumPlayable)
+              ?.detailLevel ??
+            transferLevels[0]?.detailLevel ??
+            defaultDynamicTransferDetail;
+          manualDynamicTransferDetailRef.current = initialTransferDetail;
+          if (active) {
+            setDynamicTransferLevels(transferLevels);
+            setManualDynamicTransferDetail(initialTransferDetail);
+          }
           qualityController = new BufferAwareQualityController({
             dynamicObjectId: loadedDynamicSequence.id,
             minimumSplatCount: minimumDynamicSplatCount,
             targetBufferSeconds: 2 / loadedDynamicSequence.frameRate,
           });
           const dynamicSequence = loadedDynamicSequence;
+          const futureFrameCount = preloadCompleteDynamicSequence
+            ? Math.max(0, dynamicSequence.frameCount - 1)
+            : 3;
           const buffer = new FrameRingBuffer({
-            futureFrameCount: 3,
+            futureFrameCount,
             loop: true,
             maximumBasePreparationConcurrency: 2,
             maximumRefinementConcurrency: 1,
@@ -276,26 +326,39 @@ export function SparkViewport({
               }
               bufferTraceListenerRef.current?.(event);
             },
-            previousFrameCount: 1,
+            previousFrameCount: preloadCompleteDynamicSequence ? 0 : 1,
             presentationQualityTarget: {
-              detailLevel: 0.25,
+              detailLevel: initialTransferDetail,
               minimumSplatCount: minimumDynamicSplatCount,
             },
             renderer: adapter,
             sequence: dynamicSequence,
           });
           bufferRef.current = buffer;
-          unsubscribeBuffer = buffer.subscribe(({ frames }) => {
+          unsubscribeBuffer = buffer.subscribe(({ currentFrameIndex, frames }) => {
             if (active) {
               setPreparedFrameCount(
                 frames.filter(
-                  ({ status }) => status === "ready" || status === "presented",
+                  ({ status }) =>
+                    status === "base-ready" ||
+                    status === "refining" ||
+                    status === "ready" ||
+                    status === "presented",
                 ).length,
+              );
+              setPresentedTransferLevel(
+                frames.find(
+                  ({ frameIndex, status }) =>
+                    frameIndex === currentFrameIndex && status === "presented",
+                )?.qualityLevel,
               );
             }
           });
           try {
             await buffer.initialise(0);
+            if (preloadCompleteDynamicSequence) {
+              await buffer.whenBuffered();
+            }
             if (active) {
               const playback = new SequencePlaybackController({
                 buffer,
@@ -371,6 +434,54 @@ export function SparkViewport({
     adapterRef.current?.setSparkRenderQuality(configuration);
   }
 
+  function updateAdaptiveQuality(enabled: boolean) {
+    setAdaptiveQualityEnabled(enabled);
+    if (!enabled) {
+      bufferRef.current?.setPresentationQualityTarget({
+        detailLevel: manualDynamicTransferDetailRef.current,
+        minimumSplatCount: minimumDynamicSplatCount,
+      });
+    }
+  }
+
+  function updateDynamicTransferDetail(detailLevel: number) {
+    playbackRef.current?.pause();
+    manualDynamicTransferDetailRef.current = detailLevel;
+    setManualDynamicTransferDetail(detailLevel);
+    const buffer = bufferRef.current;
+    if (buffer === null) {
+      return;
+    }
+    buffer.setPresentationQualityTarget({
+      detailLevel,
+      minimumSplatCount: minimumDynamicSplatCount,
+    });
+    if (preloadCompleteDynamicSequence) {
+      const revision = transferChangeRevisionRef.current + 1;
+      transferChangeRevisionRef.current = revision;
+      setDynamicAssetStatus("loading");
+      void buffer.whenBuffered().then(
+        () => {
+          if (
+            bufferRef.current === buffer &&
+            transferChangeRevisionRef.current === revision
+          ) {
+            setDynamicAssetStatus("ready");
+          }
+        },
+        (error: unknown) => {
+          if (
+            bufferRef.current === buffer &&
+            transferChangeRevisionRef.current === revision
+          ) {
+            console.error("Unable to preload the selected SPZ tier.", error);
+            setDynamicAssetStatus("failed");
+          }
+        },
+      );
+    }
+  }
+
   function updateStaticSceneScale(scale: number) {
     setStaticSceneScale(scale);
     adapterRef.current?.setObjectTransform(
@@ -429,9 +540,21 @@ export function SparkViewport({
           adaptive={adaptiveQualityEnabled}
           configuration={quality}
           disabled={status !== "ready"}
-          onAdaptiveChange={setAdaptiveQualityEnabled}
+          onAdaptiveChange={updateAdaptiveQuality}
           onChange={updateQuality}
         />
+        {dynamicTransferLevels.length === 0 ? null : (
+          <DynamicTransferQualityControls
+            adaptive={adaptiveQualityEnabled}
+            disabled={dynamicAssetStatus !== "ready"}
+            levels={dynamicTransferLevels}
+            onChange={updateDynamicTransferDetail}
+            {...(presentedTransferLevel === undefined
+              ? {}
+              : { presentedLevel: presentedTransferLevel })}
+            selectedDetailLevel={manualDynamicTransferDetail}
+          />
+        )}
         <SceneScaleControls
           disabled={status !== "ready"}
           dynamicDisabled={
@@ -485,4 +608,20 @@ export function SparkViewport({
       )}
     </div>
   );
+}
+
+function getDynamicTransferLevels(
+  sequence: DynamicGaussianSequence,
+): readonly GaussianQualityLevel[] {
+  const levels = [...(sequence.frames[0]?.qualityLevels ?? [])]
+    .filter(
+      (level): level is GaussianQualityLevel & { detailLevel: number } =>
+        level.url !== undefined && level.detailLevel !== undefined,
+    )
+    .sort(
+      (left, right) => left.detailLevel - right.detailLevel || left.level - right.level,
+    );
+  const minimumPlayableDetail =
+    levels.find(({ minimumPlayable }) => minimumPlayable)?.detailLevel ?? 0;
+  return levels.filter(({ detailLevel }) => detailLevel >= minimumPlayableDetail);
 }

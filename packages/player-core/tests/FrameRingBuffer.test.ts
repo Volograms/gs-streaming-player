@@ -48,7 +48,7 @@ function createRendererHarness({ automaticQuality = true } = {}) {
   const prepareFrame = vi.fn(
     async (
       _sequenceId: string,
-      source: { frameIndex: number },
+      source: { frameIndex: number; url: string },
       options: FramePreparationOptions,
     ) => {
       options.onTrace?.({ elapsedMs: 1, phase: "resource-created" });
@@ -293,6 +293,63 @@ describe("FrameRingBuffer", () => {
         }),
       }),
     );
+    buffer.dispose();
+  });
+
+  it("replaces the formerly presented tier after a safe handoff", async () => {
+    const harness = createRendererHarness();
+    const sequence = createSequence(2);
+    sequence.frames = sequence.frames.map((frame) => ({
+      ...frame,
+      qualityLevels: [
+        {
+          detailLevel: 0.25,
+          level: 0,
+          minimumPlayable: true,
+          url: `/frame-${frame.frameIndex}-minimum.spz`,
+        },
+        {
+          detailLevel: 1,
+          level: 1,
+          url: `/frame-${frame.frameIndex}-full.spz`,
+        },
+      ],
+    }));
+    const buffer = new FrameRingBuffer({
+      futureFrameCount: 1,
+      loop: true,
+      previousFrameCount: 0,
+      renderer: harness.renderer,
+      sequence,
+    });
+
+    const initialising = buffer.initialise(0);
+    harness.resolve(0);
+    await initialising;
+    harness.resolve(1);
+    await buffer.whenBuffered();
+
+    buffer.setPresentationQualityTarget({
+      detailLevel: 1,
+      minimumSplatCount: 2,
+    });
+    await vi.waitFor(() => {
+      expect(
+        harness.prepareFrame.mock.calls.filter(
+          ([, source]) => source.frameIndex === 1 && source.url === "/frame-1-full.spz",
+        ),
+      ).toHaveLength(1);
+    });
+    harness.resolve(1);
+    await buffer.present(1);
+
+    await vi.waitFor(() => {
+      expect(
+        harness.prepareFrame.mock.calls.filter(
+          ([, source]) => source.frameIndex === 0 && source.url === "/frame-0-full.spz",
+        ),
+      ).toHaveLength(1);
+    });
     buffer.dispose();
   });
 

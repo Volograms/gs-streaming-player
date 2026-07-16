@@ -80,6 +80,13 @@ used during day-to-day implementation.
   materialise its GPU representation. Buffered future tiers are then fully invisible
   until handoff; they do not remain in Spark's visible generator set as paged RAD frames
   do for warming.
+- Manual dynamic transfer quality selects a content tier by its declared detail ratio,
+  independently of Spark's dynamic render weight. A tier change refills future slots and
+  preserves the current frame until a replacement is presentation-ready.
+- Renderer diagnostics batch display cadence, render-call duration, Spark update
+  duration, and actual sort duration approximately twice per second. This keeps React
+  state updates and console tracing off the per-frame render hot path while preserving
+  enough samples for p50/p95 analysis.
 - Separate tier files are accepted for the first measurable version. A packed
   multi-frame container and temporal compression remain a later optimisation after the
   flat-tier playback baseline is measured.

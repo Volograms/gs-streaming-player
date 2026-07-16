@@ -56,6 +56,7 @@ export type FrameRingBufferTraceEventType =
   | "presentation-requested"
   | "presentation-ready"
   | "presented"
+  | "render-timing"
   | "evicted"
   | "failed";
 
@@ -79,6 +80,10 @@ export interface FrameRingBufferTraceEvent {
   phase?: RendererFramePreparationPhase;
   quality?: Readonly<FramePresentationQuality>;
   reusedPage?: boolean;
+  renderCallSamplesMs?: readonly number[];
+  renderIntervalSamplesMs?: readonly number[];
+  sortSamplesMs?: readonly number[];
+  sparkUpdateSamplesMs?: readonly number[];
   stageDurationMs?: number;
   totalBytes?: number;
   type: FrameRingBufferTraceEventType;

@@ -782,9 +782,53 @@ describe("SparkGaussianRendererAdapter", () => {
     expect(harness.spark.lodSplatCount).toBe(1234);
     expect(harness.render).toHaveBeenCalledTimes(2);
     expect(adapter.getMetrics()).toMatchObject({
-      frameTimeMs: 20,
-      renderFramesPerSecond: 50,
+      frameTimeMs: 40,
+      renderCallTimeMs: 20,
+      renderFramesPerSecond: 25,
     });
+  });
+
+  it("batches Spark update, sort, render-call, and cadence diagnostics", async () => {
+    const harness = createHarness();
+    const timing = vi.fn();
+    const instrumented = harness.spark as unknown as {
+      driveSort(): Promise<void>;
+      sortDirty: boolean;
+      sorting: boolean;
+      updateInternal(): Promise<void>;
+    };
+    instrumented.sortDirty = true;
+    instrumented.sorting = false;
+    instrumented.driveSort = vi.fn(async () => {
+      instrumented.sorting = true;
+      await Promise.resolve();
+      instrumented.sorting = false;
+    });
+    instrumented.updateInternal = vi.fn(async () => {
+      await instrumented.driveSort();
+    });
+    const adapter = new SparkGaussianRendererAdapter({
+      autoRender: false,
+      onRenderTiming: timing,
+      renderer: harness.renderer,
+      runtime: harness.runtime,
+      scene: harness.scene,
+    });
+    await adapter.initialise();
+
+    await instrumented.updateInternal();
+    for (let index = 0; index < 15; index += 1) {
+      adapter.render();
+    }
+
+    expect(timing).toHaveBeenCalledWith(
+      expect.objectContaining({
+        renderCallSamplesMs: expect.arrayContaining([20]),
+        renderIntervalSamplesMs: expect.arrayContaining([40]),
+        sortSamplesMs: [expect.any(Number)],
+        sparkUpdateSamplesMs: [expect.any(Number)],
+      }),
+    );
   });
 
   it("reports in-flight frame resources and cancels their slots", async () => {

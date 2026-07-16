@@ -23,4 +23,4 @@ export {
   type SparkRenderQualityConfiguration,
 } from "./quality.js";
 export type { SparkRendererRuntime } from "./runtime.js";
-export type { SparkRendererAdapterOptions } from "./types.js";
+export type { SparkRendererAdapterOptions, SparkRenderTimingSample } from "./types.js";

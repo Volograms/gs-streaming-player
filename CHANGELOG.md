@@ -81,6 +81,15 @@ All notable changes to this project will be documented here. The project uses
 - Dynamic flat-SPZ playback through Spark `PackedSplats` with LoD disabled, including
   minimum-playable tier selection, fixed-tier achieved-quality reporting, decode/render
   fence timing, and generated quality-index loading in the demo.
+- Explicit dynamic SPZ transfer-tier controls showing selected and currently presented
+  quality, with manual minimum/medium/full comparisons kept separate from Spark's
+  dynamic render weight.
+- Opt-in full-sequence dynamic preload mode that retains all configured frames and
+  enables playback only after base preparation completes, for network-independent
+  rendering measurements.
+- Batched renderer diagnostics for presentation cadence, dropped frames, Three.js render
+  calls, Spark update/generation, and actual Spark sort work, including p50/p95
+  summaries in the demo.
 
 ### Fixed
 
@@ -106,3 +115,6 @@ All notable changes to this project will be documented here. The project uses
 - Buffer readiness waits now follow a replacement SPZ preparation when adaptive quality
   changes the selected transfer tier, rather than surfacing the expected cancellation as
   a playback error.
+- The formerly presented flat-SPZ slot is now replaced with the selected transfer tier
+  after a safe frame handoff, preventing stale minimum-quality readiness from failing a
+  later full-quality playback loop.

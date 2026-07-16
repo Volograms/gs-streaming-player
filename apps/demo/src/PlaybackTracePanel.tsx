@@ -14,6 +14,7 @@ const eventLabels: Record<FrameRingBufferTraceEvent["type"], string> = {
   "refinement-progress": "refinement progress",
   "refinement-ready": "refinement ready",
   "refinement-started": "refinement started",
+  "render-timing": "render timing",
   "renderer-phase": "Spark preparation",
   "window-updated": "buffer window",
 };
@@ -110,7 +111,10 @@ function describeEvent(event: Readonly<FrameRingBufferTraceEvent>): string {
 
 export function PlaybackTracePanel({ events, onClear }: PlaybackTracePanelProps) {
   const firstTimestamp = events[0]?.atMs ?? 0;
-  const visibleEvents = events.slice(-50).reverse();
+  const visibleEvents = events
+    .filter(({ type }) => type !== "render-timing")
+    .slice(-50)
+    .reverse();
 
   return (
     <section className="playback-trace" aria-label="Playback trace">

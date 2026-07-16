@@ -2,11 +2,13 @@ import { summariseFrameTimings } from "@6g-path/gaussian-player";
 
 import type {
   FrameRingBufferTraceEvent,
+  SequencePlaybackSnapshot,
   TimingDistribution,
 } from "@6g-path/gaussian-player";
 
 export interface PlaybackPerformancePanelProps {
   events: readonly Readonly<FrameRingBufferTraceEvent>[];
+  playback?: Readonly<SequencePlaybackSnapshot>;
 }
 
 function formatTiming(distribution: TimingDistribution): string {
@@ -16,8 +18,16 @@ function formatTiming(distribution: TimingDistribution): string {
   return `${distribution.medianMs.toFixed(0)} / ${distribution.p95Ms?.toFixed(0) ?? "–"} ms`;
 }
 
-export function PlaybackPerformancePanel({ events }: PlaybackPerformancePanelProps) {
+export function PlaybackPerformancePanel({
+  events,
+  playback,
+}: PlaybackPerformancePanelProps) {
   const summary = summariseFrameTimings(events);
+  const diagnosticSummary = {
+    ...summary,
+    droppedFrameCount: playback?.droppedFrameCount ?? 0,
+    targetFramesPerSecond: playback?.targetFramesPerSecond,
+  };
   const throughputMbps =
     summary.estimatedBaseThroughputBps === undefined
       ? undefined
@@ -27,7 +37,7 @@ export function PlaybackPerformancePanel({ events }: PlaybackPerformancePanelPro
     <section
       className="performance-summary"
       aria-label="Playback performance summary"
-      data-performance-summary={JSON.stringify(summary)}
+      data-performance-summary={JSON.stringify(diagnosticSummary)}
     >
       <header>
         <span>Measured playback performance</span>
@@ -59,12 +69,32 @@ export function PlaybackPerformancePanel({ events }: PlaybackPerformancePanelPro
           </dd>
         </div>
         <div>
-          <dt>Observed switching rate</dt>
+          <dt>Presentation cadence p50 / p95</dt>
+          <dd>{formatTiming(summary.presentationCadence)}</dd>
+        </div>
+        <div>
+          <dt>Presentation rate</dt>
           <dd>
             {summary.switchingFramesPerSecond === undefined
               ? "waiting"
               : `${summary.switchingFramesPerSecond.toFixed(1)} fps`}
           </dd>
+        </div>
+        <div>
+          <dt>Dropped frames</dt>
+          <dd>{playback?.droppedFrameCount.toLocaleString() ?? "0"}</dd>
+        </div>
+        <div>
+          <dt>Render call p50 / p95</dt>
+          <dd>{formatTiming(summary.renderCall)}</dd>
+        </div>
+        <div>
+          <dt>Spark update p50 / p95</dt>
+          <dd>{formatTiming(summary.sparkUpdate)}</dd>
+        </div>
+        <div>
+          <dt>Spark sort p50 / p95</dt>
+          <dd>{formatTiming(summary.sort)}</dd>
         </div>
       </dl>
     </section>

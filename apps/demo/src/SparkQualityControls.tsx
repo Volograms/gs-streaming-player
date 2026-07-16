@@ -85,7 +85,7 @@ export function SparkQualityControls({
       />
 
       <label htmlFor="dynamic-detail">
-        Dynamic detail
+        Dynamic render weight
         <output htmlFor="dynamic-detail">{formatScale(dynamicWeight)}</output>
       </label>
       <input

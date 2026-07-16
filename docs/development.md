@@ -119,6 +119,39 @@ Flat frames are hidden after their initial upload fence and made visible only fo
 presentation. This is important: transparent-but-visible future frames still participate
 in Spark's generation and sorting pass.
 
+The demo's `Dynamic transfer` panel selects an explicit SPZ tier when automatic quality
+is disabled. Its status displays both the selected tier and the currently presented
+tier. After changing tiers, step or play to hand off to the newly buffered
+representation; the old current frame deliberately remains visible until then. The
+separate `Dynamic render weight` control affects Spark rendering policy, not which SPZ
+file is transferred.
+
+To isolate playback/rendering cost from ongoing network activity, opt into full-sequence
+preloading:
+
+```bash
+VITE_DYNAMIC_PRELOAD_ALL_FRAMES=true \
+VITE_DYNAMIC_QUALITY_INDEX_URL=/assets/local-dynamic-cuts/quality-cuts.json \
+VITE_DYNAMIC_RAD_START_FRAME=1 \
+VITE_DYNAMIC_RAD_END_FRAME=100 \
+VITE_DYNAMIC_RAD_FRAME_RATE=30 \
+pnpm dev
+```
+
+This replaces the normal five-frame window with a circular window covering the complete
+configured sequence. Playback controls remain disabled until every frame has completed
+base preparation. Selecting another SPZ tier repeats that complete preload and disables
+playback again until the replacement tier is resident. This is a diagnostic mode rather
+than the intended streaming architecture and can consume hundreds of megabytes of CPU
+and GPU memory, especially at medium or full quality.
+
+The measured-performance panel separates presentation cadence and dropped playback
+deadlines from renderer work. `Render call` covers the synchronous Three.js render
+submission, `Spark update` covers Spark's generator/update cycle, and `Spark sort`
+measures actual sort jobs started by that cycle. These samples are emitted in batches
+approximately every 500 ms so measurement does not add a React update or console entry
+to every displayed frame.
+
 Use a hardware-accelerated browser for frame-rate measurements. Playwright's headless
 Chromium can fall back to software WebGL; on the current development machine it reports
 0 fps even for one approximately 70k-splat minimum tier, so its real-asset run validates

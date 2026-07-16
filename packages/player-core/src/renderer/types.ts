@@ -151,9 +151,12 @@ export interface RendererMetrics {
   loadedStaticObjectCount: number;
   loadingResourceCount: number;
   preparedFrameCount: number;
+  renderCallTimeMs?: number;
   renderedSplatCount?: number;
   renderFramesPerSecond?: number;
   resources: readonly RendererResourceMetrics[];
+  sortTimeMs?: number;
+  sparkUpdateTimeMs?: number;
 }
 
 export interface GaussianRendererAdapter {

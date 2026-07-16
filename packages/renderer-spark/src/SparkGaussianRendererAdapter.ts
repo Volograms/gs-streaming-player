@@ -15,7 +15,7 @@ import { applyTransform } from "./transform.js";
 import type { SparkRenderQualityConfiguration } from "./quality.js";
 import type { ResizeObserverLike, SparkRendererRuntime } from "./runtime.js";
 import type { SparkFrameSlotSnapshot } from "./SparkFrameSlot.js";
-import type { SparkRendererAdapterOptions } from "./types.js";
+import type { SparkRendererAdapterOptions, SparkRenderTimingSample } from "./types.js";
 import type {
   FramePresentationQuality,
   FramePreparationOptions,
@@ -57,6 +57,13 @@ interface MutableResourceMetrics {
   visible: boolean;
 }
 
+interface InstrumentableSparkRenderer {
+  driveSort(...args: unknown[]): Promise<unknown>;
+  sortDirty: boolean;
+  sorting: boolean;
+  updateInternal(...args: unknown[]): Promise<unknown>;
+}
+
 export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
   private readonly autoRender: boolean;
   private failedResourceLoadCount = 0;
@@ -78,10 +85,18 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
   private lastRenderTime: number | undefined;
   private rendererValue: WebGLRenderer | undefined;
   private renderFramesPerSecond: number | undefined;
+  private readonly renderCallSamplesMs: number[] = [];
+  private renderCallTimeMs: number | undefined;
+  private readonly renderIntervalSamplesMs: number[] = [];
   private renderRevision = 0;
+  private renderTimingBatchStartedAt: number | undefined;
   private resizeObserver: ResizeObserverLike | undefined;
   private sceneValue: Scene | undefined;
   private sparkValue: SparkRenderer | undefined;
+  private sortTimeMs: number | undefined;
+  private readonly sortSamplesMs: number[] = [];
+  private sparkUpdateTimeMs: number | undefined;
+  private readonly sparkUpdateSamplesMs: number[] = [];
   private startedAnimationLoop = false;
 
   constructor(options: SparkRendererAdapterOptions) {
@@ -115,6 +130,7 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
       const scene = this.options.scene ?? this.runtime.createScene();
       const camera = this.options.camera ?? this.runtime.createCamera();
       spark = this.runtime.createSparkRenderer(renderer);
+      this.installRenderInstrumentation(spark);
 
       scene.add(spark);
       this.rendererValue = renderer;
@@ -421,22 +437,94 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
       ...(this.renderFramesPerSecond === undefined
         ? {}
         : { renderFramesPerSecond: this.renderFramesPerSecond }),
+      ...(this.renderCallTimeMs === undefined
+        ? {}
+        : { renderCallTimeMs: this.renderCallTimeMs }),
       resources,
+      ...(this.sortTimeMs === undefined ? {} : { sortTimeMs: this.sortTimeMs }),
+      ...(this.sparkUpdateTimeMs === undefined
+        ? {}
+        : { sparkUpdateTimeMs: this.sparkUpdateTimeMs }),
     };
   }
 
   render = (): void => {
     this.assertInitialised();
-    const now = this.runtime.now();
+    const renderStartedAt = this.runtime.now();
+    let renderIntervalMs: number | undefined;
     if (this.lastRenderTime !== undefined) {
-      this.frameTimeMs = now - this.lastRenderTime;
+      this.frameTimeMs = renderStartedAt - this.lastRenderTime;
+      renderIntervalMs = this.frameTimeMs;
+      this.renderIntervalSamplesMs.push(renderIntervalMs);
       this.renderFramesPerSecond =
         this.frameTimeMs > 0 ? 1000 / this.frameTimeMs : undefined;
     }
-    this.lastRenderTime = now;
+    this.lastRenderTime = renderStartedAt;
     this.renderer.render(this.scene, this.camera);
+    const renderedAt = this.runtime.now();
+    this.renderCallTimeMs = renderedAt - renderStartedAt;
+    this.renderCallSamplesMs.push(this.renderCallTimeMs);
     this.renderRevision += 1;
+    this.flushRenderTimingBatch(renderedAt);
   };
+
+  private flushRenderTimingBatch(atMs: number): void {
+    this.renderTimingBatchStartedAt ??= atMs;
+    if (atMs - this.renderTimingBatchStartedAt < 500) {
+      return;
+    }
+    const sample: SparkRenderTimingSample = {
+      atMs,
+      ...(this.activeFrame === undefined
+        ? {}
+        : { frameIndex: this.activeFrame.frameIndex }),
+      renderCallSamplesMs: this.renderCallSamplesMs.splice(0),
+      renderIntervalSamplesMs: this.renderIntervalSamplesMs.splice(0),
+      sortSamplesMs: this.sortSamplesMs.splice(0),
+      sparkUpdateSamplesMs: this.sparkUpdateSamplesMs.splice(0),
+    };
+    this.renderTimingBatchStartedAt = atMs;
+    this.options.onRenderTiming?.(sample);
+  }
+
+  private installRenderInstrumentation(spark: SparkRenderer): void {
+    const instrumented = spark as unknown as InstrumentableSparkRenderer;
+    if (
+      typeof instrumented.updateInternal !== "function" ||
+      typeof instrumented.driveSort !== "function"
+    ) {
+      return;
+    }
+
+    const updateInternal = instrumented.updateInternal.bind(instrumented);
+    instrumented.updateInternal = async (...args: unknown[]) => {
+      const startedAt = this.runtime.now();
+      try {
+        return await updateInternal(...args);
+      } finally {
+        const durationMs = this.runtime.now() - startedAt;
+        this.sparkUpdateTimeMs = durationMs;
+        this.sparkUpdateSamplesMs.push(durationMs);
+      }
+    };
+
+    const driveSort = instrumented.driveSort.bind(instrumented);
+    instrumented.driveSort = async (...args: unknown[]) => {
+      const startedAt = this.runtime.now();
+      const wasSorting = instrumented.sorting;
+      const sort = driveSort(...args);
+      const startedSort = !wasSorting && instrumented.sorting;
+      try {
+        return await sort;
+      } finally {
+        if (startedSort) {
+          const durationMs = this.runtime.now() - startedAt;
+          this.sortTimeMs = durationMs;
+          this.sortSamplesMs.push(durationMs);
+        }
+      }
+    };
+  }
 
   start(): void {
     this.assertInitialised();

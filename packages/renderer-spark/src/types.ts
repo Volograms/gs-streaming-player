@@ -1,6 +1,15 @@
 import type { SparkRendererRuntime } from "./runtime.js";
 import type { Camera, Scene, WebGLRenderer } from "three";
 
+export interface SparkRenderTimingSample {
+  atMs: number;
+  frameIndex?: number;
+  renderCallSamplesMs: readonly number[];
+  renderIntervalSamplesMs: readonly number[];
+  sortSamplesMs: readonly number[];
+  sparkUpdateSamplesMs: readonly number[];
+}
+
 export interface SparkRendererAdapterOptions {
   /** Start a Three.js animation loop. Defaults to true for adapter-owned renderers. */
   autoRender?: boolean;
@@ -14,6 +23,8 @@ export interface SparkRendererAdapterOptions {
   renderer?: WebGLRenderer;
   /** Runtime factory overrides, primarily for non-WebGL tests and embedding. */
   runtime?: SparkRendererRuntime;
+  /** High-frequency render diagnostics; consumers should retain a bounded history. */
+  onRenderTiming?(sample: Readonly<SparkRenderTimingSample>): void;
   /** Caller-owned scene. Only adapter-owned children are removed on disposal. */
   scene?: Scene;
 }

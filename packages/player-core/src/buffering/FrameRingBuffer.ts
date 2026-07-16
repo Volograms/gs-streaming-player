@@ -603,6 +603,19 @@ export class FrameRingBuffer {
       desired.add(preservedFrameIndex);
       this.trimPreservedWindow(desired, frameIndex, preservedFrameIndex);
     }
+    for (const [bufferedFrameIndex, record] of [...this.records]) {
+      if (
+        bufferedFrameIndex !== this.currentFrameIndexValue &&
+        this.selectedTransferUrl(record.source) !== record.preparedSource.url
+      ) {
+        record.controller.abort();
+        record.refinementController?.abort();
+        if (record.preparedFrame !== undefined) {
+          this.renderer.releaseFrame(record.preparedFrame);
+        }
+        this.records.delete(bufferedFrameIndex);
+      }
+    }
     for (const desiredFrameIndex of desired) {
       void this.ensureFrame(desiredFrameIndex).catch(() => undefined);
     }
@@ -638,6 +651,13 @@ export class FrameRingBuffer {
       type: "window-updated",
     });
     this.emit();
+  }
+
+  private selectedTransferUrl(source: GaussianFrameSource): string {
+    return (
+      selectFrameTransferQuality(source, this.presentationQualityTarget.detailLevel)
+        ?.source.url ?? source.url
+    );
   }
 
   private applyRefinementPolicies(): void {
