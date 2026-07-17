@@ -15,3 +15,6 @@ apps/demo/public/assets/local-static.rad
 apps/demo/public/assets/local-dynamic
 apps/demo/public/assets/local-dynamic-cuts
 test-data/*.rad
+
+# Chrome DevTools performance captures are large local diagnostic artifacts.
+Trace-*.json

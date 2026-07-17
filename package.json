@@ -18,6 +18,7 @@
     "gs-content": "tsx packages/content-tools/src/cli.ts",
     "gs-manifest": "tsx packages/content-tools/src/cli.ts",
     "lint": "eslint . --max-warnings 0",
+    "profile": "pnpm build && pnpm --filter @6g-path/demo preview --port 4174",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",

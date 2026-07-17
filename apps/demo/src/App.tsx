@@ -3,33 +3,27 @@ import { createInitialPlaybackState } from "@6g-path/gaussian-player";
 import { sparkRendererCapabilities } from "@6g-path/gaussian-renderer-spark";
 import { SIX_G_TELEMETRY_PACKAGE_ID } from "@6g-path/gaussian-telemetry-6g";
 import { createIdentityTransform } from "@6g-path/shared";
-import { useState } from "react";
 
 import { getFoundationStatus } from "./foundationStatus.js";
 import { PlaybackPerformancePanel } from "./PlaybackPerformancePanel.js";
 import { PlaybackTracePanel } from "./PlaybackTracePanel.js";
 import { SparkViewport } from "./SparkViewport.js";
-
-import type {
-  FrameRingBufferTraceEvent,
-  SequencePlaybackSnapshot,
-} from "@6g-path/gaussian-player";
+import { usePlaybackDiagnostics } from "./usePlaybackDiagnostics.js";
 
 const origin = createIdentityTransform();
 
 export function App() {
-  const [playbackLifecycle, setPlaybackLifecycle] = useState(
-    () => createInitialPlaybackState().lifecycle,
-  );
-  const [playbackTrace, setPlaybackTrace] = useState<
-    readonly Readonly<FrameRingBufferTraceEvent>[]
-  >([]);
-  const [playbackSnapshot, setPlaybackSnapshot] = useState<SequencePlaybackSnapshot>();
+  const {
+    clearTrace,
+    onPlaybackSnapshot,
+    onTrace,
+    performanceEvents,
+    playbackSnapshot,
+    visibleEvents,
+  } = usePlaybackDiagnostics();
+  const playbackLifecycle =
+    playbackSnapshot?.lifecycle ?? createInitialPlaybackState().lifecycle;
   const statusItems = getFoundationStatus();
-  const handlePlaybackTrace = (event: Readonly<FrameRingBufferTraceEvent>) => {
-    console.debug("[playback-trace]", event);
-    setPlaybackTrace((current) => [...current.slice(-1_999), event]);
-  };
 
   return (
     <main>
@@ -44,11 +38,8 @@ export function App() {
 
       <section className="viewer-shell" aria-label="Player preview">
         <SparkViewport
-          onBufferTrace={handlePlaybackTrace}
-          onPlaybackSnapshot={(snapshot) => {
-            setPlaybackLifecycle(snapshot.lifecycle);
-            setPlaybackSnapshot(snapshot);
-          }}
+          onBufferTrace={onTrace}
+          onPlaybackSnapshot={onPlaybackSnapshot}
         />
         <aside className="status-panel">
           <h2>Foundation status</h2>
@@ -87,10 +78,10 @@ export function App() {
       </section>
 
       <PlaybackPerformancePanel
-        events={playbackTrace}
+        events={performanceEvents}
         {...(playbackSnapshot === undefined ? {} : { playback: playbackSnapshot })}
       />
-      <PlaybackTracePanel events={playbackTrace} onClear={() => setPlaybackTrace([])} />
+      <PlaybackTracePanel events={visibleEvents} onClear={clearTrace} />
 
       <footer>{SIX_G_TELEMETRY_PACKAGE_ID}</footer>
     </main>

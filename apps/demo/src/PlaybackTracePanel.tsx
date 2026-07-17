@@ -128,15 +128,15 @@ export function PlaybackTracePanel({ events, onClear }: PlaybackTracePanelProps)
         </button>
       </header>
       <p>
-        Timings use a monotonic clock. Open the browser console for the same events as
-        structured objects.
+        Timings use a monotonic clock. Events are collected continuously and displayed
+        in bounded batches to avoid disturbing playback.
       </p>
       <ol aria-live="polite">
-        {visibleEvents.map((event, reverseIndex) => (
+        {visibleEvents.map((event) => (
           <li
             data-frame-index={event.frameIndex}
             data-trace-type={event.type}
-            key={`${event.atMs}:${event.type}:${event.frameIndex ?? "window"}:${reverseIndex}`}
+            key={`${event.atMs}:${event.type}:${event.frameIndex ?? "window"}:${event.phase ?? "event"}:${event.loadedBytes ?? "none"}`}
           >
             <time>+{(event.atMs - firstTimestamp).toFixed(1)} ms</time>
             <strong>

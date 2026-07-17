@@ -22,6 +22,9 @@ acceptance criteria are covered by implementation and verification.
       exceeds its capacity.
 - [x] Split Spark sort diagnostics into GPU depth readback, worker sorting, and ordering
       texture upload/submission timings.
+- [x] Remove diagnostic observer overhead from performance runs by buffering trace
+      events outside React, batching trace/snapshot/statistics presentation, suppressing
+      console output, and documenting production-build profiling.
 - [ ] Browser-validate 30 fps manual and clocked playback against the generated
       `rafa-pitch` tier set on a hardware-accelerated browser, then compare it with the
       paged RAD baseline. Headless Chromium's software WebGL path reports 0 fps for a
@@ -31,6 +34,9 @@ Full-sequence hardware measurements currently reach approximately 23–25 fps at
 quality and 20–23 fps at full quality. Presentation handoff is already approximately 1–4
 ms. Shared dynamic GPU allocation is now implemented; the next measurements can isolate
 Spark's GPU readback, worker sort, and ordering upload before further renderer changes.
+A browser trace showed that unbatched development diagnostics could consume roughly half
+the main-thread capture, so subsequent hardware figures must use the production
+profiling command and the batched diagnostics path.
 
 The offline source path is now fixed and consumed by the runtime. Quality-LoD RAD is
 decoded once during content preparation, valid camera-independent frontiers are exported

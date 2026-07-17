@@ -89,6 +89,11 @@ used during day-to-day implementation.
   separately report GPU depth readback, worker sorting, and ordering texture
   upload/submission. This keeps React state updates and console tracing off the
   per-frame render hot path while preserving enough samples for p50/p95 analysis.
+- Demo trace events are retained in a fixed-capacity non-React buffer. The newest trace
+  view refreshes no more than four times per second, statistical summaries refresh once
+  per second, playback snapshots are presentation-throttled, and normal runs do not log
+  events to the console. Performance captures use a production build so development
+  React instrumentation is not mistaken for player or renderer cost.
 - Separate tier files are accepted for the first measurable version. A packed
   multi-frame container and temporal compression remain a later optimisation after the
   flat-tier playback baseline is measured.

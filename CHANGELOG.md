@@ -94,6 +94,9 @@ All notable changes to this project will be documented here. The project uses
   ordering-texture upload/submission.
 - One grow-only GPU-facing `PackedSplats` allocation for flat dynamic playback; buffered
   SPZ frames now remain decoded on the CPU and copy into the shared display at handoff.
+- Low-overhead demo diagnostics using a fixed-capacity trace buffer, four-Hz trace and
+  playback-snapshot presentation, one-Hz performance summaries, stable trace rows, no
+  per-event console output, and a production profiling command.
 
 ### Fixed
 

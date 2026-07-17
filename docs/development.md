@@ -269,8 +269,11 @@ before increasing it. Manual controls remain the deterministic fixed-quality bas
 
 ### Playback timing trace
 
-The demo's `Playback trace` panel shows the newest 50 buffer events and mirrors the same
-structured objects to the browser console under `[playback-trace]`. Use the stage gaps
+The demo's `Playback trace` panel shows the newest 50 buffer events. Collection uses a
+fixed 2,000-event buffer outside React state; the visible list refreshes at most four
+times per second and the p50/p95 summary refreshes once per second. Playback snapshots
+use the same bounded presentation cadence. Events are not written to the browser console
+because console rendering can materially alter playback performance. Use the stage gaps
 to locate a slow handoff:
 
 - `base requested` to Spark `resource initialized` covers initial URL/cache access and
@@ -317,6 +320,16 @@ RUN_PLAYBACK_BENCHMARK=1 \
 VITE_DYNAMIC_RAD_BASE_URL=/assets/local-dynamic \
 pnpm test:e2e:performance
 ```
+
+For an interactive browser performance capture, use the production build rather than the
+Vite development server. This removes React development instrumentation and StrictMode's
+development-only duplicate work:
+
+```bash
+pnpm profile
+```
+
+The production preview listens on `http://127.0.0.1:4174` by default.
 
 The benchmark advances five frames and prints `PLAYBACK_PERFORMANCE_SUMMARY` as JSON.
 The 2026-07-15 local Chromium baseline with the unoptimised frames 40–50 measured:
