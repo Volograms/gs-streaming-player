@@ -28,7 +28,7 @@ pnpm install
 ```bash
 pnpm dev           # Run the reference demo
 pnpm build         # Build every library package and the demo
-pnpm profile       # Build and serve the production demo for performance profiling
+pnpm profile:demo  # Build and serve the production demo for performance profiling
 pnpm typecheck     # Type-check every workspace package
 pnpm lint          # Run ESLint across the repository
 pnpm format:check  # Check Prettier formatting

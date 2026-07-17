@@ -326,7 +326,7 @@ Vite development server. This removes React development instrumentation and Stri
 development-only duplicate work:
 
 ```bash
-pnpm profile
+pnpm profile:demo
 ```
 
 The production preview listens on `http://127.0.0.1:4174` by default.
