@@ -111,6 +111,9 @@ All notable changes to this project will be documented here. The project uses
 - An explicit packed-memory experiment for the currently presented flat frame, reporting
   renderer-native base/SH payload size, snapshot cost, full-buffer clone p50/p95, and
   zero-copy `PackedSplats` binding p50/p95 without introducing a persistent format.
+- A living playback-performance report preserving test configurations, RAD and SPZ
+  pipeline baselines, resident-versus-streaming results, Chrome trace attribution,
+  packed-memory findings, current conclusions, and a repeatable result template.
 
 ### Fixed
 

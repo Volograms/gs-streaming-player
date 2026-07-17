@@ -179,6 +179,11 @@ The viewport overlay reports the current `Dynamic cap` in splats and the number 
 capacity-growing `Reallocs`; the latter should remain stable once the largest frame seen
 so far fits the shared allocation.
 
+Record comparable hardware results in the living
+[`project/PERFORMANCE.md`](project/PERFORMANCE.md) report. It defines the stage names,
+preserves the current RAD/SPZ/fully-resident/packed-memory baselines, and provides a run
+template so content and instrumentation differences remain visible.
+
 The viewport's `Packed-memory experiment` is a paused-frame diagnostic for evaluating a
 renderer-native runtime payload before defining one. Present any flat SPZ frame, pause
 playback, and choose `Test current frame`. The test first snapshots the decoded base and

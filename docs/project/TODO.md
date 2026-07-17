@@ -38,6 +38,9 @@ acceptance criteria are covered by implementation and verification.
 - [x] Add a non-persistent packed-memory experiment that snapshots the active decoded
       frame into contiguous base/SH bytes and measures full-payload cloning separately
       from zero-copy `PackedSplats` binding before defining a runtime file format.
+- [x] Start a living playback-performance report covering the paged RAD baseline, flat
+      SPZ preparation, fully resident 30 fps presentation, bounded streaming, Chrome
+      trace attribution, and renderer-native packed-memory experiment.
 - [ ] Browser-validate 30 fps manual and clocked playback against the generated
       `rafa-pitch` tier set on a hardware-accelerated browser, then compare it with the
       paged RAD baseline. Headless Chromium's software WebGL path reports 0 fps for a
