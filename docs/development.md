@@ -122,10 +122,10 @@ only when a larger frame requires it. The mapping is deliberately invalidated on
 handoff so independently encoded SPZ frames are sorted correctly.
 
 Normal streaming uses two independent stages. A byte-budgeted compressed SPZ cache runs
-ahead of playback, then the five-frame renderer ring decodes resident bytes through
-Spark's worker pool. Network waits therefore do not occupy decode slots. Demo defaults
-are 200 MB, six concurrent fetches, and four concurrent frame decodes. Override them for
-device/network experiments:
+ahead of playback, then a twelve-frame renderer window (the current frame, one previous,
+and ten future frames) decodes resident bytes through Spark's worker pool. Network waits
+therefore do not occupy decode slots. Demo defaults are 200 MB, six concurrent fetches,
+and four concurrent frame decodes. Override them for device/network experiments:
 
 ```bash
 VITE_DYNAMIC_COMPRESSED_BUFFER_MB=200 \
@@ -159,13 +159,13 @@ VITE_DYNAMIC_RAD_FRAME_RATE=30 \
 pnpm dev
 ```
 
-This replaces the normal five-frame window with a circular window covering the complete
-configured sequence. Playback controls remain disabled until every frame has completed
-base preparation. Selecting another SPZ tier repeats that complete preload and disables
-playback again until the replacement tier is resident. This is a diagnostic mode rather
-than the intended streaming architecture and can consume hundreds of megabytes of CPU
-memory, especially at medium or full quality. Dynamic GPU splat storage remains bounded
-by the largest frame presented through the shared display allocation.
+This replaces the normal twelve-frame window with a circular window covering the
+complete configured sequence. Playback controls remain disabled until every frame has
+completed base preparation. Selecting another SPZ tier repeats that complete preload and
+disables playback again until the replacement tier is resident. This is a diagnostic
+mode rather than the intended streaming architecture and can consume hundreds of
+megabytes of CPU memory, especially at medium or full quality. Dynamic GPU splat storage
+remains bounded by the largest frame presented through the shared display allocation.
 
 The measured-performance panel separates presentation cadence and dropped playback
 deadlines from renderer work. `Render call` covers the synchronous Three.js render

@@ -5,11 +5,11 @@
 
 ## Context
 
-The five-frame renderer ring bounds decoded CPU state and Spark resources, but it only
-represents about 167 ms at 30 fps. Full SPZ tiers can take longer than that to fetch and
-decode even on a fast local network. Scheduling a URL-backed Spark preparation as one
-operation also lets network waits occupy decoder slots, so the renderer window can run
-dry despite available memory and bandwidth.
+The original five-frame renderer ring bounded decoded CPU state and Spark resources, but
+represented only about 167 ms at 30 fps. Full SPZ tiers can take longer than that to
+fetch and decode even on a fast local network. Scheduling a URL-backed Spark preparation
+as one operation also lets network waits occupy decoder slots, so the renderer window
+can run dry despite available memory and bandwidth.
 
 Conventional volumetric/video players keep a larger compressed reservoir independently
 of the much smaller set of decoded frames. Playback consumes from that reservoir while
@@ -31,9 +31,10 @@ Add a renderer-neutral, byte-budgeted compressed frame cache in `player-core`:
    without issuing another URL request.
 
 The demo defaults to a 200 MB compressed cache, six network requests, four concurrent
-decode preparations, and a five-frame decoded ring. Each value remains configurable.
-Paged RAD is not routed through this whole-file cache because its value comes from range
-requests; the initial cache path is for independently addressable flat tiers.
+decode preparations, and a twelve-frame decoded window comprising the current frame, one
+previous frame, and ten future frames. Paged RAD is not routed through this whole-file
+cache because its value comes from range requests; the initial cache path is for
+independently addressable flat tiers.
 
 ## Consequences
 

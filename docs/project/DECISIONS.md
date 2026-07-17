@@ -85,7 +85,8 @@ used during day-to-day implementation.
 - Flat-tier network buffering is a separate byte-budgeted stage ahead of decoded frame
   ownership. The demo keeps up to 200 MB of selected compressed SPZ payloads, fetches
   them independently, and only occupies a bounded Spark worker slot after complete bytes
-  are resident. The five-frame ring continues to bound decoded resources.
+  are resident. The normal demo window retains one previous frame and looks ten frames
+  ahead so measured decode latency fits inside the presentation horizon.
 - Manual dynamic transfer quality selects a content tier by its declared detail ratio,
   independently of Spark's dynamic render weight. A tier change refills future slots and
   preserves the current frame until a replacement is presentation-ready.

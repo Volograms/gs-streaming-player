@@ -8,6 +8,7 @@ target/
 .DS_Store
 .env
 .env.*
+.pnpm-store/
 !.env.example
 
 # Developer-provided renderer fixtures are staged here for local smoke tests only.

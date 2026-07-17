@@ -30,6 +30,9 @@ acceptance criteria are covered by implementation and verification.
       preparation.
 - [x] Raise the demo's flat-frame decode concurrency to four, retain a configurable
       six-request network queue, and expose compressed occupancy/contiguous readiness.
+- [x] Raise the normal decoded lookahead from three to ten future frames so the measured
+      approximately 180 ms full-tier decode latency fits within the 30 fps presentation
+      horizon.
 - [x] Separate compressed fetch/throughput, Spark decode-plus-worker-transfer, shared
       display copy, and actual Spark display-mapping commit cadence in diagnostics.
 - [ ] Browser-validate 30 fps manual and clocked playback against the generated
@@ -38,13 +41,13 @@ acceptance criteria are covered by implementation and verification.
       single approximately 70k-splat frame and is not a useful throughput benchmark.
 
 Full-sequence hardware measurements now reach a stable 30 fps at both minimum and full
-quality once all bytes are resident. With only five URL-backed decoded slots, full
-quality still drains the window because 3.2 MB frames take roughly 190–350 ms to fetch
-and decode. The new 200 MB compressed stage addresses that architectural mismatch while
-preserving the small decoded/GPU window; hardware validation of sustained streaming is
-the next measurement. A browser trace showed that unbatched development diagnostics
-could consume roughly half the main-thread capture, so subsequent hardware figures must
-use the production profiling command and the batched diagnostics path.
+quality once all bytes are resident. The 200 MB compressed stage separates fetching from
+decode, and the normal window now looks ten frames ahead so the measured approximately
+180 ms full-tier decode latency fits inside its 30 fps presentation horizon. Hardware
+validation of sustained streaming is the next measurement. A browser trace showed that
+unbatched development diagnostics could consume roughly half the main-thread capture, so
+subsequent hardware figures must use the production profiling command and the batched
+diagnostics path.
 
 The offline source path is now fixed and consumed by the runtime. Quality-LoD RAD is
 decoded once during content preparation, valid camera-independent frontiers are exported
@@ -170,9 +173,9 @@ two presentation-ready frames, emits `PLAYING`/`BUFFERING`/`PAUSED` states, and 
 the old frame visible on a miss. Deterministic tests exercise 30 deadlines per second,
 startup buffering, missed-frame hold, and pause cancellation.
 
-The isolated Chromium test loads the five-frame window, switches Next/Previous, starts
-the absolute-deadline playback controller, observes frame advancement, and pauses again
-in about five seconds against frames 40-50.
+The isolated Chromium test loads the bounded decoded window, switches Next/Previous,
+starts the absolute-deadline playback controller, observes frame advancement, and pauses
+again in about five seconds against frames 40-50.
 
 Readiness waits also survive refinement cancellation when the rolling window wraps or
 adaptive quality changes its target. Superseded work is retried against the current

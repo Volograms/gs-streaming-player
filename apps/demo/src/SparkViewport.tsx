@@ -354,7 +354,7 @@ export function SparkViewport({
           const dynamicSequence = loadedDynamicSequence;
           const futureFrameCount = preloadCompleteDynamicSequence
             ? Math.max(0, dynamicSequence.frameCount - 1)
-            : 3;
+            : 10;
           const buffer = new FrameRingBuffer({
             compressedBufferMaximumBytes,
             futureFrameCount,

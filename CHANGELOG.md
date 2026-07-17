@@ -103,6 +103,8 @@ All notable changes to this project will be documented here. The project uses
 - Demo defaults and controls for a 200 MB compressed reservoir, six concurrent fetches,
   four concurrent decodes, and a five-second adaptive target, with cache occupancy in
   the viewport.
+- A ten-frame future decode lookahead in normal demo streaming, giving full-tier SPZ
+  worker preparation enough lead time at the configured 30 fps playback rate.
 - Separate compressed fetch/throughput and Spark decode-plus-worker-transfer summaries,
   plus observed Spark display-mapping commit cadence so player handoff rate is not
   mistaken for actual renderer presentation.
