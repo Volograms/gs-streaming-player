@@ -9,6 +9,22 @@ describe("summariseFrameTimings", () => {
     const events: FrameRingBufferTraceEvent[] = [
       { atMs: 0, durationMs: 5, frameIndex: 0, type: "base-started" },
       {
+        atMs: 10,
+        durationMs: 25,
+        frameIndex: 0,
+        loadedBytes: 1_000,
+        totalBytes: 1_000,
+        type: "compressed-fetch-ready",
+      },
+      {
+        atMs: 19,
+        durationMs: 19,
+        frameIndex: 0,
+        phase: "flat-decode",
+        stageDurationMs: 9,
+        type: "renderer-phase",
+      },
+      {
         atMs: 20,
         durationMs: 20,
         frameIndex: 0,
@@ -33,6 +49,7 @@ describe("summariseFrameTimings", () => {
       { atMs: 74, durationMs: 11, frameIndex: 1, type: "presented" },
       {
         atMs: 80,
+        displayCommitIntervalsMs: [32, 34],
         flatFrameCopySamplesMs: [2],
         renderCallSamplesMs: [3, 4],
         renderIntervalSamplesMs: [16, 17],
@@ -47,8 +64,13 @@ describe("summariseFrameTimings", () => {
 
     expect(summariseFrameTimings(events)).toMatchObject({
       basePreparation: { count: 1, medianMs: 25, p95Ms: 25 },
+      compressedFetch: { count: 1, medianMs: 25 },
+      compressedFetchThroughputBps: 320_000,
+      displayCommitCadence: { count: 2, medianMs: 32, p95Ms: 34 },
+      displayCommitFramesPerSecond: 1000 / 33,
       estimatedBaseThroughputBps: 320_000,
       flatFrameCopy: { count: 1, medianMs: 2 },
+      flatDecode: { count: 1, medianMs: 9 },
       handoff: { count: 2, maximumMs: 1 },
       minimumRenderable: { count: 1, medianMs: 20 },
       presentationCadence: { count: 1, medianMs: 33 },

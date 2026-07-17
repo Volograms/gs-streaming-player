@@ -1,7 +1,12 @@
 import { selectFrameTransferQuality } from "../quality/selectFrameTransferQuality.js";
 
+import { CompressedFrameCache } from "./CompressedFrameCache.js";
 import { FramePreparationScheduler } from "./FramePreparationScheduler.js";
 
+import type {
+  CompressedFrameCacheTraceEvent,
+  CompressedFrameRequest,
+} from "./CompressedFrameCache.js";
 import type {
   FrameRingBufferConfiguration,
   FrameRingBufferSnapshot,
@@ -41,6 +46,7 @@ interface FrameRecord {
 }
 
 export interface FrameRingBufferOptions extends FrameRingBufferConfiguration {
+  compressedFrameFetch?: typeof fetch;
   now?: () => number;
   onTrace?: FrameRingBufferTraceListener;
   presentationQualityTarget?: FrameQualityTarget;
@@ -56,6 +62,7 @@ type SnapshotListener = (snapshot: FrameRingBufferSnapshot) => void;
 
 export class FrameRingBuffer {
   private readonly basePreparationScheduler: FramePreparationScheduler;
+  private readonly compressedFrameCache: CompressedFrameCache | undefined;
   private readonly futureFrameCount: number;
   private readonly listeners = new Set<SnapshotListener>();
   private readonly loop: boolean;
@@ -87,6 +94,19 @@ export class FrameRingBuffer {
     this.maximumRefinementConcurrency = options.maximumRefinementConcurrency ?? 1;
     this.now = options.now ?? (() => performance.now());
     this.onTrace = options.onTrace;
+    this.compressedFrameCache =
+      options.compressedBufferMaximumBytes === undefined
+        ? undefined
+        : new CompressedFrameCache({
+            ...(options.compressedFrameFetch === undefined
+              ? {}
+              : { fetch: options.compressedFrameFetch }),
+            maximumBytes: options.compressedBufferMaximumBytes,
+            maximumFetchConcurrency: options.maximumCompressedFetchConcurrency ?? 6,
+            now: this.now,
+            onChange: () => this.emit(),
+            onTrace: (event) => this.traceCompressedFetch(event),
+          });
     this.presentationQualityTarget = options.presentationQualityTarget ?? {
       detailLevel: 0.25,
       minimumSplatCount: 2,
@@ -119,6 +139,9 @@ export class FrameRingBuffer {
       futureFrameCount: this.futureFrameCount,
       previousFrameCount: this.previousFrameCount,
       queuedBasePreparationCount: this.basePreparationScheduler.queuedCount,
+      ...(this.compressedFrameCache === undefined
+        ? {}
+        : { compressedBuffer: this.compressedFrameCache.snapshot }),
     };
   }
 
@@ -419,6 +442,7 @@ export class FrameRingBuffer {
       }
     }
     this.records.clear();
+    this.compressedFrameCache?.dispose();
     this.listeners.clear();
   }
 
@@ -461,8 +485,9 @@ export class FrameRingBuffer {
       totalBytes: record.requestedBytes,
       type: "base-requested",
     });
-    record.preparation = this.basePreparationScheduler
-      .enqueue(
+    const enqueueDecode = (cachedBytes?: ArrayBuffer) => {
+      const decodeQueuedAtMs = this.now();
+      return this.basePreparationScheduler.enqueue(
         () => ({
           deadlineMs: record.deadlineMs,
           estimatedBytes:
@@ -473,12 +498,13 @@ export class FrameRingBuffer {
         controller.signal,
         () => {
           this.trace({
-            durationMs: this.now() - baseRequestedAtMs,
+            durationMs: this.now() - decodeQueuedAtMs,
             frameIndex,
             type: "base-started",
           });
           this.emit();
           return this.renderer.prepareFrame(this.sequence.id, preparedSource, {
+            ...(cachedBytes === undefined ? {} : { compressedBytes: cachedBytes }),
             signal: controller.signal,
             minimumQualityOnly: true,
             onProgress: ({ loadedBytes, totalBytes }) => {
@@ -531,7 +557,18 @@ export class FrameRingBuffer {
                 }),
           });
         },
-      )
+      );
+    };
+    const basePreparation =
+      this.compressedFrameCache === undefined || selectedTransfer === undefined
+        ? enqueueDecode()
+        : this.compressedFrameCache
+            .get(
+              this.toCompressedFrameRequest(frameIndex, preparedSource),
+              controller.signal,
+            )
+            .then((cachedBytes) => enqueueDecode(cachedBytes));
+    record.preparation = basePreparation
       .then((preparedFrame) => {
         if (requestedTransformRevision !== this.transformRevision) {
           this.renderer.setFrameTransform(preparedFrame, this.transformValue);
@@ -598,6 +635,7 @@ export class FrameRingBuffer {
 
   private reconcileWindow(frameIndex: number, preservedFrameIndex?: number): void {
     this.windowFrameIndexValue = frameIndex;
+    this.updateCompressedPrefetchPlan(frameIndex);
     const desired = this.desiredFrameIndices(frameIndex);
     if (preservedFrameIndex !== undefined) {
       desired.add(preservedFrameIndex);
@@ -658,6 +696,64 @@ export class FrameRingBuffer {
       selectFrameTransferQuality(source, this.presentationQualityTarget.detailLevel)
         ?.source.url ?? source.url
     );
+  }
+
+  private updateCompressedPrefetchPlan(frameIndex: number): void {
+    if (this.compressedFrameCache === undefined) {
+      return;
+    }
+    const requests: CompressedFrameRequest[] = [];
+    for (let offset = 0; offset < this.sequence.frameCount; offset += 1) {
+      const requestedFrameIndex = this.offsetFrameIndex(frameIndex, offset);
+      if (requestedFrameIndex === undefined) {
+        break;
+      }
+      const source = this.sequence.frames[requestedFrameIndex];
+      if (source === undefined) {
+        continue;
+      }
+      const selectedTransfer = selectFrameTransferQuality(
+        source,
+        this.presentationQualityTarget.detailLevel,
+      );
+      if (selectedTransfer === undefined) {
+        continue;
+      }
+      requests.push(
+        this.toCompressedFrameRequest(requestedFrameIndex, selectedTransfer.source),
+      );
+    }
+    this.compressedFrameCache.setPlan(requests);
+  }
+
+  private toCompressedFrameRequest(
+    frameIndex: number,
+    source: GaussianFrameSource,
+  ): CompressedFrameRequest {
+    return {
+      ...(source.byteSize === undefined ? {} : { byteSize: source.byteSize }),
+      frameIndex,
+      url: source.url,
+    };
+  }
+
+  private traceCompressedFetch(event: CompressedFrameCacheTraceEvent): void {
+    const type =
+      event.type === "fetch-started"
+        ? "compressed-fetch-started"
+        : event.type === "fetch-ready"
+          ? "compressed-fetch-ready"
+          : event.type === "cache-hit"
+            ? "compressed-cache-hit"
+            : "compressed-fetch-failed";
+    this.trace({
+      ...(event.durationMs === undefined ? {} : { durationMs: event.durationMs }),
+      ...(event.errorMessage === undefined ? {} : { errorMessage: event.errorMessage }),
+      frameIndex: event.frameIndex,
+      ...(event.loadedBytes === undefined ? {} : { loadedBytes: event.loadedBytes }),
+      ...(event.totalBytes === undefined ? {} : { totalBytes: event.totalBytes }),
+      type,
+    });
   }
 
   private applyRefinementPolicies(): void {

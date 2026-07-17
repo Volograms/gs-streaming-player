@@ -29,6 +29,7 @@ import { SparkQualityControls } from "./SparkQualityControls.js";
 
 import type {
   DynamicGaussianSequence,
+  FrameRingBufferSnapshot,
   FrameRingBufferTraceEvent,
   GaussianQualityLevel,
   PlayerLifecycleState,
@@ -48,6 +49,31 @@ const preloadCompleteDynamicSequence =
 const dynamicSequenceId = "local-dynamic-sequence";
 const minimumDynamicSplatCount = 100;
 const defaultDynamicTransferDetail = 0.25;
+
+function positiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function positiveNumber(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const compressedBufferMaximumBytes =
+  positiveInteger(import.meta.env.VITE_DYNAMIC_COMPRESSED_BUFFER_MB, 200) * 1_000_000;
+const dynamicDecodeConcurrency = positiveInteger(
+  import.meta.env.VITE_DYNAMIC_DECODE_CONCURRENCY,
+  4,
+);
+const dynamicFetchConcurrency = positiveInteger(
+  import.meta.env.VITE_DYNAMIC_FETCH_CONCURRENCY,
+  6,
+);
+const dynamicTargetBufferSeconds = positiveNumber(
+  import.meta.env.VITE_DYNAMIC_TARGET_BUFFER_SECONDS,
+  5,
+);
 
 function createInitialQuality(): SparkRenderQualityConfiguration {
   return {
@@ -94,6 +120,8 @@ export function SparkViewport({
     useState<PlayerLifecycleState>("IDLE");
   const [metrics, setMetrics] = useState<RendererMetrics>();
   const [preparedFrameCount, setPreparedFrameCount] = useState(0);
+  const [compressedBuffer, setCompressedBuffer] =
+    useState<FrameRingBufferSnapshot["compressedBuffer"]>();
   const [quality, setQuality] = useState(createInitialQuality);
   const qualityRef = useRef(quality);
   const [dynamicActorScale, setDynamicActorScale] = useState(1);
@@ -133,6 +161,7 @@ export function SparkViewport({
       canvas,
       onRenderTiming: ({
         atMs,
+        displayCommitIntervalsMs,
         flatFrameCopySamplesMs,
         frameIndex,
         renderCallSamplesMs,
@@ -145,6 +174,7 @@ export function SparkViewport({
       }) => {
         bufferTraceListenerRef.current?.({
           atMs,
+          displayCommitIntervalsMs,
           flatFrameCopySamplesMs,
           ...(frameIndex === undefined ? {} : { frameIndex }),
           renderCallSamplesMs,
@@ -198,10 +228,17 @@ export function SparkViewport({
             ) {
               const dynamicSequence = activeDynamicSequence;
               const playbackSnapshot = playback.snapshot;
+              const compressedSnapshot = buffer.snapshot.compressedBuffer;
+              const compressedAheadSeconds =
+                Math.max(0, (compressedSnapshot?.contiguousReadyFrameCount ?? 0) - 1) /
+                dynamicSequence.frameRate;
+              const bufferedAheadSeconds = Math.max(
+                playbackSnapshot.bufferAheadFrames / dynamicSequence.frameRate,
+                compressedAheadSeconds,
+              );
               const decision = qualityController.update(
                 {
-                  bufferAheadSeconds:
-                    playbackSnapshot.bufferAheadFrames / dynamicSequence.frameRate,
+                  bufferAheadSeconds: bufferedAheadSeconds,
                   currentFrameIndex: playbackSnapshot.currentFrameIndex,
                   currentTimeSeconds: playbackSnapshot.currentTimeSeconds,
                   isPlaying: playbackSnapshot.isPlaying,
@@ -212,12 +249,17 @@ export function SparkViewport({
                 network,
                 {
                   bufferOccupancyRatio:
-                    playbackSnapshot.bufferAheadFrames /
-                    Math.max(1, buffer.snapshot.futureFrameCount),
-                  downloadedBytes: buffer.snapshot.frames.reduce(
-                    (sum, frame) => sum + frame.downloadedBytes,
-                    0,
-                  ),
+                    compressedSnapshot === undefined
+                      ? playbackSnapshot.bufferAheadFrames /
+                        Math.max(1, buffer.snapshot.futureFrameCount)
+                      : compressedSnapshot.residentBytes /
+                        compressedSnapshot.capacityBytes,
+                  downloadedBytes:
+                    compressedSnapshot?.residentBytes ??
+                    buffer.snapshot.frames.reduce(
+                      (sum, frame) => sum + frame.downloadedBytes,
+                      0,
+                    ),
                   droppedFrames: playbackSnapshot.droppedFrameCount,
                   ...(latestBaseFrameBytes === undefined
                     ? {}
@@ -307,27 +349,28 @@ export function SparkViewport({
           qualityController = new BufferAwareQualityController({
             dynamicObjectId: loadedDynamicSequence.id,
             minimumSplatCount: minimumDynamicSplatCount,
-            targetBufferSeconds: 2 / loadedDynamicSequence.frameRate,
+            targetBufferSeconds: dynamicTargetBufferSeconds,
           });
           const dynamicSequence = loadedDynamicSequence;
           const futureFrameCount = preloadCompleteDynamicSequence
             ? Math.max(0, dynamicSequence.frameCount - 1)
             : 3;
           const buffer = new FrameRingBuffer({
+            compressedBufferMaximumBytes,
             futureFrameCount,
             loop: true,
-            maximumBasePreparationConcurrency: 2,
+            maximumBasePreparationConcurrency: dynamicDecodeConcurrency,
+            maximumCompressedFetchConcurrency: dynamicFetchConcurrency,
             maximumRefinementConcurrency: 1,
             onTrace: (event) => {
               if (
-                event.type === "renderer-phase" &&
-                event.phase === "minimum-renderable" &&
+                event.type === "compressed-fetch-ready" &&
                 event.durationMs !== undefined &&
-                event.quality?.loadedBytes !== undefined
+                event.loadedBytes !== undefined
               ) {
-                latestBaseFrameBytes = event.quality.loadedBytes;
+                latestBaseFrameBytes = event.loadedBytes;
                 throughputEstimator.observe(
-                  event.quality.loadedBytes,
+                  event.loadedBytes,
                   event.durationMs,
                   event.atMs,
                 );
@@ -343,25 +386,28 @@ export function SparkViewport({
             sequence: dynamicSequence,
           });
           bufferRef.current = buffer;
-          unsubscribeBuffer = buffer.subscribe(({ currentFrameIndex, frames }) => {
-            if (active) {
-              setPreparedFrameCount(
-                frames.filter(
-                  ({ status }) =>
-                    status === "base-ready" ||
-                    status === "refining" ||
-                    status === "ready" ||
-                    status === "presented",
-                ).length,
-              );
-              setPresentedTransferLevel(
-                frames.find(
-                  ({ frameIndex, status }) =>
-                    frameIndex === currentFrameIndex && status === "presented",
-                )?.qualityLevel,
-              );
-            }
-          });
+          unsubscribeBuffer = buffer.subscribe(
+            ({ compressedBuffer, currentFrameIndex, frames }) => {
+              if (active) {
+                setCompressedBuffer(compressedBuffer);
+                setPreparedFrameCount(
+                  frames.filter(
+                    ({ status }) =>
+                      status === "base-ready" ||
+                      status === "refining" ||
+                      status === "ready" ||
+                      status === "presented",
+                  ).length,
+                );
+                setPresentedTransferLevel(
+                  frames.find(
+                    ({ frameIndex, status }) =>
+                      frameIndex === currentFrameIndex && status === "presented",
+                  )?.qualityLevel,
+                );
+              }
+            },
+          );
           try {
             await buffer.initialise(0);
             if (preloadCompleteDynamicSequence) {
@@ -577,7 +623,7 @@ export function SparkViewport({
           staticScale={staticSceneScale}
         />
       </div>
-      <RendererMetricsOverlay metrics={metrics} />
+      <RendererMetricsOverlay compressedBuffer={compressedBuffer} metrics={metrics} />
       {dynamicSequence === undefined ||
       dynamicAssetStatus === "not-configured" ? null : (
         <DynamicSequenceControls

@@ -190,6 +190,12 @@ export class SparkFrameSlot {
     try {
       const mesh = this.options.createSplatMesh({
         editable: false,
+        ...(options.compressedBytes === undefined
+          ? { url: source.url }
+          : {
+              fileBytes: options.compressedBytes,
+              fileName: source.url,
+            }),
         ...(fixedTransfer ? { enableLod: false, lod: false, paged: false } : {}),
         onProgress: (event) => {
           if (controller.signal.aborted) {
@@ -210,7 +216,6 @@ export class SparkFrameSlot {
           });
         },
         ...(!fixedTransfer ? { paged: true } : {}),
-        url: source.url,
       });
       mesh.visible = false;
       this.meshValue = mesh;
@@ -233,9 +238,15 @@ export class SparkFrameSlot {
         this.maximumSplatCountValue =
           options.transferQuality?.splatCount ?? mesh.numSplats;
         this.loadedBytesValue =
-          this.loadedBytesValue ?? source.byteSize ?? this.totalBytesValue;
+          this.loadedBytesValue ??
+          options.compressedBytes?.byteLength ??
+          source.byteSize ??
+          this.totalBytesValue;
         this.totalBytesValue =
-          this.totalBytesValue ?? source.byteSize ?? this.loadedBytesValue;
+          this.totalBytesValue ??
+          options.compressedBytes?.byteLength ??
+          source.byteSize ??
+          this.loadedBytesValue;
       } else {
         await this.loadPagedMetadata(mesh, controller.signal);
         trace("metadata-ready");

@@ -178,6 +178,51 @@ function createRendererHarness({ automaticQuality = true } = {}) {
 }
 
 describe("FrameRingBuffer", () => {
+  it("prefetches compressed bytes beyond the decoded frame window", async () => {
+    const harness = createRendererHarness();
+    const sequence = createSequence(8);
+    sequence.frames = sequence.frames.map((source) => ({
+      ...source,
+      qualityLevels: [
+        {
+          byteSize: 4,
+          detailLevel: 0.25,
+          level: 0,
+          minimumPlayable: true,
+          url: `/frame-${source.frameIndex}.spz`,
+        },
+      ],
+    }));
+    const compressedFrameFetch = vi.fn(async () =>
+      Promise.resolve(new Response(new Uint8Array([1, 2, 3, 4]))),
+    );
+    const buffer = new FrameRingBuffer({
+      compressedBufferMaximumBytes: 32,
+      compressedFrameFetch,
+      futureFrameCount: 3,
+      loop: true,
+      maximumBasePreparationConcurrency: 2,
+      previousFrameCount: 1,
+      renderer: harness.renderer,
+      sequence,
+    });
+
+    void buffer.initialise(0).catch(() => undefined);
+
+    await vi.waitFor(() => expect(compressedFrameFetch).toHaveBeenCalledTimes(8));
+    await vi.waitFor(() => expect(harness.prepareFrame).toHaveBeenCalled());
+    expect(buffer.snapshot.capacity).toBe(5);
+    expect(buffer.snapshot.compressedBuffer).toMatchObject({
+      capacityBytes: 32,
+      readyFrameCount: 8,
+      residentBytes: 32,
+    });
+    expect(harness.prepareFrame.mock.calls[0]?.[2]).toMatchObject({
+      compressedBytes: expect.any(ArrayBuffer),
+    });
+    buffer.dispose();
+  });
+
   it("prepares the smallest flat tier that satisfies presentation quality", () => {
     const harness = createRendererHarness();
     const sequence = createSequence(1);

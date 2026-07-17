@@ -97,6 +97,15 @@ All notable changes to this project will be documented here. The project uses
 - Low-overhead demo diagnostics using a fixed-capacity trace buffer, four-Hz trace and
   playback-snapshot presentation, one-Hz performance summaries, stable trace rows, no
   per-event console output, and a production profiling command.
+- Renderer-neutral, byte-budgeted compressed frame caching that fetches selected SPZ
+  tiers independently of the five-frame decoded ring and supplies cached `fileBytes` to
+  Spark only when a bounded decode slot is available.
+- Demo defaults and controls for a 200 MB compressed reservoir, six concurrent fetches,
+  four concurrent decodes, and a five-second adaptive target, with cache occupancy in
+  the viewport.
+- Separate compressed fetch/throughput and Spark decode-plus-worker-transfer summaries,
+  plus observed Spark display-mapping commit cadence so player handoff rate is not
+  mistaken for actual renderer presentation.
 
 ### Fixed
 

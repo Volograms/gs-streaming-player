@@ -96,6 +96,7 @@ function createHarness() {
     coneFov: 120,
     coneFov0: 90,
     coneFoveate: 0.4,
+    display: { mappingVersion: 0 },
     dispose: vi.fn(),
     enableLod: true,
     lodRenderScale: 1,
@@ -538,6 +539,48 @@ describe("SparkGaussianRendererAdapter", () => {
     });
   });
 
+  it("decodes fixed SPZ bytes supplied by the compressed frame cache", async () => {
+    const harness = createHarness();
+    const adapter = new SparkGaussianRendererAdapter({
+      autoRender: false,
+      renderer: harness.renderer,
+      runtime: harness.runtime,
+      scene: harness.scene,
+    });
+    await adapter.initialise();
+    const compressedBytes = new Uint8Array([1, 2, 3, 4]).buffer;
+    const preparation = adapter.prepareFrame(
+      "actor",
+      {
+        byteSize: compressedBytes.byteLength,
+        frameIndex: 0,
+        timestampSeconds: 0,
+        url: "/frame0001-minimum.spz",
+      },
+      {
+        compressedBytes,
+        transferQuality: {
+          detailLevel: 0.25,
+          level: 1,
+          mode: "fixed",
+          splatCount: 100,
+        },
+      },
+    );
+    const mesh = harness.splatMeshes[0]!;
+    mesh.numSplats = 100;
+    mesh.packedSplats!.ensureSplats(100);
+    mesh.packedSplats!.numSplats = 100;
+    await preparation;
+
+    expect(harness.splatOptions[0]).toMatchObject({
+      fileBytes: compressedBytes,
+      fileName: "/frame0001-minimum.spz",
+      paged: false,
+    });
+    expect(harness.splatOptions[0]).not.toHaveProperty("url");
+  });
+
   it("reuses one grow-only PackedSplats display across flat frame handoffs", async () => {
     const harness = createHarness();
     const adapter = new SparkGaussianRendererAdapter({
@@ -914,6 +957,48 @@ describe("SparkGaussianRendererAdapter", () => {
         sortWorkerSamplesMs: [4],
         sparkUpdateSamplesMs: [expect.any(Number)],
       }),
+    );
+  });
+
+  it("measures committed Spark display mappings separately from player handoff", async () => {
+    const harness = createHarness();
+    const timing = vi.fn();
+    const adapter = new SparkGaussianRendererAdapter({
+      autoRender: false,
+      onRenderTiming: timing,
+      renderer: harness.renderer,
+      runtime: harness.runtime,
+      scene: harness.scene,
+    });
+    await adapter.initialise();
+    const preparation = adapter.prepareFrame(
+      "actor",
+      { frameIndex: 0, timestampSeconds: 0, url: "/frame.spz" },
+      {
+        transferQuality: { detailLevel: 0.25, level: 0, mode: "fixed" },
+      },
+    );
+    const mesh = harness.splatMeshes[0]!;
+    mesh.numSplats = 10;
+    mesh.packedSplats!.ensureSplats(10);
+    mesh.packedSplats!.numSplats = 10;
+    adapter.presentFrame(await preparation);
+    const display = (
+      harness.spark as unknown as {
+        display: { mappingVersion: number };
+      }
+    ).display;
+
+    display.mappingVersion = 1;
+    adapter.render();
+    display.mappingVersion = 2;
+    adapter.render();
+    for (let index = 0; index < 13; index += 1) {
+      adapter.render();
+    }
+
+    expect(timing).toHaveBeenCalledWith(
+      expect.objectContaining({ displayCommitIntervalsMs: [40] }),
     );
   });
 

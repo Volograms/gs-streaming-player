@@ -7,6 +7,8 @@ import type { QualityDecision } from "../quality/types.js";
 import type { Transform } from "@6g-path/shared";
 
 export interface FramePreparationOptions {
+  /** Complete compressed frame bytes supplied by an independent network buffer. */
+  compressedBytes?: ArrayBuffer;
   signal?: AbortSignal;
   /** Stop after the renderer's minimum drawable quality instead of refinement. */
   minimumQualityOnly?: boolean;

@@ -59,12 +59,14 @@ interface MutableResourceMetrics {
 }
 
 interface InstrumentableSparkRenderer {
+  display?: { mappingVersion: number };
   updateInternal(...args: unknown[]): Promise<unknown>;
 }
 
 export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
   private readonly autoRender: boolean;
   private failedResourceLoadCount = 0;
+  private readonly displayCommitIntervalsMs: number[] = [];
   private readonly flatFrameCopySamplesMs: number[] = [];
   private flatFrameCopyTimeMs: number | undefined;
   private flatFrameDisplayValue: SparkFlatFrameDisplay | undefined;
@@ -83,6 +85,8 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
   private disposed = false;
   private frameTimeMs: number | undefined;
   private initialised = false;
+  private lastDisplayCommitAt: number | undefined;
+  private lastDisplayMappingVersion: number | undefined;
   private lastRenderTime: number | undefined;
   private rendererValue: WebGLRenderer | undefined;
   private renderFramesPerSecond: number | undefined;
@@ -506,6 +510,20 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
     this.lastRenderTime = renderStartedAt;
     this.renderer.render(this.scene, this.camera);
     const renderedAt = this.runtime.now();
+    const displayMappingVersion = (
+      this.sparkValue as unknown as InstrumentableSparkRenderer | undefined
+    )?.display?.mappingVersion;
+    if (
+      this.activeFrame !== undefined &&
+      displayMappingVersion !== undefined &&
+      displayMappingVersion !== this.lastDisplayMappingVersion
+    ) {
+      if (this.lastDisplayCommitAt !== undefined) {
+        this.displayCommitIntervalsMs.push(renderedAt - this.lastDisplayCommitAt);
+      }
+      this.lastDisplayCommitAt = renderedAt;
+      this.lastDisplayMappingVersion = displayMappingVersion;
+    }
     this.renderCallTimeMs = renderedAt - renderStartedAt;
     this.renderCallSamplesMs.push(this.renderCallTimeMs);
     this.renderRevision += 1;
@@ -519,6 +537,7 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
     }
     const sample: SparkRenderTimingSample = {
       atMs,
+      displayCommitIntervalsMs: this.displayCommitIntervalsMs.splice(0),
       flatFrameCopySamplesMs: this.flatFrameCopySamplesMs.splice(0),
       ...(this.activeFrame === undefined
         ? {}

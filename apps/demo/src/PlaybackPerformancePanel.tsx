@@ -29,9 +29,9 @@ export function PlaybackPerformancePanel({
     targetFramesPerSecond: playback?.targetFramesPerSecond,
   };
   const throughputMbps =
-    summary.estimatedBaseThroughputBps === undefined
+    summary.compressedFetchThroughputBps === undefined
       ? undefined
-      : summary.estimatedBaseThroughputBps / 1_000_000;
+      : summary.compressedFetchThroughputBps / 1_000_000;
 
   return (
     <section
@@ -49,6 +49,10 @@ export function PlaybackPerformancePanel({
           <dd>{formatTiming(summary.queueWait)}</dd>
         </div>
         <div>
+          <dt>Compressed fetch p50 / p95</dt>
+          <dd>{formatTiming(summary.compressedFetch)}</dd>
+        </div>
+        <div>
           <dt>Root-ready p50 / p95</dt>
           <dd>{formatTiming(summary.minimumRenderable)}</dd>
         </div>
@@ -61,7 +65,7 @@ export function PlaybackPerformancePanel({
           <dd>{formatTiming(summary.handoff)}</dd>
         </div>
         <div>
-          <dt>Observed base throughput</dt>
+          <dt>Observed compressed throughput</dt>
           <dd>
             {throughputMbps === undefined
               ? "waiting"
@@ -78,6 +82,14 @@ export function PlaybackPerformancePanel({
             {summary.switchingFramesPerSecond === undefined
               ? "waiting"
               : `${summary.switchingFramesPerSecond.toFixed(1)} fps`}
+          </dd>
+        </div>
+        <div>
+          <dt>Actual Spark display commits</dt>
+          <dd>
+            {summary.displayCommitFramesPerSecond === undefined
+              ? "waiting"
+              : `${summary.displayCommitFramesPerSecond.toFixed(1)} fps`}
           </dd>
         </div>
         <div>
@@ -107,6 +119,10 @@ export function PlaybackPerformancePanel({
         <div>
           <dt>Sort order upload p50 / p95</dt>
           <dd>{formatTiming(summary.sortOrderingUpload)}</dd>
+        </div>
+        <div>
+          <dt>SPZ decode + worker transfer p50 / p95</dt>
+          <dd>{formatTiming(summary.flatDecode)}</dd>
         </div>
         <div>
           <dt>Flat frame copy p50 / p95</dt>

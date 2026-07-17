@@ -25,18 +25,26 @@ acceptance criteria are covered by implementation and verification.
 - [x] Remove diagnostic observer overhead from performance runs by buffering trace
       events outside React, batching trace/snapshot/statistics presentation, suppressing
       console output, and documenting production-build profiling.
+- [x] Decouple compressed SPZ fetching from the five-frame decoded ring with a
+      byte-budgeted forward cache, independent fetch concurrency, and cached-byte Spark
+      preparation.
+- [x] Raise the demo's flat-frame decode concurrency to four, retain a configurable
+      six-request network queue, and expose compressed occupancy/contiguous readiness.
+- [x] Separate compressed fetch/throughput, Spark decode-plus-worker-transfer, shared
+      display copy, and actual Spark display-mapping commit cadence in diagnostics.
 - [ ] Browser-validate 30 fps manual and clocked playback against the generated
       `rafa-pitch` tier set on a hardware-accelerated browser, then compare it with the
       paged RAD baseline. Headless Chromium's software WebGL path reports 0 fps for a
       single approximately 70k-splat frame and is not a useful throughput benchmark.
 
-Full-sequence hardware measurements currently reach approximately 23–25 fps at minimum
-quality and 20–23 fps at full quality. Presentation handoff is already approximately 1–4
-ms. Shared dynamic GPU allocation is now implemented; the next measurements can isolate
-Spark's GPU readback, worker sort, and ordering upload before further renderer changes.
-A browser trace showed that unbatched development diagnostics could consume roughly half
-the main-thread capture, so subsequent hardware figures must use the production
-profiling command and the batched diagnostics path.
+Full-sequence hardware measurements now reach a stable 30 fps at both minimum and full
+quality once all bytes are resident. With only five URL-backed decoded slots, full
+quality still drains the window because 3.2 MB frames take roughly 190–350 ms to fetch
+and decode. The new 200 MB compressed stage addresses that architectural mismatch while
+preserving the small decoded/GPU window; hardware validation of sustained streaming is
+the next measurement. A browser trace showed that unbatched development diagnostics
+could consume roughly half the main-thread capture, so subsequent hardware figures must
+use the production profiling command and the batched diagnostics path.
 
 The offline source path is now fixed and consumed by the runtime. Quality-LoD RAD is
 decoded once during content preparation, valid camera-independent frontiers are exported
@@ -66,10 +74,11 @@ bottleneck and real 30 fps validation.
       the public event model beyond observable state snapshots.
 - [ ] E06-T06/T09 — Complete independent in-flight refinement cancellation and memory
       budget integration beyond frame-count eviction.
-- [ ] E06-T03/E07-T08 follow-on — Replace dynamic paged-RAD preparation with selection
+- [x] E06-T03/E07-T08 follow-on — Replace dynamic paged-RAD preparation with selection
       and loading of one flat SPZ quality tier. Offline cut generation, manifest-level
-      URL/size metadata, runtime tier selection, and non-LoD presentation are complete;
-      GPU reuse and measurements remain.
+      URL/size metadata, runtime tier selection, non-LoD presentation, shared GPU reuse,
+      and independent compressed buffering are complete. Hardware measurements remain
+      under E03-T05.
 - [ ] E13-T02/T04 — Complete the target-device renderer budget matrix and add
       independent static-refinement concurrency. Dynamic base and refinement concurrency
       are now configurable and measured.
@@ -137,7 +146,7 @@ for a frame so render-loop traversal does not flood diagnostics.
 
 The preparation scheduler bounds concurrent Spark frame creation and reprioritises
 queued work by temporal distance, deadline, and estimated byte cost whenever the window
-moves. The demo uses two base preparations and one refinement by default. Automatic
+moves. The demo uses four base preparations and one refinement by default. Automatic
 quality is opt-in and adjusts presentation detail, render budget, static weight, and
 base/refinement concurrency using measured throughput, buffer occupancy, and render FPS.
 

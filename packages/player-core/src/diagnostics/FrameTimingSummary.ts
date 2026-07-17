@@ -10,8 +10,13 @@ export interface TimingDistribution {
 
 export interface FrameTimingSummary {
   basePreparation: TimingDistribution;
+  compressedFetch: TimingDistribution;
+  compressedFetchThroughputBps?: number;
+  displayCommitCadence: TimingDistribution;
+  displayCommitFramesPerSecond?: number;
   estimatedBaseThroughputBps?: number;
   flatFrameCopy: TimingDistribution;
+  flatDecode: TimingDistribution;
   handoff: TimingDistribution;
   minimumRenderable: TimingDistribution;
   presentationCadence: TimingDistribution;
@@ -56,9 +61,12 @@ export function summariseFrameTimings(
   events: readonly Readonly<FrameRingBufferTraceEvent>[],
 ): FrameTimingSummary {
   const basePreparation: number[] = [];
-  const baseThroughputSamples: number[] = [];
+  const compressedFetch: number[] = [];
+  const compressedFetchThroughputSamples: number[] = [];
+  const displayCommitIntervals: number[] = [];
   const handoff: number[] = [];
   const flatFrameCopy: number[] = [];
+  const flatDecode: number[] = [];
   const minimumRenderable: number[] = [];
   const presentationWait: number[] = [];
   const queueWait: number[] = [];
@@ -79,9 +87,13 @@ export function summariseFrameTimings(
     }
     if (event.type === "base-ready" && event.durationMs !== undefined) {
       basePreparation.push(event.durationMs);
-      const loadedBytes = event.quality?.loadedBytes;
-      if (loadedBytes !== undefined && event.durationMs > 0) {
-        baseThroughputSamples.push((loadedBytes * 8_000) / event.durationMs);
+    }
+    if (event.type === "compressed-fetch-ready" && event.durationMs !== undefined) {
+      compressedFetch.push(event.durationMs);
+      if (event.loadedBytes !== undefined && event.durationMs > 0) {
+        compressedFetchThroughputSamples.push(
+          (event.loadedBytes * 8_000) / event.durationMs,
+        );
       }
     }
     if (
@@ -90,6 +102,13 @@ export function summariseFrameTimings(
       event.durationMs !== undefined
     ) {
       minimumRenderable.push(event.durationMs);
+    }
+    if (
+      event.type === "renderer-phase" &&
+      event.phase === "flat-decode" &&
+      event.stageDurationMs !== undefined
+    ) {
+      flatDecode.push(event.stageDurationMs);
     }
     if (event.type === "refinement-ready" && event.durationMs !== undefined) {
       refinement.push(event.durationMs);
@@ -112,6 +131,9 @@ export function summariseFrameTimings(
       }
     }
     if (event.type === "render-timing") {
+      displayCommitIntervals.push(
+        ...(event.displayCommitIntervalsMs ?? []).filter((duration) => duration > 0),
+      );
       flatFrameCopy.push(...(event.flatFrameCopySamplesMs ?? []));
       renderCall.push(...(event.renderCallSamplesMs ?? []));
       renderIntervals.push(
@@ -135,15 +157,29 @@ export function summariseFrameTimings(
       : switchingDurations.reduce((sum, value) => sum + value, 0) /
         switchingDurations.length;
   const estimatedBaseThroughputBps =
-    baseThroughputSamples.length === 0
+    compressedFetchThroughputSamples.length === 0
       ? undefined
-      : baseThroughputSamples.reduce((sum, value) => sum + value, 0) /
-        baseThroughputSamples.length;
+      : compressedFetchThroughputSamples.reduce((sum, value) => sum + value, 0) /
+        compressedFetchThroughputSamples.length;
+  const meanDisplayCommitInterval =
+    displayCommitIntervals.length === 0
+      ? undefined
+      : displayCommitIntervals.reduce((sum, value) => sum + value, 0) /
+        displayCommitIntervals.length;
 
   return {
     basePreparation: distribution(basePreparation),
+    compressedFetch: distribution(compressedFetch),
+    ...(estimatedBaseThroughputBps === undefined
+      ? {}
+      : { compressedFetchThroughputBps: estimatedBaseThroughputBps }),
     ...(estimatedBaseThroughputBps === undefined ? {} : { estimatedBaseThroughputBps }),
+    displayCommitCadence: distribution(displayCommitIntervals),
+    ...(meanDisplayCommitInterval === undefined
+      ? {}
+      : { displayCommitFramesPerSecond: 1_000 / meanDisplayCommitInterval }),
     flatFrameCopy: distribution(flatFrameCopy),
+    flatDecode: distribution(flatDecode),
     handoff: distribution(handoff),
     minimumRenderable: distribution(minimumRenderable),
     presentationCadence: distribution(switchingDurations),

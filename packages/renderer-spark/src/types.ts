@@ -3,6 +3,7 @@ import type { Camera, Scene, WebGLRenderer } from "three";
 
 export interface SparkRenderTimingSample {
   atMs: number;
+  displayCommitIntervalsMs: readonly number[];
   flatFrameCopySamplesMs: readonly number[];
   frameIndex?: number;
   renderCallSamplesMs: readonly number[];

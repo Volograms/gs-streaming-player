@@ -12,6 +12,14 @@ export {
   type FramePresentationOptions,
   type FrameRingBufferOptions,
 } from "./buffering/FrameRingBuffer.js";
+export {
+  CompressedFrameCache,
+  type CompressedFrameCacheOptions,
+  type CompressedFrameCacheSnapshot,
+  type CompressedFrameCacheTraceEvent,
+  type CompressedFrameCacheTraceEventType,
+  type CompressedFrameRequest,
+} from "./buffering/CompressedFrameCache.js";
 export type {
   BufferedFrame,
   BufferedFrameStatus,

@@ -1,6 +1,10 @@
-import type { RendererMetrics } from "@6g-path/gaussian-player";
+import type {
+  FrameRingBufferSnapshot,
+  RendererMetrics,
+} from "@6g-path/gaussian-player";
 
 export interface RendererMetricsOverlayProps {
+  compressedBuffer?: FrameRingBufferSnapshot["compressedBuffer"];
   metrics: RendererMetrics | undefined;
 }
 
@@ -8,7 +12,14 @@ function integer(value: number | undefined): string {
   return value === undefined ? "—" : Math.round(value).toLocaleString();
 }
 
-export function RendererMetricsOverlay({ metrics }: RendererMetricsOverlayProps) {
+function megabytes(value: number | undefined): string {
+  return value === undefined ? "—" : `${(value / 1_000_000).toFixed(0)} MB`;
+}
+
+export function RendererMetricsOverlay({
+  compressedBuffer,
+  metrics,
+}: RendererMetricsOverlayProps) {
   return (
     <dl className="renderer-metrics" aria-label="Renderer metrics">
       <div>
@@ -36,6 +47,20 @@ export function RendererMetricsOverlay({ metrics }: RendererMetricsOverlayProps)
       <div>
         <dt>Reallocs</dt>
         <dd>{integer(metrics?.dynamicGpuReallocationCount)}</dd>
+      </div>
+      <div>
+        <dt>Byte cache</dt>
+        <dd>
+          {megabytes(compressedBuffer?.residentBytes)} /{" "}
+          {megabytes(compressedBuffer?.capacityBytes)}
+        </dd>
+      </div>
+      <div>
+        <dt>Cached</dt>
+        <dd>
+          {integer(compressedBuffer?.readyFrameCount)} ·{" "}
+          {integer(compressedBuffer?.activeFetchCount)} fetch
+        </dd>
       </div>
     </dl>
   );

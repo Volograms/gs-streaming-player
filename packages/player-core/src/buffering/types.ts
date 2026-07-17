@@ -32,9 +32,19 @@ export interface FrameRingBufferSnapshot {
   futureFrameCount: number;
   previousFrameCount: number;
   queuedBasePreparationCount: number;
+  compressedBuffer?: Readonly<{
+    activeFetchCount: number;
+    capacityBytes: number;
+    contiguousReadyFrameCount: number;
+    queuedFetchCount: number;
+    readyFrameCount: number;
+    residentBytes: number;
+  }>;
 }
 
 export interface FrameRingBufferConfiguration {
+  compressedBufferMaximumBytes?: number;
+  maximumCompressedFetchConcurrency?: number;
   futureFrameCount?: number;
   loop?: boolean;
   maximumBasePreparationConcurrency?: number;
@@ -47,6 +57,10 @@ export type FrameRingBufferTraceEventType =
   | "base-requested"
   | "base-started"
   | "base-progress"
+  | "compressed-fetch-started"
+  | "compressed-fetch-ready"
+  | "compressed-cache-hit"
+  | "compressed-fetch-failed"
   | "renderer-phase"
   | "base-ready"
   | "refinement-started"
@@ -71,6 +85,7 @@ export interface FrameRingBufferTraceEvent {
   atMs: number;
   /** Duration of the operation represented by this event, when applicable. */
   durationMs?: number;
+  displayCommitIntervalsMs?: readonly number[];
   errorMessage?: string;
   frameIndex?: number;
   frames?: readonly FrameRingBufferTraceFrame[];

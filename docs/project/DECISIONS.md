@@ -15,6 +15,7 @@ used during day-to-day implementation.
 | 0007 | Keep coordinate conversion in content transforms    | Accepted |
 | 0008 | Gate presentation quality and use an absolute clock | Accepted |
 | 0009 | Export flat dynamic quality tiers from RAD trees    | Accepted |
+| 0010 | Separate compressed and decoded frame buffers       | Accepted |
 
 ## Working conventions
 
@@ -81,6 +82,10 @@ used during day-to-day implementation.
   allocation and only grows it when capacity is insufficient. Every handoff still
   invalidates the mapping and requests a new sort because independently encoded frames
   do not guarantee corresponding splat order.
+- Flat-tier network buffering is a separate byte-budgeted stage ahead of decoded frame
+  ownership. The demo keeps up to 200 MB of selected compressed SPZ payloads, fetches
+  them independently, and only occupies a bounded Spark worker slot after complete bytes
+  are resident. The five-frame ring continues to bound decoded resources.
 - Manual dynamic transfer quality selects a content tier by its declared detail ratio,
   independently of Spark's dynamic render weight. A tier change refills future slots and
   preserves the current frame until a replacement is presentation-ready.

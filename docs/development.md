@@ -121,6 +121,25 @@ grow-only `PackedSplats` display mesh. Capacity is retained between handoffs and
 only when a larger frame requires it. The mapping is deliberately invalidated on every
 handoff so independently encoded SPZ frames are sorted correctly.
 
+Normal streaming uses two independent stages. A byte-budgeted compressed SPZ cache runs
+ahead of playback, then the five-frame renderer ring decodes resident bytes through
+Spark's worker pool. Network waits therefore do not occupy decode slots. Demo defaults
+are 200 MB, six concurrent fetches, and four concurrent frame decodes. Override them for
+device/network experiments:
+
+```bash
+VITE_DYNAMIC_COMPRESSED_BUFFER_MB=200 \
+VITE_DYNAMIC_FETCH_CONCURRENCY=6 \
+VITE_DYNAMIC_DECODE_CONCURRENCY=4 \
+VITE_DYNAMIC_TARGET_BUFFER_SECONDS=5 \
+pnpm dev
+```
+
+The viewport reports compressed resident/capacity bytes and cached/fetching frame
+counts. Automatic quality uses contiguous compressed frames ahead of playback and
+compressed occupancy; the decoded ring remains a presentation resource limit rather than
+the network buffer.
+
 The demo's `Dynamic transfer` panel selects an explicit SPZ tier when automatic quality
 is disabled. Its status displays both the selected tier and the currently presented
 tier. After changing tiers, step or play to hand off to the newly buffered
@@ -258,9 +277,11 @@ mistaken for an achieved 25% frame. Content-specific experiments should raise th
 to a measured minimum acceptable representation; the current demo uses 100 splats for
 the unoptimised `rafa-pitch` sequence.
 
-The demo limits dynamic base preparation to two frames and refinement to one frame at a
-time. `FrameRingBuffer.setPreparationConcurrency` can change both limits at runtime;
-queued base requests are reordered by temporal distance, deadline, and estimated bytes.
+The demo limits dynamic base preparation to four frames and refinement to one frame at a
+time. Its independent compressed queue permits six fetches by default.
+`FrameRingBuffer.setPreparationConcurrency` can change decode/refinement limits at
+runtime; queued decode requests are reordered by temporal distance, deadline, and
+estimated bytes after their compressed payload is resident.
 
 Enable `Automatic buffer-aware quality` in the render-quality panel to use the
 multi-window client throughput estimate, buffer occupancy, and renderer FPS. The policy
@@ -276,8 +297,10 @@ use the same bounded presentation cadence. Events are not written to the browser
 because console rendering can materially alter playback performance. Use the stage gaps
 to locate a slow handoff:
 
-- `base requested` to Spark `resource initialized` covers initial URL/cache access and
-  Spark resource creation;
+- `compressed fetch started` to `compressed fetch ready` is the complete network/cache
+  transfer. A `compressed cache hit` has no network wait;
+- `base started` is decode-queue admission after bytes are resident. Spark `flat-decode`
+  measures its worker decode plus result transfer back to the main thread;
 - `metadata ready` to `minimum renderable` covers the paged RAD metadata and root-page
   path. Patched Spark milestones break that interval into `chunk-fetch`, `chunk-decode`,
   `page-allocation`, `gpu-upload`, `tree-registration`, `tree-update`, and
@@ -311,9 +334,10 @@ The Spark change is committed at `patches/@sparkjsdev__spark@2.1.0.patch` throug
 `patchedDependencies`. Running `pnpm install` applies it automatically. When upgrading
 Spark, rebase and remeasure this patch rather than copying the old diff blindly.
 
-The `Measured playback performance` panel reduces trace history into p50/p95 queue,
-root-ready, refinement, and handoff durations, together with observed base throughput
-and switching rate. Run the opt-in real-asset benchmark with:
+The `Measured playback performance` panel reduces trace history into p50/p95 compressed
+fetch, decode queue, SPZ decode/worker transfer, root-ready, refinement, and handoff
+durations. It reports compressed throughput, player presentation rate, and the distinct
+Spark display-mapping commit rate. Run the opt-in real-asset benchmark with:
 
 ```bash
 RUN_PLAYBACK_BENCHMARK=1 \
