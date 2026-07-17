@@ -96,6 +96,22 @@ export function PlaybackPerformancePanel({
           <dt>Spark sort p50 / p95</dt>
           <dd>{formatTiming(summary.sort)}</dd>
         </div>
+        <div>
+          <dt>Sort GPU readback p50 / p95</dt>
+          <dd>{formatTiming(summary.sortReadback)}</dd>
+        </div>
+        <div>
+          <dt>Sort worker p50 / p95</dt>
+          <dd>{formatTiming(summary.sortWorker)}</dd>
+        </div>
+        <div>
+          <dt>Sort order upload p50 / p95</dt>
+          <dd>{formatTiming(summary.sortOrderingUpload)}</dd>
+        </div>
+        <div>
+          <dt>Flat frame copy p50 / p95</dt>
+          <dd>{formatTiming(summary.flatFrameCopy)}</dd>
+        </div>
       </dl>
     </section>
   );

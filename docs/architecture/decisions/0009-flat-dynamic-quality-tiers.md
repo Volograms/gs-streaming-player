@@ -41,7 +41,10 @@ The extraction tool pins Spark commit `f22236f95fdd8078f0c12e3aab479523d401daf6`
 
 Buffered dynamic frames no longer need runtime RAD tree registration or traversal once
 the flat runtime path is integrated. Each tier is independently cacheable and can be
-prefetched like a conventional representation.
+prefetched like a conventional representation. Decoded future frames remain CPU-side;
+one grow-only `PackedSplats` display allocation is overwritten at handoff. Ordering is
+not reused between independently encoded frames, so each handoff still requests a fresh
+Spark sort.
 
 Separate files duplicate data between tiers and do not provide temporal compression.
 That is accepted for the measurable first version. A later sequence container may pack

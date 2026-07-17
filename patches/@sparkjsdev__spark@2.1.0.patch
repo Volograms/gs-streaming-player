@@ -2,6 +2,56 @@ diff --git a/dist/spark.cjs.js b/dist/spark.cjs.js
 index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690d055dbe0 100644
 --- a/dist/spark.cjs.js
 +++ b/dist/spark.cjs.js
+@@ -10292,28 +10292,33 @@
+     const ordering = new Uint32Array(this.maxSplats);
+     const readback = Readback.ensureBuffer(maxSplats, this.readback32);
+     this.readback32 = readback;
++    const readbackStartedAt = performance.now();
+     await this.readbackDepth({
+       current,
+       renderer: this.renderer,
+       numSplats,
+       readback
+     });
++    const readbackDurationMs = performance.now() - readbackStartedAt;
+     if (this.sortPause > 0) {
+       await new Promise((resolve) => setTimeout(resolve, this.sortPause));
+     }
+     if (!this.sortWorker) {
+       this.sortWorker = new SplatWorker();
+     }
++    const workerSortStartedAt = performance.now();
+     const result = await this.sortWorker.call("sortSplats32", {
+       numSplats,
+       readback,
+       ordering
+     });
++    const workerSortDurationMs = performance.now() - workerSortStartedAt;
+     if (this.sortDelay > 0) {
+       await new Promise((resolve) => setTimeout(resolve, this.sortDelay));
+     }
+     this.readback32 = result.readback;
+     this.activeSplats = result.activeSplats;
++    const orderingUploadStartedAt = performance.now();
+     if (this.orderingTexture) {
+       if (rows > this.orderingTexture.image.height) {
+         this.orderingTexture.dispose();
+@@ -10361,6 +10366,15 @@
+         renderer.state.bindTexture(gl.TEXTURE_2D, null);
+       }
+     }
++    const orderingUploadDurationMs = performance.now() - orderingUploadStartedAt;
++    this.onSortTiming?.({
++      atMs: performance.now(),
++      numSplats,
++      orderingUploadDurationMs,
++      readbackDurationMs,
++      totalDurationMs: performance.now() - now,
++      workerSortDurationMs
++    });
+     if (this.current.mappingVersion === current.mappingVersion) {
+       if (this.current.mappingVersion !== this.display.mappingVersion) {
+         this.accumulators.push(this.display);
 @@ -10506,7 +10506,18 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
        if (this.lodUpdates.length > 0) {
          const lodUpdates = this.lodUpdates;
@@ -228,6 +278,56 @@ diff --git a/dist/spark.module.js b/dist/spark.module.js
 index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab98bbc2a9c 100644
 --- a/dist/spark.module.js
 +++ b/dist/spark.module.js
+@@ -10273,28 +10273,33 @@
+     const ordering = new Uint32Array(this.maxSplats);
+     const readback = Readback.ensureBuffer(maxSplats, this.readback32);
+     this.readback32 = readback;
++    const readbackStartedAt = performance.now();
+     await this.readbackDepth({
+       current,
+       renderer: this.renderer,
+       numSplats,
+       readback
+     });
++    const readbackDurationMs = performance.now() - readbackStartedAt;
+     if (this.sortPause > 0) {
+       await new Promise((resolve) => setTimeout(resolve, this.sortPause));
+     }
+     if (!this.sortWorker) {
+       this.sortWorker = new SplatWorker();
+     }
++    const workerSortStartedAt = performance.now();
+     const result = await this.sortWorker.call("sortSplats32", {
+       numSplats,
+       readback,
+       ordering
+     });
++    const workerSortDurationMs = performance.now() - workerSortStartedAt;
+     if (this.sortDelay > 0) {
+       await new Promise((resolve) => setTimeout(resolve, this.sortDelay));
+     }
+     this.readback32 = result.readback;
+     this.activeSplats = result.activeSplats;
++    const orderingUploadStartedAt = performance.now();
+     if (this.orderingTexture) {
+       if (rows > this.orderingTexture.image.height) {
+         this.orderingTexture.dispose();
+@@ -10342,6 +10347,15 @@
+         renderer.state.bindTexture(gl.TEXTURE_2D, null);
+       }
+     }
++    const orderingUploadDurationMs = performance.now() - orderingUploadStartedAt;
++    this.onSortTiming?.({
++      atMs: performance.now(),
++      numSplats,
++      orderingUploadDurationMs,
++      readbackDurationMs,
++      totalDurationMs: performance.now() - now,
++      workerSortDurationMs
++    });
+     if (this.current.mappingVersion === current.mappingVersion) {
+       if (this.current.mappingVersion !== this.display.mappingVersion) {
+         this.accumulators.push(this.display);
 @@ -10487,7 +10487,18 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
        if (this.lodUpdates.length > 0) {
          const lodUpdates = this.lodUpdates;
@@ -525,3 +625,21 @@ index 968e4534933abc3772056fd21068eb5ff76b0f67..04636a02a9468261f1ab3b4135bd5a99
      private insertSplatsChunkPage;
      private removeSplatsChunkPage;
      private uploadPage;
+diff --git a/dist/types/SparkRenderer.d.ts b/dist/types/SparkRenderer.d.ts
+--- a/dist/types/SparkRenderer.d.ts
++++ b/dist/types/SparkRenderer.d.ts
+@@ -327,6 +327,14 @@
+     lastFrame: number;
+     updateTimeoutId: number;
+     onDirty?: () => void;
++    onSortTiming?: (sample: {
++        atMs: number;
++        numSplats: number;
++        orderingUploadDurationMs: number;
++        readbackDurationMs: number;
++        totalDurationMs: number;
++        workerSortDurationMs: number;
++    }) => void;
+     dirty: boolean;
+     orderingTexture: THREE.DataTexture | null;
+     maxSplats: number;

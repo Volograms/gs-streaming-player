@@ -17,8 +17,11 @@ acceptance criteria are covered by implementation and verification.
       concurrent network transfers.
 - [x] Measure presentation cadence, dropped frames, renderer call duration, Spark update
       duration, and Spark sort duration without logging on the display-frame hot path.
-- [ ] Reuse or preallocate `PackedSplats` GPU capacity across frame handoffs where Spark
-      permits it, with separate decode/upload/handoff timings.
+- [x] Keep buffered flat frames CPU-resident and copy the presented frame into one
+      grow-only GPU-facing `PackedSplats` allocation, reallocating only when a frame
+      exceeds its capacity.
+- [x] Split Spark sort diagnostics into GPU depth readback, worker sorting, and ordering
+      texture upload/submission timings.
 - [ ] Browser-validate 30 fps manual and clocked playback against the generated
       `rafa-pitch` tier set on a hardware-accelerated browser, then compare it with the
       paged RAD baseline. Headless Chromium's software WebGL path reports 0 fps for a
@@ -26,14 +29,14 @@ acceptance criteria are covered by implementation and verification.
 
 Full-sequence hardware measurements currently reach approximately 23–25 fps at minimum
 quality and 20–23 fps at full quality. Presentation handoff is already approximately 1–4
-ms, so the next optimisation work should focus on Spark update/generation/sort cost and
-allocation reuse rather than the frame-ring handoff.
+ms. Shared dynamic GPU allocation is now implemented; the next measurements can isolate
+Spark's GPU readback, worker sort, and ordering upload before further renderer changes.
 
 The offline source path is now fixed and consumed by the runtime. Quality-LoD RAD is
 decoded once during content preparation, valid camera-independent frontiers are exported
 as flat SPZ files, and the buffer selects the smallest minimum-playable-or-better tier
-for its current network quality target. Remaining work focuses on allocation reuse and
-real 30 fps measurements.
+for its current network quality target. Remaining work focuses on the measured sort
+bottleneck and real 30 fps validation.
 
 ## Parallel validation and composition work
 

@@ -33,9 +33,13 @@ describe("summariseFrameTimings", () => {
       { atMs: 74, durationMs: 11, frameIndex: 1, type: "presented" },
       {
         atMs: 80,
+        flatFrameCopySamplesMs: [2],
         renderCallSamplesMs: [3, 4],
         renderIntervalSamplesMs: [16, 17],
+        sortOrderingUploadSamplesMs: [1],
+        sortReadbackSamplesMs: [5],
         sortSamplesMs: [8],
+        sortWorkerSamplesMs: [2],
         sparkUpdateSamplesMs: [10],
         type: "render-timing",
       },
@@ -44,6 +48,7 @@ describe("summariseFrameTimings", () => {
     expect(summariseFrameTimings(events)).toMatchObject({
       basePreparation: { count: 1, medianMs: 25, p95Ms: 25 },
       estimatedBaseThroughputBps: 320_000,
+      flatFrameCopy: { count: 1, medianMs: 2 },
       handoff: { count: 2, maximumMs: 1 },
       minimumRenderable: { count: 1, medianMs: 20 },
       presentationCadence: { count: 1, medianMs: 33 },
@@ -53,6 +58,9 @@ describe("summariseFrameTimings", () => {
       renderCall: { count: 2, medianMs: 3, p95Ms: 4 },
       sampleCount: 1,
       sort: { count: 1, medianMs: 8 },
+      sortOrderingUpload: { count: 1, medianMs: 1 },
+      sortReadback: { count: 1, medianMs: 5 },
+      sortWorker: { count: 1, medianMs: 2 },
       sparkUpdate: { count: 1, medianMs: 10 },
       switchingFramesPerSecond: 1000 / 33,
     });

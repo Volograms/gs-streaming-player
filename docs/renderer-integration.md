@@ -111,10 +111,12 @@ adapter.hideFrame(prepared);
 adapter.releaseFrame(prepared);
 ```
 
-Presenting a frame hides the previously active frame without recreating the scene.
-Releasing a frame removes its scene node and disposes its Spark resources. The sequence
-transform is applied to every slot before it enters the scene, preserving alignment
-across frame replacement.
+Presenting a paged frame hides the previously active frame without recreating the scene.
+Flat SPZ slots retain decoded CPU data and are never individually added to the scene.
+The adapter instead copies the selected slot into one grow-only GPU-facing
+`PackedSplats` mesh. Releasing a slot disposes its decoded CPU data; the shared display
+allocation remains available for later frames. The sequence transform is copied to the
+display at handoff, preserving alignment across frame replacement.
 
 For paged RAD content, Spark's `SplatMesh.initialized` only establishes the mesh and RAD
 metadata; it does not guarantee that drawable splats are resident. `prepareFrame()`

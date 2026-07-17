@@ -79,8 +79,8 @@ All notable changes to this project will be documented here. The project uses
 - Optional per-tier asset URLs in manifest quality levels, including relative URL
   resolution and referenced-asset validation.
 - Dynamic flat-SPZ playback through Spark `PackedSplats` with LoD disabled, including
-  minimum-playable tier selection, fixed-tier achieved-quality reporting, decode/render
-  fence timing, and generated quality-index loading in the demo.
+  minimum-playable tier selection, fixed-tier achieved-quality reporting, decode/copy
+  timing, and generated quality-index loading in the demo.
 - Explicit dynamic SPZ transfer-tier controls showing selected and currently presented
   quality, with manual minimum/medium/full comparisons kept separate from Spark's
   dynamic render weight.
@@ -90,6 +90,10 @@ All notable changes to this project will be documented here. The project uses
 - Batched renderer diagnostics for presentation cadence, dropped frames, Three.js render
   calls, Spark update/generation, and actual Spark sort work, including p50/p95
   summaries in the demo.
+- Stage-level Spark sort diagnostics separating GPU depth readback, worker sorting, and
+  ordering-texture upload/submission.
+- One grow-only GPU-facing `PackedSplats` allocation for flat dynamic playback; buffered
+  SPZ frames now remain decoded on the CPU and copy into the shared display at handoff.
 
 ### Fixed
 
@@ -109,9 +113,8 @@ All notable changes to this project will be documented here. The project uses
   content-specific 100-splat minimum.
 - Demo playback no longer uses a drifting React interval or serialises frame rate behind
   async loads; timing and buffering now remain in the player core.
-- Prefetched flat SPZ frames are hidden after their initial upload fence instead of
-  remaining transparent-but-visible, preventing Spark from sorting and drawing the
-  complete temporal window every render.
+- Prefetched flat SPZ frames remain CPU-side instead of staying transparent-but-visible,
+  preventing Spark from sorting and drawing the complete temporal window every render.
 - Buffer readiness waits now follow a replacement SPZ preparation when adaptive quality
   changes the selected transfer tier, rather than surfacing the expected cancellation as
   a playback error.

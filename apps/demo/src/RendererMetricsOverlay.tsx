@@ -29,6 +29,14 @@ export function RendererMetricsOverlay({ metrics }: RendererMetricsOverlayProps)
         <dt>Frames</dt>
         <dd>{integer(metrics?.preparedFrameCount)}</dd>
       </div>
+      <div>
+        <dt>Dynamic cap</dt>
+        <dd>{integer(metrics?.dynamicGpuCapacity)}</dd>
+      </div>
+      <div>
+        <dt>Reallocs</dt>
+        <dd>{integer(metrics?.dynamicGpuReallocationCount)}</dd>
+      </div>
     </dl>
   );
 }

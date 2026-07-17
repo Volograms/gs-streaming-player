@@ -143,7 +143,10 @@ export interface PreparedFrame {
 
 export interface RendererMetrics {
   activeFrameIndex?: number;
+  dynamicGpuCapacity?: number;
+  dynamicGpuReallocationCount?: number;
   failedResourceLoadCount: number;
+  flatFrameCopyTimeMs?: number;
   frameTimeMs?: number;
   gpuPageCapacity?: number;
   gpuPageCount?: number;

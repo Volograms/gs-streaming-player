@@ -3,10 +3,14 @@ import type { Camera, Scene, WebGLRenderer } from "three";
 
 export interface SparkRenderTimingSample {
   atMs: number;
+  flatFrameCopySamplesMs: readonly number[];
   frameIndex?: number;
   renderCallSamplesMs: readonly number[];
   renderIntervalSamplesMs: readonly number[];
+  sortOrderingUploadSamplesMs: readonly number[];
+  sortReadbackSamplesMs: readonly number[];
   sortSamplesMs: readonly number[];
+  sortWorkerSamplesMs: readonly number[];
   sparkUpdateSamplesMs: readonly number[];
 }
 

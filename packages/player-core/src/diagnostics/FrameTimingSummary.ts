@@ -11,6 +11,7 @@ export interface TimingDistribution {
 export interface FrameTimingSummary {
   basePreparation: TimingDistribution;
   estimatedBaseThroughputBps?: number;
+  flatFrameCopy: TimingDistribution;
   handoff: TimingDistribution;
   minimumRenderable: TimingDistribution;
   presentationCadence: TimingDistribution;
@@ -20,6 +21,9 @@ export interface FrameTimingSummary {
   renderCall: TimingDistribution;
   sampleCount: number;
   sort: TimingDistribution;
+  sortOrderingUpload: TimingDistribution;
+  sortReadback: TimingDistribution;
+  sortWorker: TimingDistribution;
   sparkUpdate: TimingDistribution;
   switchingFramesPerSecond?: number;
 }
@@ -54,6 +58,7 @@ export function summariseFrameTimings(
   const basePreparation: number[] = [];
   const baseThroughputSamples: number[] = [];
   const handoff: number[] = [];
+  const flatFrameCopy: number[] = [];
   const minimumRenderable: number[] = [];
   const presentationWait: number[] = [];
   const queueWait: number[] = [];
@@ -61,6 +66,9 @@ export function summariseFrameTimings(
   const renderCall: number[] = [];
   const renderIntervals: number[] = [];
   const sort: number[] = [];
+  const sortOrderingUpload: number[] = [];
+  const sortReadback: number[] = [];
+  const sortWorker: number[] = [];
   const sparkUpdate: number[] = [];
   const presentationReadyAt = new Map<number, number>();
   const presentedAt: number[] = [];
@@ -104,11 +112,15 @@ export function summariseFrameTimings(
       }
     }
     if (event.type === "render-timing") {
+      flatFrameCopy.push(...(event.flatFrameCopySamplesMs ?? []));
       renderCall.push(...(event.renderCallSamplesMs ?? []));
       renderIntervals.push(
         ...(event.renderIntervalSamplesMs ?? []).filter((duration) => duration > 0),
       );
       sort.push(...(event.sortSamplesMs ?? []));
+      sortOrderingUpload.push(...(event.sortOrderingUploadSamplesMs ?? []));
+      sortReadback.push(...(event.sortReadbackSamplesMs ?? []));
+      sortWorker.push(...(event.sortWorkerSamplesMs ?? []));
       sparkUpdate.push(...(event.sparkUpdateSamplesMs ?? []));
     }
   }
@@ -131,6 +143,7 @@ export function summariseFrameTimings(
   return {
     basePreparation: distribution(basePreparation),
     ...(estimatedBaseThroughputBps === undefined ? {} : { estimatedBaseThroughputBps }),
+    flatFrameCopy: distribution(flatFrameCopy),
     handoff: distribution(handoff),
     minimumRenderable: distribution(minimumRenderable),
     presentationCadence: distribution(switchingDurations),
@@ -140,6 +153,9 @@ export function summariseFrameTimings(
     renderCall: distribution(renderCall),
     sampleCount: basePreparation.length,
     sort: distribution(sort),
+    sortOrderingUpload: distribution(sortOrderingUpload),
+    sortReadback: distribution(sortReadback),
+    sortWorker: distribution(sortWorker),
     sparkUpdate: distribution(sparkUpdate),
     ...(meanSwitchingDuration === undefined
       ? {}

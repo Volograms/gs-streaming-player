@@ -1,4 +1,4 @@
-import { SplatMesh } from "@sparkjsdev/spark";
+import { PackedSplats, SplatMesh } from "@sparkjsdev/spark";
 import {
   BoxGeometry,
   Group,
@@ -28,11 +28,23 @@ class FakeSplatMesh extends Object3D {
   maxSh = 3;
   numSplats = 0;
   opacity = 1;
+  packedSplats?: PackedSplats;
   paged?: SplatMesh["paged"];
   readonly updateGenerator = vi.fn();
+  readonly updateMappingVersion = vi.fn(() => {
+    this.mappingVersion += 1;
+  });
+  readonly updateVersion = vi.fn();
 
-  constructor(initialise?: Promise<void>) {
+  constructor(initialise?: Promise<void>, options: SplatMeshOptions = {}) {
     super();
+    if (options.packedSplats !== undefined) {
+      this.packedSplats = options.packedSplats;
+    } else if (options.paged === false) {
+      this.packedSplats = new PackedSplats(
+        options.maxSplats === undefined ? {} : { maxSplats: options.maxSplats },
+      );
+    }
     this.initialized = (initialise ?? Promise.resolve()).then(() => this);
   }
 }
@@ -137,7 +149,7 @@ function createHarness() {
         loaded: 25,
         total: 100,
       } as ProgressEvent);
-      const mesh = new FakeSplatMesh(splatInitialisers.shift());
+      const mesh = new FakeSplatMesh(splatInitialisers.shift(), options);
       splatMeshes.push(mesh);
       return asSplatMesh(mesh);
     },
@@ -479,10 +491,12 @@ describe("SparkGaussianRendererAdapter", () => {
       throw new Error("Expected the flat frame mesh to be created synchronously.");
     }
     mesh.numSplats = 68_535;
-    await vi.waitFor(() => {
-      expect(mesh).toMatchObject({ opacity: 0, visible: true });
-    });
-    adapter.render();
+    const decoded = mesh.packedSplats;
+    if (decoded === undefined) {
+      throw new Error("Expected decoded PackedSplats for the flat source.");
+    }
+    decoded.ensureSplats(mesh.numSplats);
+    decoded.numSplats = mesh.numSplats;
     const prepared = await preparation;
 
     expect(harness.splatOptions[0]).toMatchObject({
@@ -495,7 +509,6 @@ describe("SparkGaussianRendererAdapter", () => {
       "resource-created",
       "resource-initialized",
       "flat-decode",
-      "flat-render-fence",
       "minimum-renderable",
     ]);
     expect(mesh).toMatchObject({ opacity: 1, visible: false });
@@ -517,7 +530,73 @@ describe("SparkGaussianRendererAdapter", () => {
     ).rejects.toThrow(/below the requested/);
 
     adapter.presentFrame(prepared);
-    expect(mesh).toMatchObject({ opacity: 1, visible: true });
+    expect(mesh).toMatchObject({ opacity: 1, visible: false });
+    expect(harness.splatMeshes[1]).toMatchObject({ opacity: 1, visible: true });
+    expect(adapter.getMetrics()).toMatchObject({
+      dynamicGpuReallocationCount: 0,
+      flatFrameCopyTimeMs: expect.any(Number),
+    });
+  });
+
+  it("reuses one grow-only PackedSplats display across flat frame handoffs", async () => {
+    const harness = createHarness();
+    const adapter = new SparkGaussianRendererAdapter({
+      autoRender: false,
+      renderer: harness.renderer,
+      runtime: harness.runtime,
+      scene: harness.scene,
+    });
+    await adapter.initialise();
+
+    const prepare = async (frameIndex: number, splatCount: number, marker: number) => {
+      const preparation = adapter.prepareFrame(
+        "actor",
+        {
+          frameIndex,
+          timestampSeconds: frameIndex / 30,
+          url: `/frame${frameIndex}-minimum.spz`,
+        },
+        {
+          transferQuality: {
+            detailLevel: 0.25,
+            level: 1,
+            mode: "fixed",
+            splatCount,
+          },
+        },
+      );
+      const mesh = harness.splatMeshes[frameIndex];
+      const packedSplats = mesh?.packedSplats;
+      if (mesh === undefined || packedSplats === undefined) {
+        throw new Error("Expected a decoded flat source mesh.");
+      }
+      const packedArray = packedSplats.ensureSplats(splatCount);
+      packedArray[0] = marker;
+      packedSplats.ensureSplatsSh(1, splatCount)[0] = marker + 100;
+      packedSplats.numSplats = splatCount;
+      mesh.numSplats = splatCount;
+      return preparation;
+    };
+
+    const first = await prepare(0, 200, 11);
+    const second = await prepare(1, 100, 22);
+    adapter.presentFrame(first);
+
+    const display = harness.splatMeshes[2];
+    const firstAllocation = display?.packedSplats?.packedArray;
+    expect(display?.packedSplats?.packedArray?.[0]).toBe(11);
+
+    adapter.presentFrame(second);
+
+    expect(harness.splatMeshes).toHaveLength(3);
+    expect(display?.packedSplats?.packedArray).toBe(firstAllocation);
+    expect(display?.packedSplats?.packedArray?.[0]).toBe(22);
+    expect(display?.updateMappingVersion).toHaveBeenCalledTimes(2);
+    expect(display?.updateGenerator).toHaveBeenCalledOnce();
+    expect((display?.packedSplats?.extra.sh1 as Uint32Array | undefined)?.[0]).toBe(
+      122,
+    );
+    expect(adapter.getMetrics().dynamicGpuReallocationCount).toBe(0);
   });
 
   it("keeps a paged frame transparent until its root LoD page is resident", async () => {
@@ -792,21 +871,17 @@ describe("SparkGaussianRendererAdapter", () => {
     const harness = createHarness();
     const timing = vi.fn();
     const instrumented = harness.spark as unknown as {
-      driveSort(): Promise<void>;
-      sortDirty: boolean;
-      sorting: boolean;
+      onSortTiming?(sample: {
+        atMs: number;
+        numSplats: number;
+        orderingUploadDurationMs: number;
+        readbackDurationMs: number;
+        totalDurationMs: number;
+        workerSortDurationMs: number;
+      }): void;
       updateInternal(): Promise<void>;
     };
-    instrumented.sortDirty = true;
-    instrumented.sorting = false;
-    instrumented.driveSort = vi.fn(async () => {
-      instrumented.sorting = true;
-      await Promise.resolve();
-      instrumented.sorting = false;
-    });
-    instrumented.updateInternal = vi.fn(async () => {
-      await instrumented.driveSort();
-    });
+    instrumented.updateInternal = vi.fn(async () => undefined);
     const adapter = new SparkGaussianRendererAdapter({
       autoRender: false,
       onRenderTiming: timing,
@@ -817,6 +892,14 @@ describe("SparkGaussianRendererAdapter", () => {
     await adapter.initialise();
 
     await instrumented.updateInternal();
+    instrumented.onSortTiming?.({
+      atMs: 1,
+      numSplats: 100,
+      orderingUploadDurationMs: 3,
+      readbackDurationMs: 5,
+      totalDurationMs: 12,
+      workerSortDurationMs: 4,
+    });
     for (let index = 0; index < 15; index += 1) {
       adapter.render();
     }
@@ -825,7 +908,10 @@ describe("SparkGaussianRendererAdapter", () => {
       expect.objectContaining({
         renderCallSamplesMs: expect.arrayContaining([20]),
         renderIntervalSamplesMs: expect.arrayContaining([40]),
-        sortSamplesMs: [expect.any(Number)],
+        sortOrderingUploadSamplesMs: [3],
+        sortReadbackSamplesMs: [5],
+        sortSamplesMs: [12],
+        sortWorkerSamplesMs: [4],
         sparkUpdateSamplesMs: [expect.any(Number)],
       }),
     );

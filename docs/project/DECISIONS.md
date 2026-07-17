@@ -76,17 +76,19 @@ used during day-to-day implementation.
 - Dynamic quality is network/deadline selected rather than camera selected. Dynamic SPZ
   tiers use Spark `PackedSplats` without LoD; static scenes retain paged, camera-aware
   RAD LoD.
-- A flat tier receives one transparent render fence after decode so Spark can
-  materialise its GPU representation. Buffered future tiers are then fully invisible
-  until handoff; they do not remain in Spark's visible generator set as paged RAD frames
-  do for warming.
+- Flat tiers remain decoded in CPU memory while buffered. Exactly one grow-only
+  `PackedSplats` mesh is GPU-facing; handoff copies the chosen frame into that
+  allocation and only grows it when capacity is insufficient. Every handoff still
+  invalidates the mapping and requests a new sort because independently encoded frames
+  do not guarantee corresponding splat order.
 - Manual dynamic transfer quality selects a content tier by its declared detail ratio,
   independently of Spark's dynamic render weight. A tier change refills future slots and
   preserves the current frame until a replacement is presentation-ready.
-- Renderer diagnostics batch display cadence, render-call duration, Spark update
-  duration, and actual sort duration approximately twice per second. This keeps React
-  state updates and console tracing off the per-frame render hot path while preserving
-  enough samples for p50/p95 analysis.
+- Renderer diagnostics batch display cadence, render-call duration, flat-frame CPU copy,
+  Spark update, and sort duration approximately twice per second. Sort timings
+  separately report GPU depth readback, worker sorting, and ordering texture
+  upload/submission. This keeps React state updates and console tracing off the
+  per-frame render hot path while preserving enough samples for p50/p95 analysis.
 - Separate tier files are accepted for the first measurable version. A packed
   multi-frame container and temporal compression remain a later optimisation after the
   flat-tier playback baseline is measured.

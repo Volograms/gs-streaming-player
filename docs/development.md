@@ -115,9 +115,11 @@ RAD remains the fallback frame URL while the buffer transfers the selected flat 
 tier. The policy chooses the smallest tier meeting its target and never selects a tier
 below the index's `minimumPlayable` entry.
 
-Flat frames are hidden after their initial upload fence and made visible only for
-presentation. This is important: transparent-but-visible future frames still participate
-in Spark's generation and sorting pass.
+Flat frames are decoded while buffered but are not added to the scene or uploaded into
+independent GPU textures. Presentation copies the selected frame into one shared,
+grow-only `PackedSplats` display mesh. Capacity is retained between handoffs and grows
+only when a larger frame requires it. The mapping is deliberately invalidated on every
+handoff so independently encoded SPZ frames are sorted correctly.
 
 The demo's `Dynamic transfer` panel selects an explicit SPZ tier when automatic quality
 is disabled. Its status displays both the selected tier and the currently presented
@@ -143,14 +145,20 @@ configured sequence. Playback controls remain disabled until every frame has com
 base preparation. Selecting another SPZ tier repeats that complete preload and disables
 playback again until the replacement tier is resident. This is a diagnostic mode rather
 than the intended streaming architecture and can consume hundreds of megabytes of CPU
-and GPU memory, especially at medium or full quality.
+memory, especially at medium or full quality. Dynamic GPU splat storage remains bounded
+by the largest frame presented through the shared display allocation.
 
 The measured-performance panel separates presentation cadence and dropped playback
 deadlines from renderer work. `Render call` covers the synchronous Three.js render
 submission, `Spark update` covers Spark's generator/update cycle, and `Spark sort`
-measures actual sort jobs started by that cycle. These samples are emitted in batches
-approximately every 500 ms so measurement does not add a React update or console entry
-to every displayed frame.
+measures actual sort jobs started by that cycle. `Sort GPU readback`, `Sort worker`, and
+`Sort order upload` divide that total into the depth readback, worker computation, and
+ordering-texture update stages. `Flat frame copy` measures the CPU attribute copy into
+the reusable display allocation. Samples are emitted in batches approximately every 500
+ms so measurement does not add a React update or console entry to every displayed frame.
+The viewport overlay reports the current `Dynamic cap` in splats and the number of
+capacity-growing `Reallocs`; the latter should remain stable once the largest frame seen
+so far fits the shared allocation.
 
 Use a hardware-accelerated browser for frame-rate measurements. Playwright's headless
 Chromium can fall back to software WebGL; on the current development machine it reports

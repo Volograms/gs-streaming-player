@@ -82,7 +82,11 @@ export interface FrameRingBufferTraceEvent {
   reusedPage?: boolean;
   renderCallSamplesMs?: readonly number[];
   renderIntervalSamplesMs?: readonly number[];
+  flatFrameCopySamplesMs?: readonly number[];
+  sortOrderingUploadSamplesMs?: readonly number[];
+  sortReadbackSamplesMs?: readonly number[];
   sortSamplesMs?: readonly number[];
+  sortWorkerSamplesMs?: readonly number[];
   sparkUpdateSamplesMs?: readonly number[];
   stageDurationMs?: number;
   totalBytes?: number;

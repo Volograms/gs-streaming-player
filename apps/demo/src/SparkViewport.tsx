@@ -133,18 +133,26 @@ export function SparkViewport({
       canvas,
       onRenderTiming: ({
         atMs,
+        flatFrameCopySamplesMs,
         frameIndex,
         renderCallSamplesMs,
         renderIntervalSamplesMs,
+        sortOrderingUploadSamplesMs,
+        sortReadbackSamplesMs,
         sortSamplesMs,
+        sortWorkerSamplesMs,
         sparkUpdateSamplesMs,
       }) => {
         bufferTraceListenerRef.current?.({
           atMs,
+          flatFrameCopySamplesMs,
           ...(frameIndex === undefined ? {} : { frameIndex }),
           renderCallSamplesMs,
           renderIntervalSamplesMs,
+          sortOrderingUploadSamplesMs,
+          sortReadbackSamplesMs,
           sortSamplesMs,
+          sortWorkerSamplesMs,
           sparkUpdateSamplesMs,
           type: "render-timing",
         });

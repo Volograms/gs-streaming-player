@@ -9,6 +9,7 @@ import {
   validateSparkRenderQuality,
 } from "./quality.js";
 import { defaultSparkRendererRuntime } from "./runtime.js";
+import { SparkFlatFrameDisplay } from "./SparkFlatFrameDisplay.js";
 import { SparkFrameSlot } from "./SparkFrameSlot.js";
 import { applyTransform } from "./transform.js";
 
@@ -58,15 +59,15 @@ interface MutableResourceMetrics {
 }
 
 interface InstrumentableSparkRenderer {
-  driveSort(...args: unknown[]): Promise<unknown>;
-  sortDirty: boolean;
-  sorting: boolean;
   updateInternal(...args: unknown[]): Promise<unknown>;
 }
 
 export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
   private readonly autoRender: boolean;
   private failedResourceLoadCount = 0;
+  private readonly flatFrameCopySamplesMs: number[] = [];
+  private flatFrameCopyTimeMs: number | undefined;
+  private flatFrameDisplayValue: SparkFlatFrameDisplay | undefined;
   private readonly frameSlots = new Set<SparkFrameSlot>();
   private readonly loadedObjects = new Map<string, LoadedObjectRecord>();
   private readonly loadingObjectIds = new Set<string>();
@@ -94,7 +95,10 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
   private sceneValue: Scene | undefined;
   private sparkValue: SparkRenderer | undefined;
   private sortTimeMs: number | undefined;
+  private readonly sortOrderingUploadSamplesMs: number[] = [];
+  private readonly sortReadbackSamplesMs: number[] = [];
   private readonly sortSamplesMs: number[] = [];
+  private readonly sortWorkerSamplesMs: number[] = [];
   private sparkUpdateTimeMs: number | undefined;
   private readonly sparkUpdateSamplesMs: number[] = [];
   private startedAnimationLoop = false;
@@ -137,6 +141,10 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
       this.sceneValue = scene;
       this.cameraValue = camera;
       this.sparkValue = spark;
+      this.flatFrameDisplayValue = new SparkFlatFrameDisplay({
+        createSplatMesh: (flatOptions) => this.runtime.createSplatMesh(flatOptions),
+        scene,
+      });
       this.initialised = true;
       this.applyQualityConfiguration();
 
@@ -309,13 +317,31 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
     if (this.activeFrame !== undefined && this.activeFrame !== frame) {
       this.requirePreparedFrame(this.activeFrame).warm();
     }
+    if (slot.isFlat) {
+      const sourceMesh = slot.mesh;
+      if (sourceMesh === undefined) {
+        throw new SparkRendererStateError("Flat frame source mesh is unavailable.");
+      }
+      const copy = this.requireInitialised(
+        this.flatFrameDisplayValue,
+        "Flat frame display",
+      ).present(sourceMesh, () => this.runtime.now());
+      this.flatFrameCopyTimeMs = copy.durationMs;
+      this.flatFrameCopySamplesMs.push(copy.durationMs);
+    } else {
+      this.flatFrameDisplayValue?.hide();
+    }
     slot.present();
     this.activeFrame = frame;
   }
 
   hideFrame(frame: PreparedFrame): void {
-    this.requirePreparedFrame(frame).hide();
+    const slot = this.requirePreparedFrame(frame);
+    slot.hide();
     if (this.activeFrame === frame) {
+      if (slot.isFlat) {
+        this.flatFrameDisplayValue?.hide();
+      }
       this.activeFrame = undefined;
     }
   }
@@ -326,6 +352,9 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
     this.frameSlots.delete(slot);
     slot.release();
     if (this.activeFrame === frame) {
+      if (slot.isFlat) {
+        this.flatFrameDisplayValue?.hide();
+      }
       this.activeFrame = undefined;
     }
   }
@@ -396,7 +425,11 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
   }
 
   setFrameTransform(frame: PreparedFrame, transform?: Transform): void {
-    this.requirePreparedFrame(frame).setTransform(transform);
+    const slot = this.requirePreparedFrame(frame);
+    slot.setTransform(transform);
+    if (slot.isFlat && this.activeFrame === frame && slot.mesh !== undefined) {
+      this.flatFrameDisplayValue?.updateTransform(slot.mesh);
+    }
   }
 
   getMetrics(): RendererMetrics {
@@ -416,8 +449,19 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
       ...(this.activeFrame === undefined
         ? {}
         : { activeFrameIndex: this.activeFrame.frameIndex }),
+      ...(this.flatFrameDisplayValue?.capacity === undefined
+        ? {}
+        : { dynamicGpuCapacity: this.flatFrameDisplayValue.capacity }),
+      ...(this.flatFrameDisplayValue === undefined
+        ? {}
+        : {
+            dynamicGpuReallocationCount: this.flatFrameDisplayValue.reallocationCount,
+          }),
       ...(this.frameTimeMs === undefined ? {} : { frameTimeMs: this.frameTimeMs }),
       failedResourceLoadCount: this.failedResourceLoadCount,
+      ...(this.flatFrameCopyTimeMs === undefined
+        ? {}
+        : { flatFrameCopyTimeMs: this.flatFrameCopyTimeMs }),
       ...(pager === undefined ? {} : { gpuPageCapacity: pager.maxPages }),
       ...(pager === undefined
         ? {}
@@ -475,12 +519,16 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
     }
     const sample: SparkRenderTimingSample = {
       atMs,
+      flatFrameCopySamplesMs: this.flatFrameCopySamplesMs.splice(0),
       ...(this.activeFrame === undefined
         ? {}
         : { frameIndex: this.activeFrame.frameIndex }),
       renderCallSamplesMs: this.renderCallSamplesMs.splice(0),
       renderIntervalSamplesMs: this.renderIntervalSamplesMs.splice(0),
+      sortOrderingUploadSamplesMs: this.sortOrderingUploadSamplesMs.splice(0),
+      sortReadbackSamplesMs: this.sortReadbackSamplesMs.splice(0),
       sortSamplesMs: this.sortSamplesMs.splice(0),
+      sortWorkerSamplesMs: this.sortWorkerSamplesMs.splice(0),
       sparkUpdateSamplesMs: this.sparkUpdateSamplesMs.splice(0),
     };
     this.renderTimingBatchStartedAt = atMs;
@@ -489,12 +537,17 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
 
   private installRenderInstrumentation(spark: SparkRenderer): void {
     const instrumented = spark as unknown as InstrumentableSparkRenderer;
-    if (
-      typeof instrumented.updateInternal !== "function" ||
-      typeof instrumented.driveSort !== "function"
-    ) {
+    if (typeof instrumented.updateInternal !== "function") {
       return;
     }
+
+    spark.onSortTiming = (sample) => {
+      this.sortTimeMs = sample.totalDurationMs;
+      this.sortSamplesMs.push(sample.totalDurationMs);
+      this.sortReadbackSamplesMs.push(sample.readbackDurationMs);
+      this.sortWorkerSamplesMs.push(sample.workerSortDurationMs);
+      this.sortOrderingUploadSamplesMs.push(sample.orderingUploadDurationMs);
+    };
 
     const updateInternal = instrumented.updateInternal.bind(instrumented);
     instrumented.updateInternal = async (...args: unknown[]) => {
@@ -505,23 +558,6 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
         const durationMs = this.runtime.now() - startedAt;
         this.sparkUpdateTimeMs = durationMs;
         this.sparkUpdateSamplesMs.push(durationMs);
-      }
-    };
-
-    const driveSort = instrumented.driveSort.bind(instrumented);
-    instrumented.driveSort = async (...args: unknown[]) => {
-      const startedAt = this.runtime.now();
-      const wasSorting = instrumented.sorting;
-      const sort = driveSort(...args);
-      const startedSort = !wasSorting && instrumented.sorting;
-      try {
-        return await sort;
-      } finally {
-        if (startedSort) {
-          const durationMs = this.runtime.now() - startedAt;
-          this.sortTimeMs = durationMs;
-          this.sortSamplesMs.push(durationMs);
-        }
       }
     };
   }
@@ -568,6 +604,8 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
     for (const slot of this.frameSlots) {
       slot.release();
     }
+    this.flatFrameDisplayValue?.dispose();
+    this.flatFrameDisplayValue = undefined;
     this.frameSlots.clear();
     this.preparedFrames.clear();
     this.resourceMetrics.clear();
@@ -703,6 +741,9 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
     for (const slot of this.frameSlots) {
       this.applyQualityToFrameSlot(slot);
     }
+    this.flatFrameDisplayValue?.setMaximumSphericalHarmonics(
+      configuration.maximumSphericalHarmonics,
+    );
   }
 
   private applyQualityToStaticObject(objectId: string, mesh: SplatMesh): void {
