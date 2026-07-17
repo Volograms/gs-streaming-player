@@ -1,6 +1,7 @@
 import { PerspectiveCamera } from "three";
 
 import { throwIfAborted, waitWithAbort } from "./abort.js";
+import { benchmarkPackedFrameMemory } from "./benchmarkPackedFrameMemory.js";
 import { disposeObject } from "./disposeObject.js";
 import { SparkRendererAbortError, SparkRendererStateError } from "./errors.js";
 import {
@@ -13,6 +14,10 @@ import { SparkFlatFrameDisplay } from "./SparkFlatFrameDisplay.js";
 import { SparkFrameSlot } from "./SparkFrameSlot.js";
 import { applyTransform } from "./transform.js";
 
+import type {
+  PackedFrameMemoryBenchmarkOptions,
+  PackedFrameMemoryBenchmarkResult,
+} from "./benchmarkPackedFrameMemory.js";
 import type { SparkRenderQualityConfiguration } from "./quality.js";
 import type { ResizeObserverLike, SparkRendererRuntime } from "./runtime.js";
 import type { SparkFrameSlotSnapshot } from "./SparkFrameSlot.js";
@@ -410,6 +415,24 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
 
   getFrameSlotSnapshots(): readonly SparkFrameSlotSnapshot[] {
     return [...this.frameSlots].map((slot) => slot.snapshot);
+  }
+
+  benchmarkActivePackedFrameMemory(
+    options?: PackedFrameMemoryBenchmarkOptions,
+  ): PackedFrameMemoryBenchmarkResult {
+    this.assertInitialised();
+    if (this.activeFrame === undefined) {
+      throw new SparkRendererStateError(
+        "A flat dynamic frame must be presented before running the packed-memory benchmark.",
+      );
+    }
+    const slot = this.requirePreparedFrame(this.activeFrame);
+    if (!slot.isFlat || slot.mesh?.packedSplats === undefined) {
+      throw new SparkRendererStateError(
+        "The active frame is not backed by flat PackedSplats data.",
+      );
+    }
+    return benchmarkPackedFrameMemory(slot.mesh.packedSplats, options);
   }
 
   refineFrame(

@@ -103,6 +103,10 @@ used during day-to-day implementation.
 - Separate tier files are accepted for the first measurable version. A packed
   multi-frame container and temporal compression remain a later optimisation after the
   flat-tier playback baseline is measured.
+- Renderer-native packed frame storage remains an experiment until its measured
+  clone/bind cost is compared with SPZ decoding. The benchmark uses an ephemeral
+  contiguous payload and does not establish a file header, manifest contract, or stable
+  dependency on Spark's memory layout.
 - Spark 2.1 is extended through a committed pnpm patch, not ad-hoc `node_modules` edits.
   The extension preserves Spark's shared preallocated GPU page pool, exposes cancellable
   explicit chunk preparation, and reports fetch, decode, page reuse/upload, and LoD-tree

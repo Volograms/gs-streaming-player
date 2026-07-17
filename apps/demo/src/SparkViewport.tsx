@@ -18,6 +18,7 @@ import {
   hasLocalDynamicSequenceConfiguration,
   loadLocalDynamicSequence,
 } from "./localDynamicSequence.js";
+import { PackedFrameMemoryBenchmarkControls } from "./PackedFrameMemoryBenchmarkControls.js";
 import { RendererMetricsOverlay } from "./RendererMetricsOverlay.js";
 import {
   CAPTURE_TO_THREE_TRANSFORM,
@@ -37,6 +38,7 @@ import type {
   SequencePlaybackSnapshot,
 } from "@6g-path/gaussian-player";
 import type { SparkRenderQualityConfiguration } from "@6g-path/gaussian-renderer-spark";
+import type { PackedFrameMemoryBenchmarkResult } from "@6g-path/gaussian-renderer-spark";
 
 type RendererStatus = "initialising" | "ready" | "unavailable";
 type StaticAssetStatus = "failed" | "loading" | "not-configured" | "ready";
@@ -120,6 +122,10 @@ export function SparkViewport({
     useState<PlayerLifecycleState>("IDLE");
   const [metrics, setMetrics] = useState<RendererMetrics>();
   const [preparedFrameCount, setPreparedFrameCount] = useState(0);
+  const [packedMemoryBenchmark, setPackedMemoryBenchmark] =
+    useState<PackedFrameMemoryBenchmarkResult>();
+  const [packedMemoryBenchmarkError, setPackedMemoryBenchmarkError] =
+    useState<string>();
   const [compressedBuffer, setCompressedBuffer] =
     useState<FrameRingBufferSnapshot["compressedBuffer"]>();
   const [quality, setQuality] = useState(createInitialQuality);
@@ -580,6 +586,25 @@ export function SparkViewport({
     }
   }
 
+  function runPackedMemoryBenchmark() {
+    const playback = playbackRef.current;
+    const adapter = adapterRef.current;
+    if (adapter === null) {
+      return;
+    }
+    playback?.pause();
+    setPackedMemoryBenchmarkError(undefined);
+    try {
+      setPackedMemoryBenchmark(
+        adapter.benchmarkActivePackedFrameMemory({ iterations: 8 }),
+      );
+    } catch (error) {
+      setPackedMemoryBenchmarkError(
+        error instanceof Error ? error.message : "Packed-memory benchmark failed.",
+      );
+    }
+  }
+
   const sourceFrameIndex =
     dynamicSequence?.frames[dynamicFrameIndex]?.metadata?.sourceFrameIndex;
 
@@ -621,6 +646,20 @@ export function SparkViewport({
           onStaticScaleChange={updateStaticSceneScale}
           staticDisabled={staticAssetStatus !== "ready"}
           staticScale={staticSceneScale}
+        />
+        <PackedFrameMemoryBenchmarkControls
+          disabled={
+            dynamicAssetStatus !== "ready" ||
+            isDynamicPlaying ||
+            dynamicPlaybackLifecycle === "SEEKING"
+          }
+          onRun={runPackedMemoryBenchmark}
+          {...(packedMemoryBenchmark === undefined
+            ? {}
+            : { result: packedMemoryBenchmark })}
+          {...(packedMemoryBenchmarkError === undefined
+            ? {}
+            : { error: packedMemoryBenchmarkError })}
         />
       </div>
       <RendererMetricsOverlay compressedBuffer={compressedBuffer} metrics={metrics} />

@@ -108,6 +108,9 @@ All notable changes to this project will be documented here. The project uses
 - Separate compressed fetch/throughput and Spark decode-plus-worker-transfer summaries,
   plus observed Spark display-mapping commit cadence so player handoff rate is not
   mistaken for actual renderer presentation.
+- An explicit packed-memory experiment for the currently presented flat frame, reporting
+  renderer-native base/SH payload size, snapshot cost, full-buffer clone p50/p95, and
+  zero-copy `PackedSplats` binding p50/p95 without introducing a persistent format.
 
 ### Fixed
 

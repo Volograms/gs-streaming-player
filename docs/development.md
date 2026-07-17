@@ -179,6 +179,16 @@ The viewport overlay reports the current `Dynamic cap` in splats and the number 
 capacity-growing `Reallocs`; the latter should remain stable once the largest frame seen
 so far fits the shared allocation.
 
+The viewport's `Packed-memory experiment` is a paused-frame diagnostic for evaluating a
+renderer-native runtime payload before defining one. Present any flat SPZ frame, pause
+playback, and choose `Test current frame`. The test first snapshots the decoded base and
+SH arrays into one temporary contiguous buffer. It then reports the buffer's raw size,
+the one-time snapshot duration, full-buffer clone p50/p95, and zero-copy `PackedSplats`
+binding p50/p95 over eight iterations. The payload has no header and is never written to
+disk. Large frames use fewer passes so the experiment clones no more than approximately
+64 MB per run. These figures are a cost-floor comparison with
+`SPZ decode + worker transfer`, not a supported content format.
+
 Use a hardware-accelerated browser for frame-rate measurements. Playwright's headless
 Chromium can fall back to software WebGL; on the current development machine it reports
 0 fps even for one approximately 70k-splat minimum tier, so its real-asset run validates

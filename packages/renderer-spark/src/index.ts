@@ -9,6 +9,12 @@ export {
 } from "./errors.js";
 export { SparkGaussianRendererAdapter } from "./SparkGaussianRendererAdapter.js";
 export {
+  benchmarkPackedFrameMemory,
+  type PackedFrameBenchmarkDistribution,
+  type PackedFrameMemoryBenchmarkOptions,
+  type PackedFrameMemoryBenchmarkResult,
+} from "./benchmarkPackedFrameMemory.js";
+export {
   SparkFrameSlot,
   type SparkFrameSlotOptions,
   type SparkFrameSlotSnapshot,

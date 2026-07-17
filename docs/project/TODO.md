@@ -35,6 +35,9 @@ acceptance criteria are covered by implementation and verification.
       horizon.
 - [x] Separate compressed fetch/throughput, Spark decode-plus-worker-transfer, shared
       display copy, and actual Spark display-mapping commit cadence in diagnostics.
+- [x] Add a non-persistent packed-memory experiment that snapshots the active decoded
+      frame into contiguous base/SH bytes and measures full-payload cloning separately
+      from zero-copy `PackedSplats` binding before defining a runtime file format.
 - [ ] Browser-validate 30 fps manual and clocked playback against the generated
       `rafa-pitch` tier set on a hardware-accelerated browser, then compare it with the
       paged RAD baseline. Headless Chromium's software WebGL path reports 0 fps for a
@@ -48,6 +51,11 @@ validation of sustained streaming is the next measurement. A browser trace showe
 unbatched development diagnostics could consume roughly half the main-thread capture, so
 subsequent hardware figures must use the production profiling command and the batched
 diagnostics path.
+
+The packed-memory experiment is deliberately not a format implementation. It runs on the
+currently presented flat frame, reports its renderer-native uncompressed size, and
+compares byte ownership with synchronous zero-copy construction. Its hardware results
+will determine whether a versioned renderer-native payload is justified.
 
 The offline source path is now fixed and consumed by the runtime. Quality-LoD RAD is
 decoded once during content preparation, valid camera-independent frontiers are exported
