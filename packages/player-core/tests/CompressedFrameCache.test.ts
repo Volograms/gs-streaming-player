@@ -20,6 +20,23 @@ function response(byteLength: number): Response {
 }
 
 describe("CompressedFrameCache", () => {
+  it("invokes fetch with the browser global receiver", async () => {
+    const fetchImplementation = vi.fn(function (this: unknown) {
+      expect(this).toBe(globalThis);
+      return Promise.resolve(response(4));
+    });
+    const cache = new CompressedFrameCache({
+      fetch: fetchImplementation,
+      maximumBytes: 4,
+      maximumFetchConcurrency: 1,
+    });
+
+    await expect(
+      cache.get({ byteSize: 4, frameIndex: 0, url: "/frame-0.spz" }),
+    ).resolves.toHaveProperty("byteLength", 4);
+    cache.dispose();
+  });
+
   it("fetches ahead independently with bounded network concurrency", async () => {
     const pending = Array.from({ length: 4 }, () => deferred<Response>());
     const fetchImplementation = vi.fn(

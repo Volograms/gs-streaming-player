@@ -109,6 +109,9 @@ All notable changes to this project will be documented here. The project uses
 
 ### Fixed
 
+- Compressed-frame prefetch now binds the browser `fetch` implementation to the global
+  receiver, preventing `Illegal invocation` failures when the byte cache starts its
+  forward network plan.
 - Playback readiness now retries refinements cancelled or superseded by rolling-window
   policy and adaptive quality changes, preventing loop-boundary frames from turning a
   temporary buffer transition into a fatal dynamic-sequence error.

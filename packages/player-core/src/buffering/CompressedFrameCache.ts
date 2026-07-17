@@ -82,7 +82,8 @@ export class CompressedFrameCache {
     }
     this.maximumBytes = options.maximumBytes;
     this.maximumFetchConcurrency = maximumFetchConcurrency;
-    this.fetchImplementation = options.fetch ?? fetch;
+    const fetchImplementation = options.fetch ?? globalThis.fetch;
+    this.fetchImplementation = fetchImplementation.bind(globalThis);
     this.now = options.now ?? (() => performance.now());
     this.onChange = options.onChange;
     this.onTrace = options.onTrace;
