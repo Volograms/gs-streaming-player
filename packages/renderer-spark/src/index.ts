@@ -19,6 +19,16 @@ export {
   type PackedDecodedGaussianFrame,
 } from "./packDecodedGaussianFrame.js";
 export {
+  createDefaultSparkFramePacker,
+  SparkFramePackingPool,
+  SynchronousSparkFramePacker,
+  type SparkFramePacker,
+  type SparkFramePackingOptions,
+  type SparkFramePackingPoolOptions,
+  type SparkFramePackingResult,
+  type SparkPackingWorkerLike,
+} from "./SparkFramePackingPool.js";
+export {
   SparkFrameSlot,
   type SparkFrameSlotOptions,
   type SparkFrameSlotSnapshot,

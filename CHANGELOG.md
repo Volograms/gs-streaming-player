@@ -13,6 +13,9 @@ All notable changes to this project will be documented here. The project uses
   attribute arrays, pinned vendored WASM, and an explicit `spz-v4` content codec ID.
 - Spark adapter packing from neutral Gaussian attributes into `PackedSplats`, with
   separate codec-decode and renderer-pack performance diagnostics.
+- Persistent Spark-owned frame-packing workers with transferable neutral inputs and
+  renderer-native outputs, independent packing concurrency, cancellation-safe worker
+  replacement, and queue/worker/transfer/main-bind diagnostics.
 - Explicit `spark-spz-v3`/`spz-v4` demo selection for clean A/B testing, plus a content
   command that repacks existing flat quality tiers through the official SPZ v4 tools.
 - Initial product and implementation plan.

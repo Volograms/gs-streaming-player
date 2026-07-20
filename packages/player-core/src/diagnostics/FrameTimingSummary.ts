@@ -18,6 +18,10 @@ export interface FrameTimingSummary {
   estimatedBaseThroughputBps?: number;
   flatFrameCopy: TimingDistribution;
   flatPack: TimingDistribution;
+  flatPackBind: TimingDistribution;
+  flatPackQueue: TimingDistribution;
+  flatPackTransfer: TimingDistribution;
+  flatPackWorker: TimingDistribution;
   flatDecode: TimingDistribution;
   handoff: TimingDistribution;
   minimumRenderable: TimingDistribution;
@@ -70,6 +74,10 @@ export function summariseFrameTimings(
   const handoff: number[] = [];
   const flatFrameCopy: number[] = [];
   const flatPack: number[] = [];
+  const flatPackBind: number[] = [];
+  const flatPackQueue: number[] = [];
+  const flatPackTransfer: number[] = [];
+  const flatPackWorker: number[] = [];
   const flatDecode: number[] = [];
   const minimumRenderable: number[] = [];
   const presentationWait: number[] = [];
@@ -103,12 +111,20 @@ export function summariseFrameTimings(
         );
       }
     }
-    if (
-      event.type === "renderer-phase" &&
-      event.phase === "flat-pack" &&
-      event.stageDurationMs !== undefined
-    ) {
-      flatPack.push(event.stageDurationMs);
+    if (event.type === "renderer-phase" && event.stageDurationMs !== undefined) {
+      const target =
+        event.phase === "flat-pack"
+          ? flatPack
+          : event.phase === "flat-pack-bind"
+            ? flatPackBind
+            : event.phase === "flat-pack-queue"
+              ? flatPackQueue
+              : event.phase === "flat-pack-transfer"
+                ? flatPackTransfer
+                : event.phase === "flat-pack-worker"
+                  ? flatPackWorker
+                  : undefined;
+      target?.push(event.stageDurationMs);
     }
     if (
       event.type === "renderer-phase" &&
@@ -195,6 +211,10 @@ export function summariseFrameTimings(
       : { displayCommitFramesPerSecond: 1_000 / meanDisplayCommitInterval }),
     flatFrameCopy: distribution(flatFrameCopy),
     flatPack: distribution(flatPack),
+    flatPackBind: distribution(flatPackBind),
+    flatPackQueue: distribution(flatPackQueue),
+    flatPackTransfer: distribution(flatPackTransfer),
+    flatPackWorker: distribution(flatPackWorker),
     flatDecode: distribution(flatDecode),
     handoff: distribution(handoff),
     minimumRenderable: distribution(minimumRenderable),

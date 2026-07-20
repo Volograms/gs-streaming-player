@@ -1,4 +1,5 @@
 import type { SparkRendererRuntime } from "./runtime.js";
+import type { SparkFramePacker } from "./SparkFramePackingPool.js";
 import type { Camera, Scene, WebGLRenderer } from "three";
 
 export interface SparkRenderTimingSample {
@@ -24,6 +25,10 @@ export interface SparkRendererAdapterOptions {
   camera?: Camera;
   /** Resize the renderer with its canvas. Defaults to true for adapter-owned renderers. */
   manageResize?: boolean;
+  /** Caller-owned packer override. It is not disposed by the adapter. */
+  framePacker?: SparkFramePacker;
+  /** Persistent Spark packing workers. Defaults to two in browsers. */
+  maximumPackingWorkers?: number;
   /** Caller-owned renderer. It is never disposed by the adapter. */
   renderer?: WebGLRenderer;
   /** Runtime factory overrides, primarily for non-WebGL tests and embedding. */

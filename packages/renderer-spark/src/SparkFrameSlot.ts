@@ -1,8 +1,9 @@
 import { waitWithAbort } from "./abort.js";
 import { SparkRendererAbortError, SparkRendererStateError } from "./errors.js";
-import { packDecodedGaussianFrame } from "./packDecodedGaussianFrame.js";
+import { createPackedSplatsFromPayload } from "./packDecodedGaussianFrame.js";
 import { applyTransform } from "./transform.js";
 
+import type { SparkFramePacker } from "./SparkFramePackingPool.js";
 import type {
   FramePresentationQuality,
   FramePreparationOptions,
@@ -40,6 +41,7 @@ export interface SparkFrameSlotOptions {
   getNow(): number;
   getRenderRevision(): number;
   invalidateLod(): void;
+  framePacker: SparkFramePacker;
   scene: Scene;
   slotId: number;
 }
@@ -190,12 +192,29 @@ export class SparkFrameSlot {
     };
 
     try {
-      const packedFrame =
-        options.decodedFrame === undefined
-          ? undefined
-          : packDecodedGaussianFrame(options.decodedFrame, this.options.getNow);
-      if (packedFrame !== undefined) {
-        trace("flat-pack", undefined, { stageDurationMs: packedFrame.durationMs });
+      let packedFrame:
+        { packedSplats: ReturnType<typeof createPackedSplatsFromPayload> } | undefined;
+      if (options.decodedFrame !== undefined) {
+        const packing = await this.options.framePacker.pack(options.decodedFrame, {
+          signal: controller.signal,
+        });
+        trace("flat-pack-queue", undefined, {
+          stageDurationMs: packing.queueDurationMs,
+        });
+        trace("flat-pack-worker", undefined, {
+          stageDurationMs: packing.workerDurationMs,
+        });
+        trace("flat-pack-transfer", undefined, {
+          stageDurationMs: packing.resultTransferDurationMs,
+        });
+        const bindStartedAt = this.options.getNow();
+        const packedSplats = createPackedSplatsFromPayload(packing.payload);
+        const bindDurationMs = this.options.getNow() - bindStartedAt;
+        trace("flat-pack-bind", undefined, { stageDurationMs: bindDurationMs });
+        trace("flat-pack", undefined, {
+          stageDurationMs: packing.totalDurationMs + bindDurationMs,
+        });
+        packedFrame = { packedSplats };
       }
       const mesh = this.options.createSplatMesh({
         editable: false,
@@ -233,7 +252,7 @@ export class SparkFrameSlot {
       });
       if (packedFrame !== undefined) {
         mesh.numSplats = packedFrame.packedSplats.numSplats;
-        mesh.maxSh = Math.min(3, options.decodedFrame?.shDegree ?? 0) as 0 | 1 | 2 | 3;
+        mesh.maxSh = packedFrame.packedSplats.maxSh;
         mesh.updateGenerator();
       }
       mesh.visible = false;

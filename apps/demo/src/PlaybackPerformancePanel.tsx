@@ -125,8 +125,24 @@ export function PlaybackPerformancePanel({
           <dd>{formatTiming(summary.codecDecode)}</dd>
         </div>
         <div>
-          <dt>Spark adapter pack p50 / p95</dt>
+          <dt>Spark pack total p50 / p95</dt>
           <dd>{formatTiming(summary.flatPack)}</dd>
+        </div>
+        <div>
+          <dt>Pack queue p50 / p95</dt>
+          <dd>{formatTiming(summary.flatPackQueue)}</dd>
+        </div>
+        <div>
+          <dt>Pack worker p50 / p95</dt>
+          <dd>{formatTiming(summary.flatPackWorker)}</dd>
+        </div>
+        <div>
+          <dt>Pack result transfer p50 / p95</dt>
+          <dd>{formatTiming(summary.flatPackTransfer)}</dd>
+        </div>
+        <div>
+          <dt>Pack main bind p50 / p95</dt>
+          <dd>{formatTiming(summary.flatPackBind)}</dd>
         </div>
         <div>
           <dt>Legacy Spark SPZ decode p50 / p95</dt>

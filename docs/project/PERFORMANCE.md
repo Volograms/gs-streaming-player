@@ -33,7 +33,7 @@ Last updated: 2026-07-20.
 | Decode queue            | Wait after compressed bytes are resident and before a Spark worker is available.                                                                  |
 | Legacy Spark SPZ decode | Spark worker RPC that inflates SPZ v3, reconstructs and packs every splat into `PackedSplats`, and returns typed arrays.                          |
 | Neutral codec decode    | Official SPZ v4 WASM decompression and reconstruction into renderer-neutral Gaussian attribute arrays in the codec worker pool.                   |
-| Spark adapter pack      | Main-thread conversion from neutral Gaussian attributes into Spark `PackedSplats`; it excludes transfer and sorting.                              |
+| Spark adapter pack      | Renderer-worker conversion from neutral attributes into Spark arrays, plus result transfer and lightweight main-thread `PackedSplats` binding.    |
 | RAD root preparation    | Paged RAD metadata, root chunk fetch/decode, GPU-page allocation/upload, tree registration/update/traversal, and minimum-renderable confirmation. |
 | Refinement              | Work required to reach the configured presentation-quality target after base readiness.                                                           |
 | Flat frame copy         | CPU attribute copy from a buffered frame into the one reusable GPU-facing `PackedSplats` allocation.                                              |
@@ -295,6 +295,28 @@ Diagnostics now report neutral codec decode and Spark adapter packing separately
 the legacy Spark-owned v3 decode path. A controlled hardware A/B measurement over the
 same complete tier set remains pending.
 
+### 8. Full-tier SPZ v4 over office network — 2026-07-20
+
+This quick run used the 100 Mbps office path and full 100% frames of approximately
+279,000 splats and 3.09–3.11 MB each. It is useful for stage attribution, not as a local
+decode-throughput result, because compressed delivery dominated the run.
+
+| Metric                         |        p50 |       p95 |
+| ------------------------------ | ---------: | --------: |
+| Compressed fetch               |   4,027 ms |  4,901 ms |
+| Official neutral SPZ v4 decode |      67 ms |     98 ms |
+| Synchronous Spark adapter pack |      79 ms |    115 ms |
+| Presentation rate              |    1.7 fps |         — |
+| Dropped frames                 |         94 |         — |
+| Compressed cache at capture    | 197/200 MB | 64 frames |
+
+Individual trace samples placed codec decode near 69–74 ms and Spark packing near
+105–123 ms. That made renderer packing the largest local synchronous stage even though
+the 3.9–5.2 second fetches controlled end-to-end cadence. Packing now runs in a
+renderer-owned persistent worker pool and records queue, worker, result-transfer, and
+main-thread-bind time separately. A post-change hardware run is still required; this
+entry is the comparison baseline.
+
 ## Current conclusions
 
 1. Player scheduling, handoff, and the reusable display allocation can sustain 30 fps
@@ -321,9 +343,9 @@ same complete tier set remains pending.
 - Compare legacy Spark SPZ v3 with official neutral SPZ v4 using identical frames,
   tiers, cache state, worker counts, and hardware; report codec decode and Spark adapter
   pack independently.
-- Add internal Spark worker timers for worker acquisition, compressed-byte handoff,
-  Deflate inflation, SPZ attribute decoding, `PackedSplats` packing, result handoff, and
-  main-thread initialisation.
+- Compare Spark packing worker counts 2, 4, and 6 using the new queue, worker,
+  result-transfer, and main-thread-bind timers; report aggregate throughput and CPU
+  utilisation rather than selecting the lowest isolated latency.
 - Measure aggregate localhost delivery correctly across overlapping requests and compare
   fetch concurrency 4, 6, and 8.
 - Expose and test Spark decode worker counts 4 and 6, recording CPU utilisation and

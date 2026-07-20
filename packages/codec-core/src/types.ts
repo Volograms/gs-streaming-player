@@ -17,6 +17,10 @@ export type GaussianCoordinateSystem =
   | "LBU"
   | "RBU";
 
+/**
+ * Renderer-neutral attributes. Typed-array ownership passes to the caller, so a
+ * renderer adapter may transfer and detach every attribute buffer.
+ */
 export interface DecodedGaussianFrame {
   /** Alpha values in the inclusive range [0, 1], one per splat. */
   alphas: Float32Array;

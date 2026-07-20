@@ -76,6 +76,10 @@ const dynamicFetchConcurrency = positiveInteger(
   import.meta.env.VITE_DYNAMIC_FETCH_CONCURRENCY,
   6,
 );
+const dynamicPackConcurrency = positiveInteger(
+  import.meta.env.VITE_DYNAMIC_PACK_CONCURRENCY,
+  4,
+);
 const dynamicTargetBufferSeconds = positiveNumber(
   import.meta.env.VITE_DYNAMIC_TARGET_BUFFER_SECONDS,
   5,
@@ -175,6 +179,7 @@ export function SparkViewport({
     const adapter = new SparkGaussianRendererAdapter({
       autoRender: false,
       canvas,
+      maximumPackingWorkers: dynamicPackConcurrency,
       onRenderTiming: ({
         atMs,
         displayCommitIntervalsMs,

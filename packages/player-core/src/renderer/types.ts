@@ -10,8 +10,11 @@ import type { Transform } from "@6g-path/shared";
 export interface FramePreparationOptions {
   /** Complete compressed frame bytes supplied by an independent network buffer. */
   compressedBytes?: ArrayBuffer;
-  /** Renderer-neutral attributes decoded before entering the renderer adapter. */
-  decodedFrame?: Readonly<DecodedGaussianFrame>;
+  /**
+   * Renderer-neutral attributes decoded before entering the adapter. Ownership of the
+   * typed-array buffers transfers to the renderer for zero-copy worker preparation.
+   */
+  decodedFrame?: DecodedGaussianFrame;
   signal?: AbortSignal;
   /** Stop after the renderer's minimum drawable quality instead of refinement. */
   minimumQualityOnly?: boolean;
@@ -73,6 +76,10 @@ export type RendererFramePreparationPhase =
   | "resource-created"
   | "resource-initialized"
   | "flat-pack"
+  | "flat-pack-bind"
+  | "flat-pack-queue"
+  | "flat-pack-transfer"
+  | "flat-pack-worker"
   | "flat-decode"
   | "flat-render-fence"
   | "metadata-ready"

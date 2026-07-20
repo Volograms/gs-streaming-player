@@ -19,6 +19,9 @@ acceptance criteria are covered by implementation and verification.
       for clean A/B tests and later legacy removal.
 - [x] Split diagnostics into neutral codec decode, Spark adapter packing, and legacy
       Spark SPZ decode timings.
+- [x] Move neutral-to-Spark packing into a persistent renderer-owned worker pool using
+      transferable input/output buffers, a synchronous non-browser fallback, bounded
+      concurrency, and separate queue/worker/transfer/main-bind timings.
 - [x] Add an offline command that repacks the existing flat quality-cut index with the
       official SPZ v4 native tools and marks every output tier with `codec: "spz-v4"`.
 - [ ] Measure v3 versus v4 throughput, worker utilisation, intermediate memory, and

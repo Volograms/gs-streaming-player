@@ -172,17 +172,24 @@ handoff so independently encoded SPZ frames are sorted correctly.
 Normal streaming uses two independent stages. A byte-budgeted compressed SPZ cache runs
 ahead of playback, then a twelve-frame renderer window (the current frame, one previous,
 and ten future frames) submits resident bytes through the selected codec and renderer
-preparation path. Network waits therefore do not occupy decode slots. Demo defaults are
-200 MB, six concurrent fetches, and four concurrent frame decodes. Override them for
-device/network experiments:
+preparation path. Network waits therefore do not occupy decode slots. Neutral codec
+decoding and renderer-native packing use separate persistent worker pools. Demo defaults
+are 200 MB, six concurrent fetches, four concurrent frame decodes, and four concurrent
+Spark pack jobs. Override them for device/network experiments:
 
 ```bash
 VITE_DYNAMIC_COMPRESSED_BUFFER_MB=200 \
 VITE_DYNAMIC_FETCH_CONCURRENCY=6 \
 VITE_DYNAMIC_DECODE_CONCURRENCY=4 \
+VITE_DYNAMIC_PACK_CONCURRENCY=4 \
 VITE_DYNAMIC_TARGET_BUFFER_SECONDS=5 \
 pnpm dev
 ```
+
+The performance panel splits Spark packing into queue wait, worker conversion, result
+transfer/dispatch, and main-thread binding. Neutral attribute buffers and completed
+Spark arrays are transferred rather than cloned; a decoded frame's typed arrays should
+therefore be treated as consumed once renderer preparation begins.
 
 The viewport reports compressed resident/capacity bytes and cached/fetching frame
 counts. Automatic quality uses contiguous compressed frames ahead of playback and

@@ -107,6 +107,11 @@ used during day-to-day implementation.
 - Compressed-byte streaming, Gaussian decoding, and renderer-native packing are separate
   boundaries. Content selects a codec explicitly; the first neutral path uses official
   Niantic SPZ v4 and the first renderer sink is Spark `PackedSplats`.
+- Renderer-native packing concurrency belongs to the renderer adapter. Neutral decoded
+  typed arrays transfer ownership into persistent Spark packing workers, which return
+  renderer-native typed arrays by transfer; only lightweight `PackedSplats` binding
+  remains on the main thread. Codec and packing worker counts are independently
+  configurable so measurements do not conflate the two stages.
 - The legacy Spark-owned SPZ v3 loader remains an explicit A/B compatibility path. It
   does not act as an implicit fallback for SPZ v4 content, so the entire legacy route
   can be removed cleanly after comparison.

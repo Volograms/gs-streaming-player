@@ -11,6 +11,7 @@ import {
 } from "./quality.js";
 import { defaultSparkRendererRuntime } from "./runtime.js";
 import { SparkFlatFrameDisplay } from "./SparkFlatFrameDisplay.js";
+import { createDefaultSparkFramePacker } from "./SparkFramePackingPool.js";
 import { SparkFrameSlot } from "./SparkFrameSlot.js";
 import { applyTransform } from "./transform.js";
 
@@ -20,6 +21,7 @@ import type {
 } from "./benchmarkPackedFrameMemory.js";
 import type { SparkRenderQualityConfiguration } from "./quality.js";
 import type { ResizeObserverLike, SparkRendererRuntime } from "./runtime.js";
+import type { SparkFramePacker } from "./SparkFramePackingPool.js";
 import type { SparkFrameSlotSnapshot } from "./SparkFrameSlot.js";
 import type { SparkRendererAdapterOptions, SparkRenderTimingSample } from "./types.js";
 import type {
@@ -75,6 +77,7 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
   private readonly flatFrameCopySamplesMs: number[] = [];
   private flatFrameCopyTimeMs: number | undefined;
   private flatFrameDisplayValue: SparkFlatFrameDisplay | undefined;
+  private framePackerValue: SparkFramePacker | undefined;
   private readonly frameSlots = new Set<SparkFrameSlot>();
   private readonly loadedObjects = new Map<string, LoadedObjectRecord>();
   private readonly loadingObjectIds = new Set<string>();
@@ -154,6 +157,11 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
         createSplatMesh: (flatOptions) => this.runtime.createSplatMesh(flatOptions),
         scene,
       });
+      this.framePackerValue =
+        this.options.framePacker ??
+        createDefaultSparkFramePacker(this.options.maximumPackingWorkers ?? 2, () =>
+          this.runtime.now(),
+        );
       this.initialised = true;
       this.applyQualityConfiguration();
 
@@ -177,6 +185,10 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
       this.sceneValue = undefined;
       this.cameraValue = undefined;
       this.sparkValue = undefined;
+      if (this.options.framePacker === undefined) {
+        this.framePackerValue?.dispose?.();
+      }
+      this.framePackerValue = undefined;
       throw error;
     }
   }
@@ -299,6 +311,7 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
       getNow: () => this.runtime.now(),
       getRenderRevision: () => this.renderRevision,
       invalidateLod: () => this.invalidateLod(),
+      framePacker: this.requireInitialised(this.framePackerValue, "frame packer"),
       scene: this.scene,
       slotId: this.nextFrameSlotId,
     });
@@ -648,6 +661,10 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
     }
     this.flatFrameDisplayValue?.dispose();
     this.flatFrameDisplayValue = undefined;
+    if (this.options.framePacker === undefined) {
+      this.framePackerValue?.dispose?.();
+    }
+    this.framePackerValue = undefined;
     this.frameSlots.clear();
     this.preparedFrames.clear();
     this.resourceMetrics.clear();
