@@ -317,6 +317,90 @@ renderer-owned persistent worker pool and records queue, worker, result-transfer
 main-thread-bind time separately. A post-change hardware run is still required; this
 entry is the comparison baseline.
 
+### 9. Post-worker minimum and medium SPZ v4 — 2026-07-20
+
+These local-device runs used the persistent codec and Spark packing worker pools with no
+active network limitation reported. The captured summaries showed no compressed fetch
+samples, a full minimum-tier byte cache, and a nearly full mixed medium-tier cache.
+Machine/browser details and explicit worker counts were not captured; if the environment
+was unchanged, the demo defaults were four codec and four packing workers.
+
+| Metric                        | Minimum, ~69.7k | Medium, ~139.7k |
+| ----------------------------- | --------------: | --------------: |
+| Base samples                  |              80 |              84 |
+| Renderer minimum-ready p50/95 |        28/33 ms |        57/69 ms |
+| Neutral SPZ v4 decode p50/95  |        23/30 ms |        37/48 ms |
+| Spark pack total p50/p95      |        28/33 ms |        57/69 ms |
+| Pack queue p50/p95            |          0/0 ms |          0/0 ms |
+| Pack worker p50/p95           |        27/32 ms |        56/69 ms |
+| Pack result transfer p50/p95  |          0/2 ms |          2/4 ms |
+| Pack main bind p50/p95        |          0/0 ms |          0/0 ms |
+| Presentation cadence p50/p95  |        34/40 ms |        34/41 ms |
+| Player presentation rate      |        29.1 fps |        28.8 fps |
+| Dropped frames                |               0 |               0 |
+| Actual Spark display commits  |         8.2 fps |        22.5 fps |
+| Spark sort p50/p95            |      124/137 ms |        14/65 ms |
+| Sort GPU readback p50/p95     |      116/133 ms |        11/60 ms |
+| Sort worker p50/p95           |          2/4 ms |          2/4 ms |
+
+The renderer-worker boundary is behaving efficiently: queue wait is absent, returned
+array transfer is small, and main-thread binding is below the displayed resolution.
+Packing time approximately doubles with the splat count, indicating a predictable
+per-splat CPU conversion rather than fixed worker or messaging overhead. With multiple
+workers it can overlap across buffered frames.
+
+Player handoff cadence is not yet proof of visual 30 fps. Both runs advanced near 29
+frames/s with no player-level drops, while Spark committed sorted display mappings at a
+lower rate. The minimum-tier sort/readback result is unexpectedly much worse than the
+medium result and is not physically explained by splat count. It should be repeated in a
+controlled stationary-camera production run before treating it as a stable renderer
+cost. Until then, actual display commits—not player handoffs—remain the limiting visual
+presentation metric.
+
+### 10. Post-worker full SPZ v4, manual handoff — 2026-07-20
+
+The trace was cleared and two frames were advanced manually on the local device. Full
+frames contained approximately 274,000 splats and 3.03–3.04 MB. The displayed summary
+contained four base samples. Because handoffs were manual and separated by roughly 1.6
+seconds, presentation cadence/rate, display-commit rate, and dropped-frame values are
+not playback-throughput measurements in this run.
+
+| Metric                         |        p50 |    p95 |
+| ------------------------------ | ---------: | -----: |
+| Base preparation               |     168 ms | 185 ms |
+| Renderer minimum-ready         |     110 ms | 121 ms |
+| Neutral SPZ v4 decode          |      63 ms |  73 ms |
+| Spark pack total               |     110 ms | 121 ms |
+| Pack queue                     |       0 ms |   0 ms |
+| Pack worker                    |     108 ms | 119 ms |
+| Pack result transfer           |       2 ms |   2 ms |
+| Pack main bind                 |       0 ms |   0 ms |
+| Spark sort                     |     104 ms | 122 ms |
+| Sort GPU readback              |      98 ms | 117 ms |
+| Sort worker                    |       3 ms |   5 ms |
+| Sort order upload              |       0 ms |   0 ms |
+| Future compressed fetch        |     138 ms | 148 ms |
+| Observed compressed throughput | 184.7 Mbps |      — |
+
+Individual F12/F13 events agree with the summary: codec decode took 73.2/63.2 ms,
+packing took 109.5/102.5 ms, worker conversion accounted for 107.8/100.8 ms, and result
+transfer took 1.6/1.7 ms. Base readiness at 185.2/167.9 ms is therefore explained by
+sequential codec decode and renderer preparation rather than an unmeasured gap.
+
+The sort result isolates the next renderer problem. Approximately 95% of sort latency is
+GPU-to-CPU depth readback; CPU index sorting and ordering upload are small. At 104–122
+ms per completed ordering, invalidating the mapping at 30 handoffs/s necessarily causes
+intermediate handoffs to be coalesced before Spark can commit their sorted display
+mapping.
+
+An A/B experiment now extends Spark with an optional sort-key provider. For one eligible
+flat dynamic Gaussian mapping, the adapter retains renderer-owned centers and an active
+mask, applies the current object transform and Spark camera metric on the CPU, and feeds
+the resulting float32 keys to Spark's unchanged worker radix sort. It bypasses depth
+readback but preserves the existing ordering upload and mapping-commit checks. Mixed
+Gaussian mappings automatically fall back to the original GPU path. Hardware results for
+this path are pending.
+
 ## Current conclusions
 
 1. Player scheduling, handoff, and the reusable display allocation can sustain 30 fps
@@ -335,6 +419,14 @@ entry is the comparison baseline.
 7. Renderer-native packed binding is currently the most promising lower-bound path, but
    its storage expansion, SH3 behaviour, portability, and target-device results must be
    measured before a format decision.
+8. Moving Spark packing to renderer-owned workers removed meaningful queue, transfer,
+   and main-thread-bind overhead in the first local runs. The remaining per-splat pack
+   work scales predictably and can overlap across buffered frames.
+9. Near-30-fps player handoff can still outrun Spark display-mapping commits. Controlled
+   sort/readback measurements are required before claiming visually distinct 30 fps.
+10. The full-tier manual test attributes about 95% of Spark sort latency to GPU depth
+    readback. Optimising the existing CPU sort or ordering upload cannot materially
+    solve the visual presentation limit.
 
 ## Next measurements
 
@@ -346,6 +438,14 @@ entry is the comparison baseline.
 - Compare Spark packing worker counts 2, 4, and 6 using the new queue, worker,
   result-transfer, and main-thread-bind timers; report aggregate throughput and CPU
   utilisation rather than selecting the lowest isolated latency.
+- Repeat minimum and medium playback in the same production session with a stationary
+  camera, identical SH/render settings, warm cache, and cleared diagnostics. Explain the
+  observed minimum-tier 124 ms sort versus medium-tier 14 ms sort before changing
+  ordering policy.
+- Compare `cpu-flat` and `gpu-readback` with the same stationary and moving camera,
+  minimum/medium/full frames, warm cache, and cleared diagnostics. Record CPU-key or GPU
+  readback time, worker sort, total sort, actual display commits, visual artifacts, and
+  the 13-byte-per-splat buffered-memory increase.
 - Measure aggregate localhost delivery correctly across overlapping requests and compare
   fetch concurrency 4, 6, and 8.
 - Expose and test Spark decode worker counts 4 and 6, recording CPU utilisation and

@@ -191,6 +191,22 @@ transfer/dispatch, and main-thread binding. Neutral attribute buffers and comple
 Spark arrays are transferred rather than cloned; a decoded frame's typed arrays should
 therefore be treated as consumed once renderer preparation begins.
 
+The demo currently enables CPU-derived sort keys for eligible flat dynamic frames. It
+retains renderer-owned centers, computes Spark's radial or directional float32 keys from
+the current camera and object transform, then uses Spark's existing worker radix sort
+and ordering upload. If another Gaussian object contributes to the same Spark mapping,
+the provider declines the request and Spark performs its normal GPU readback. Select the
+baseline explicitly for A/B measurements:
+
+```bash
+VITE_DYNAMIC_SORT_SOURCE=cpu-flat pnpm dev       # demo default
+VITE_DYNAMIC_SORT_SOURCE=gpu-readback pnpm dev   # original Spark path
+```
+
+The performance panel reports `Sort CPU keys` and `Sort GPU readback` separately. CPU
+center retention costs 13 bytes per splat (three float32 coordinates and one active-mask
+byte) for every decoded buffered frame.
+
 The viewport reports compressed resident/capacity bytes and cached/fetching frame
 counts. Automatic quality uses contiguous compressed frames ahead of playback and
 compressed occupancy; the decoded ring remains a presentation resource limit rather than

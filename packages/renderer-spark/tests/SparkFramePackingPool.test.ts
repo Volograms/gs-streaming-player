@@ -58,6 +58,8 @@ function payload(): SparkPackedFramePayload {
     maxSplats: 2_048,
     numSplats: 1,
     packedArray: new Uint32Array(2_048 * 4),
+    sortActive: new Uint8Array([1]),
+    sortCenters: new Float32Array([1, 2, 3]),
     shDegree: 0,
   };
 }

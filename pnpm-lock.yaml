@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@sparkjsdev/spark@2.1.0': b65f77f35232b8e17bdc72a074b455caed918c92dc8ffddff41829bd897db6ff
+  '@sparkjsdev/spark@2.1.0': beed064d4b2527b4ae517fc33e4295a748225a3a2fc5dd859d50ef37286e4f3c
 
 importers:
 
@@ -151,7 +151,7 @@ importers:
         version: link:../shared
       '@sparkjsdev/spark':
         specifier: 2.1.0
-        version: 2.1.0(patch_hash=b65f77f35232b8e17bdc72a074b455caed918c92dc8ffddff41829bd897db6ff)(three@0.180.0)
+        version: 2.1.0(patch_hash=beed064d4b2527b4ae517fc33e4295a748225a3a2fc5dd859d50ef37286e4f3c)(three@0.180.0)
       three:
         specifier: 0.180.0
         version: 0.180.0
@@ -2590,7 +2590,7 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.62.2':
     optional: true
 
-  '@sparkjsdev/spark@2.1.0(patch_hash=b65f77f35232b8e17bdc72a074b455caed918c92dc8ffddff41829bd897db6ff)(three@0.180.0)':
+  '@sparkjsdev/spark@2.1.0(patch_hash=beed064d4b2527b4ae517fc33e4295a748225a3a2fc5dd859d50ef37286e4f3c)(three@0.180.0)':
     dependencies:
       fflate: 0.8.3
       three: 0.180.0

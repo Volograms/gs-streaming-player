@@ -102,6 +102,7 @@ export interface FrameRingBufferTraceEvent {
   renderIntervalSamplesMs?: readonly number[];
   flatFrameCopySamplesMs?: readonly number[];
   sortOrderingUploadSamplesMs?: readonly number[];
+  sortCpuKeySamplesMs?: readonly number[];
   sortReadbackSamplesMs?: readonly number[];
   sortSamplesMs?: readonly number[];
   sortWorkerSamplesMs?: readonly number[];

@@ -4,6 +4,7 @@ import {
   createPackedSplatsFromPayload,
   packDecodedGaussianFrame,
 } from "../src/packDecodedGaussianFrame.js";
+import { getSparkCpuSortSource } from "../src/SparkCpuSortSource.js";
 import { packDecodedGaussianFramePayload } from "../src/sparkPackedFrame.js";
 
 describe("packDecodedGaussianFrame", () => {
@@ -54,6 +55,10 @@ describe("packDecodedGaussianFrame", () => {
 
     expect(payload.maxSplats).toBe(2_048);
     expect(packedSplats.packedArray).toBe(payload.packedArray);
+    expect(getSparkCpuSortSource(packedSplats)).toEqual({
+      active: payload.sortActive,
+      centers: payload.sortCenters,
+    });
     expect(packedSplats.getSplat(0).center.toArray()).toEqual([1, 2, 3]);
     packedSplats.dispose();
   });

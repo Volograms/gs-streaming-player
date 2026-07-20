@@ -37,6 +37,8 @@ function packedPayloadTransferList(
 ): Transferable[] {
   return [
     payload.packedArray.buffer,
+    payload.sortActive.buffer,
+    payload.sortCenters.buffer,
     ...(payload.sh1 === undefined ? [] : [payload.sh1.buffer]),
     ...(payload.sh2 === undefined ? [] : [payload.sh2.buffer]),
     ...(payload.sh3 === undefined ? [] : [payload.sh3.buffer]),

@@ -80,6 +80,10 @@ const dynamicPackConcurrency = positiveInteger(
   import.meta.env.VITE_DYNAMIC_PACK_CONCURRENCY,
   4,
 );
+const dynamicSortMode =
+  import.meta.env.VITE_DYNAMIC_SORT_SOURCE === "gpu-readback"
+    ? "gpu-readback"
+    : "cpu-flat";
 const dynamicTargetBufferSeconds = positiveNumber(
   import.meta.env.VITE_DYNAMIC_TARGET_BUFFER_SECONDS,
   5,
@@ -179,6 +183,7 @@ export function SparkViewport({
     const adapter = new SparkGaussianRendererAdapter({
       autoRender: false,
       canvas,
+      dynamicSortMode,
       maximumPackingWorkers: dynamicPackConcurrency,
       onRenderTiming: ({
         atMs,
@@ -188,6 +193,7 @@ export function SparkViewport({
         renderCallSamplesMs,
         renderIntervalSamplesMs,
         sortOrderingUploadSamplesMs,
+        sortCpuKeySamplesMs,
         sortReadbackSamplesMs,
         sortSamplesMs,
         sortWorkerSamplesMs,
@@ -201,6 +207,7 @@ export function SparkViewport({
           renderCallSamplesMs,
           renderIntervalSamplesMs,
           sortOrderingUploadSamplesMs,
+          sortCpuKeySamplesMs,
           sortReadbackSamplesMs,
           sortSamplesMs,
           sortWorkerSamplesMs,

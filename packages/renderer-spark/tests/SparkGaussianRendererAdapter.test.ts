@@ -919,6 +919,7 @@ describe("SparkGaussianRendererAdapter", () => {
         numSplats: number;
         orderingUploadDurationMs: number;
         readbackDurationMs: number;
+        readbackSource: "cpu" | "gpu";
         totalDurationMs: number;
         workerSortDurationMs: number;
       }): void;
@@ -940,8 +941,18 @@ describe("SparkGaussianRendererAdapter", () => {
       numSplats: 100,
       orderingUploadDurationMs: 3,
       readbackDurationMs: 5,
+      readbackSource: "gpu",
       totalDurationMs: 12,
       workerSortDurationMs: 4,
+    });
+    instrumented.onSortTiming?.({
+      atMs: 2,
+      numSplats: 100,
+      orderingUploadDurationMs: 1,
+      readbackDurationMs: 2,
+      readbackSource: "cpu",
+      totalDurationMs: 7,
+      workerSortDurationMs: 3,
     });
     for (let index = 0; index < 15; index += 1) {
       adapter.render();
@@ -951,10 +962,11 @@ describe("SparkGaussianRendererAdapter", () => {
       expect.objectContaining({
         renderCallSamplesMs: expect.arrayContaining([20]),
         renderIntervalSamplesMs: expect.arrayContaining([40]),
-        sortOrderingUploadSamplesMs: [3],
+        sortCpuKeySamplesMs: [2],
+        sortOrderingUploadSamplesMs: [3, 1],
         sortReadbackSamplesMs: [5],
-        sortSamplesMs: [12],
-        sortWorkerSamplesMs: [4],
+        sortSamplesMs: [12, 7],
+        sortWorkerSamplesMs: [4, 3],
         sparkUpdateSamplesMs: [expect.any(Number)],
       }),
     );

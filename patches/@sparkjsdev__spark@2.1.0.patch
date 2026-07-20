@@ -1,18 +1,33 @@
 diff --git a/dist/spark.cjs.js b/dist/spark.cjs.js
-index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690d055dbe0 100644
+index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..3ebb522e9883d5f1d3cdde117a57039f75074ea1 100644
 --- a/dist/spark.cjs.js
 +++ b/dist/spark.cjs.js
-@@ -10292,28 +10292,33 @@
+@@ -10292,28 +10292,44 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
      const ordering = new Uint32Array(this.maxSplats);
      const readback = Readback.ensureBuffer(maxSplats, this.readback32);
      this.readback32 = readback;
+-    await this.readbackDepth({
+-      current,
+-      renderer: this.renderer,
 +    const readbackStartedAt = performance.now();
-     await this.readbackDepth({
-       current,
-       renderer: this.renderer,
++    const providedSortKeys = await this.sortKeyProvider?.({
++      maxSplats,
        numSplats,
-       readback
+-      readback
++      readback,
++      sortRadial: this.sortRadial ?? true,
++      viewDirection: current.viewDirection,
++      viewOrigin: current.viewOrigin
      });
++    const readbackSource = providedSortKeys === true ? "cpu" : "gpu";
++    if (!providedSortKeys) {
++      await this.readbackDepth({
++        current,
++        renderer: this.renderer,
++        numSplats,
++        readback
++      });
++    }
 +    const readbackDurationMs = performance.now() - readbackStartedAt;
      if (this.sortPause > 0) {
        await new Promise((resolve) => setTimeout(resolve, this.sortPause));
@@ -36,7 +51,7 @@ index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690
      if (this.orderingTexture) {
        if (rows > this.orderingTexture.image.height) {
          this.orderingTexture.dispose();
-@@ -10361,6 +10366,15 @@
+@@ -10361,6 +10377,16 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
          renderer.state.bindTexture(gl.TEXTURE_2D, null);
        }
      }
@@ -46,13 +61,14 @@ index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690
 +      numSplats,
 +      orderingUploadDurationMs,
 +      readbackDurationMs,
++      readbackSource,
 +      totalDurationMs: performance.now() - now,
 +      workerSortDurationMs
 +    });
      if (this.current.mappingVersion === current.mappingVersion) {
        if (this.current.mappingVersion !== this.display.mappingVersion) {
          this.accumulators.push(this.display);
-@@ -10506,7 +10506,18 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+@@ -10506,7 +10532,18 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
        if (this.lodUpdates.length > 0) {
          const lodUpdates = this.lodUpdates;
          this.lodUpdates = [];
@@ -71,7 +87,7 @@ index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690
          this.lodDirty = true;
        }
        if (this.lodDirty) {
-@@ -10548,9 +10559,14 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+@@ -10548,9 +10585,14 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
        this.lodIds.set(splats, { lodId, lastTouched: performance.now() });
        this.lodIdToSplats.set(lodId, splats);
      } else {
@@ -86,7 +102,7 @@ index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690
        this.lodIds.set(splats, { lodId, lastTouched: performance.now() });
        this.lodIdToSplats.set(lodId, splats);
      }
-@@ -10601,6 +10617,17 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+@@ -10601,6 +10643,17 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
        instances
      });
      this.lastTraverseTime = performance.now() - traverseStart;
@@ -104,7 +120,7 @@ index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690
      const { keyIndices, chunks, pixelLimit } = result;
      this.lastPixelLimit = pixelLimit;
      const totalLodSplats = Object.values(keyIndices).reduce(
-@@ -11101,6 +11128,7 @@ class PagedSplats {
+@@ -11101,6 +11154,7 @@ class PagedSplats {
    constructor(options) {
      var _a2;
      this.pager = options.pager;
@@ -112,7 +128,7 @@ index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690
      this.rootUrl = options.rootUrl ?? "";
      this.requestHeader = options.requestHeader;
      this.withCredentials = options.withCredentials;
-@@ -11143,6 +11171,12 @@ class PagedSplats {
+@@ -11143,6 +11197,12 @@ class PagedSplats {
    setMaxSh(maxSh) {
      this.maxSh = maxSh;
    }
@@ -125,7 +141,7 @@ index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690
    getRadMeta() {
      if (this.radMetaPromise) {
        return this.radMetaPromise;
-@@ -11185,6 +11219,7 @@ class PagedSplats {
+@@ -11185,6 +11245,7 @@ class PagedSplats {
      return this.rootUrl.replace(/-lod-0\./, `-lod-${chunk}.`);
    }
    async fetchDecodeChunk(chunk) {
@@ -133,7 +149,7 @@ index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690
      let decodeBytes = void 0;
      if (this.fileType === SplatFileType.RAD) {
        const { meta, chunksStart } = await this.getRadMeta();
-@@ -11246,7 +11281,13 @@ class PagedSplats {
+@@ -11246,7 +11307,13 @@ class PagedSplats {
      } else {
        throw new Error("No url or fileBytes provided");
      }
@@ -148,7 +164,7 @@ index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690
        var _a2, _b2, _c, _d, _e;
        if (!this.pager) {
          throw new Error("PagedSplats.pager not set");
-@@ -11299,6 +11340,12 @@ class PagedSplats {
+@@ -11299,6 +11366,12 @@ class PagedSplats {
        this.sh3Codes = lodSplats.extra.sh3Codes ?? this.sh3Codes;
        return lodSplats;
      });
@@ -161,7 +177,7 @@ index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690
    }
    update(numSplats, indices) {
      if (!this.pager) {
-@@ -11462,6 +11509,7 @@ const _SplatPager = class _SplatPager {
+@@ -11462,6 +11535,7 @@ const _SplatPager = class _SplatPager {
      this.fetchers = [];
      this.fetched = [];
      this.fetchPriority = [];
@@ -169,7 +185,7 @@ index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690
      this.packedTexture = new DynoUsampler2DArray({
        value: this.newUint32ArrayTexture(
          new Uint32Array(this.maxPages * 256 * 256 * 4),
-@@ -11802,6 +11850,48 @@ const _SplatPager = class _SplatPager {
+@@ -11802,6 +11876,48 @@ const _SplatPager = class _SplatPager {
      }
      return chunks[chunk];
    }
@@ -218,7 +234,7 @@ index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690
    insertSplatsChunkPage(splats, chunk, page, now) {
      if (!this.splatsChunkToPage.has(splats)) {
        this.splatsChunkToPage.set(splats, []);
-@@ -11922,7 +12012,11 @@ const _SplatPager = class _SplatPager {
+@@ -11922,7 +12038,11 @@ const _SplatPager = class _SplatPager {
      const needed = [];
      const overflow = [];
      let numPages = 0;
@@ -231,7 +247,7 @@ index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690
        const pageLru = this.getSplatsChunk(splats, chunk);
        if (pageLru) {
          if (numPages >= this.maxPages) {
-@@ -12013,14 +12107,24 @@ const _SplatPager = class _SplatPager {
+@@ -12013,14 +12133,24 @@ const _SplatPager = class _SplatPager {
          break;
        }
        const { splats, chunk, data } = fetched;
@@ -256,7 +272,7 @@ index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690
        const { numSplats, extra } = data;
        this.lodTreeUpdates.push({
          splats,
-@@ -12047,7 +12151,17 @@ const _SplatPager = class _SplatPager {
+@@ -12047,7 +12177,17 @@ const _SplatPager = class _SplatPager {
          break;
        }
        const { page, numSplats, packedArray, extArray, extra } = upload;
@@ -275,20 +291,35 @@ index 9f85cfa400493f0c0bd6cb256026be1caf2a9476..47522f6bc6ddfde7780a3fb0c5d23690
    }
    consumeLodTreeUpdates() {
 diff --git a/dist/spark.module.js b/dist/spark.module.js
-index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab98bbc2a9c 100644
+index aec3d5590a50f27b56a39169c08b4557afe5748c..1cdfe4e788cd7b14da05782fc9456f93bbfc392f 100644
 --- a/dist/spark.module.js
 +++ b/dist/spark.module.js
-@@ -10273,28 +10273,33 @@
+@@ -10273,28 +10273,44 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
      const ordering = new Uint32Array(this.maxSplats);
      const readback = Readback.ensureBuffer(maxSplats, this.readback32);
      this.readback32 = readback;
+-    await this.readbackDepth({
+-      current,
+-      renderer: this.renderer,
 +    const readbackStartedAt = performance.now();
-     await this.readbackDepth({
-       current,
-       renderer: this.renderer,
++    const providedSortKeys = await this.sortKeyProvider?.({
++      maxSplats,
        numSplats,
-       readback
+-      readback
++      readback,
++      sortRadial: this.sortRadial ?? true,
++      viewDirection: current.viewDirection,
++      viewOrigin: current.viewOrigin
      });
++    const readbackSource = providedSortKeys === true ? "cpu" : "gpu";
++    if (!providedSortKeys) {
++      await this.readbackDepth({
++        current,
++        renderer: this.renderer,
++        numSplats,
++        readback
++      });
++    }
 +    const readbackDurationMs = performance.now() - readbackStartedAt;
      if (this.sortPause > 0) {
        await new Promise((resolve) => setTimeout(resolve, this.sortPause));
@@ -312,7 +343,7 @@ index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab9
      if (this.orderingTexture) {
        if (rows > this.orderingTexture.image.height) {
          this.orderingTexture.dispose();
-@@ -10342,6 +10347,15 @@
+@@ -10342,6 +10358,16 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
          renderer.state.bindTexture(gl.TEXTURE_2D, null);
        }
      }
@@ -322,13 +353,14 @@ index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab9
 +      numSplats,
 +      orderingUploadDurationMs,
 +      readbackDurationMs,
++      readbackSource,
 +      totalDurationMs: performance.now() - now,
 +      workerSortDurationMs
 +    });
      if (this.current.mappingVersion === current.mappingVersion) {
        if (this.current.mappingVersion !== this.display.mappingVersion) {
          this.accumulators.push(this.display);
-@@ -10487,7 +10487,18 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+@@ -10487,7 +10513,18 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
        if (this.lodUpdates.length > 0) {
          const lodUpdates = this.lodUpdates;
          this.lodUpdates = [];
@@ -347,7 +379,7 @@ index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab9
          this.lodDirty = true;
        }
        if (this.lodDirty) {
-@@ -10529,9 +10540,14 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+@@ -10529,9 +10566,14 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
        this.lodIds.set(splats, { lodId, lastTouched: performance.now() });
        this.lodIdToSplats.set(lodId, splats);
      } else {
@@ -362,7 +394,7 @@ index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab9
        this.lodIds.set(splats, { lodId, lastTouched: performance.now() });
        this.lodIdToSplats.set(lodId, splats);
      }
-@@ -10582,6 +10598,17 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+@@ -10582,6 +10624,17 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
        instances
      });
      this.lastTraverseTime = performance.now() - traverseStart;
@@ -380,7 +412,7 @@ index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab9
      const { keyIndices, chunks, pixelLimit } = result;
      this.lastPixelLimit = pixelLimit;
      const totalLodSplats = Object.values(keyIndices).reduce(
-@@ -11082,6 +11109,7 @@ class PagedSplats {
+@@ -11082,6 +11135,7 @@ class PagedSplats {
    constructor(options) {
      var _a2;
      this.pager = options.pager;
@@ -388,7 +420,7 @@ index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab9
      this.rootUrl = options.rootUrl ?? "";
      this.requestHeader = options.requestHeader;
      this.withCredentials = options.withCredentials;
-@@ -11124,6 +11152,12 @@ class PagedSplats {
+@@ -11124,6 +11178,12 @@ class PagedSplats {
    setMaxSh(maxSh) {
      this.maxSh = maxSh;
    }
@@ -401,7 +433,7 @@ index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab9
    getRadMeta() {
      if (this.radMetaPromise) {
        return this.radMetaPromise;
-@@ -11166,6 +11200,7 @@ class PagedSplats {
+@@ -11166,6 +11226,7 @@ class PagedSplats {
      return this.rootUrl.replace(/-lod-0\./, `-lod-${chunk}.`);
    }
    async fetchDecodeChunk(chunk) {
@@ -409,7 +441,7 @@ index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab9
      let decodeBytes = void 0;
      if (this.fileType === SplatFileType.RAD) {
        const { meta, chunksStart } = await this.getRadMeta();
-@@ -11227,7 +11262,13 @@ class PagedSplats {
+@@ -11227,7 +11288,13 @@ class PagedSplats {
      } else {
        throw new Error("No url or fileBytes provided");
      }
@@ -424,7 +456,7 @@ index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab9
        var _a2, _b2, _c, _d, _e;
        if (!this.pager) {
          throw new Error("PagedSplats.pager not set");
-@@ -11280,6 +11321,12 @@ class PagedSplats {
+@@ -11280,6 +11347,12 @@ class PagedSplats {
        this.sh3Codes = lodSplats.extra.sh3Codes ?? this.sh3Codes;
        return lodSplats;
      });
@@ -437,7 +469,7 @@ index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab9
    }
    update(numSplats, indices) {
      if (!this.pager) {
-@@ -11443,6 +11490,7 @@ const _SplatPager = class _SplatPager {
+@@ -11443,6 +11516,7 @@ const _SplatPager = class _SplatPager {
      this.fetchers = [];
      this.fetched = [];
      this.fetchPriority = [];
@@ -445,7 +477,7 @@ index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab9
      this.packedTexture = new DynoUsampler2DArray({
        value: this.newUint32ArrayTexture(
          new Uint32Array(this.maxPages * 256 * 256 * 4),
-@@ -11783,6 +11831,48 @@ const _SplatPager = class _SplatPager {
+@@ -11783,6 +11857,48 @@ const _SplatPager = class _SplatPager {
      }
      return chunks[chunk];
    }
@@ -494,7 +526,7 @@ index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab9
    insertSplatsChunkPage(splats, chunk, page, now) {
      if (!this.splatsChunkToPage.has(splats)) {
        this.splatsChunkToPage.set(splats, []);
-@@ -11903,7 +11993,11 @@ const _SplatPager = class _SplatPager {
+@@ -11903,7 +12019,11 @@ const _SplatPager = class _SplatPager {
      const needed = [];
      const overflow = [];
      let numPages = 0;
@@ -507,7 +539,7 @@ index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab9
        const pageLru = this.getSplatsChunk(splats, chunk);
        if (pageLru) {
          if (numPages >= this.maxPages) {
-@@ -11994,14 +12088,24 @@ const _SplatPager = class _SplatPager {
+@@ -11994,14 +12114,24 @@ const _SplatPager = class _SplatPager {
          break;
        }
        const { splats, chunk, data } = fetched;
@@ -532,7 +564,7 @@ index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab9
        const { numSplats, extra } = data;
        this.lodTreeUpdates.push({
          splats,
-@@ -12028,7 +12132,17 @@ const _SplatPager = class _SplatPager {
+@@ -12028,7 +12158,17 @@ const _SplatPager = class _SplatPager {
          break;
        }
        const { page, numSplats, packedArray, extArray, extra } = upload;
@@ -550,8 +582,36 @@ index aec3d5590a50f27b56a39169c08b4557afe5748c..8c3aeca3fabec6c0b7960dac8b4adab9
      }
    }
    consumeLodTreeUpdates() {
+diff --git a/dist/types/SparkRenderer.d.ts b/dist/types/SparkRenderer.d.ts
+index e0505656c42c1e07eb07255f0eafd17656eb0e97..8b84e436f1c41babc4779ec0d59be1656acea06f 100644
+--- a/dist/types/SparkRenderer.d.ts
++++ b/dist/types/SparkRenderer.d.ts
+@@ -327,6 +327,23 @@ export declare class SparkRenderer extends THREE.Mesh {
+     lastFrame: number;
+     updateTimeoutId: number;
+     onDirty?: () => void;
++    sortKeyProvider?: (request: {
++        maxSplats: number;
++        numSplats: number;
++        readback: Uint32Array;
++        sortRadial: boolean;
++        viewDirection: THREE.Vector3;
++        viewOrigin: THREE.Vector3;
++    }) => boolean | Promise<boolean>;
++    onSortTiming?: (sample: {
++        atMs: number;
++        numSplats: number;
++        orderingUploadDurationMs: number;
++        readbackDurationMs: number;
++        readbackSource: "cpu" | "gpu";
++        totalDurationMs: number;
++        workerSortDurationMs: number;
++    }) => void;
+     dirty: boolean;
+     orderingTexture: THREE.DataTexture | null;
+     maxSplats: number;
 diff --git a/dist/types/SplatPager.d.ts b/dist/types/SplatPager.d.ts
-index 968e4534933abc3772056fd21068eb5ff76b0f67..04636a02a9468261f1ab3b4135bd5a9936692bb6 100644
+index 968e4534933abc3772056fd21068eb5ff76b0f67..bb6f041c7c32d634f2f79df66c924a0e62e0e014 100644
 --- a/dist/types/SplatPager.d.ts
 +++ b/dist/types/SplatPager.d.ts
 @@ -2,6 +2,16 @@ import { dyno } from '.';
@@ -625,21 +685,3 @@ index 968e4534933abc3772056fd21068eb5ff76b0f67..04636a02a9468261f1ab3b4135bd5a99
      private insertSplatsChunkPage;
      private removeSplatsChunkPage;
      private uploadPage;
-diff --git a/dist/types/SparkRenderer.d.ts b/dist/types/SparkRenderer.d.ts
---- a/dist/types/SparkRenderer.d.ts
-+++ b/dist/types/SparkRenderer.d.ts
-@@ -327,6 +327,14 @@
-     lastFrame: number;
-     updateTimeoutId: number;
-     onDirty?: () => void;
-+    onSortTiming?: (sample: {
-+        atMs: number;
-+        numSplats: number;
-+        orderingUploadDurationMs: number;
-+        readbackDurationMs: number;
-+        totalDurationMs: number;
-+        workerSortDurationMs: number;
-+    }) => void;
-     dirty: boolean;
-     orderingTexture: THREE.DataTexture | null;
-     maxSplats: number;

@@ -113,6 +113,10 @@ export function PlaybackPerformancePanel({
           <dd>{formatTiming(summary.sortReadback)}</dd>
         </div>
         <div>
+          <dt>Sort CPU keys p50 / p95</dt>
+          <dd>{formatTiming(summary.sortCpuKeys)}</dd>
+        </div>
+        <div>
           <dt>Sort worker p50 / p95</dt>
           <dd>{formatTiming(summary.sortWorker)}</dd>
         </div>

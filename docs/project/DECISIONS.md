@@ -112,6 +112,12 @@ used during day-to-day implementation.
   renderer-native typed arrays by transfer; only lightweight `PackedSplats` binding
   remains on the main thread. Codec and packing worker counts are independently
   configurable so measurements do not conflate the two stages.
+- CPU sort keys are an explicit Spark-adapter experiment, not part of the neutral codec
+  contract. The Spark adapter may retain decoded centers and an active mask alongside a
+  flat buffered frame. It supplies keys only when that frame is the complete active
+  Gaussian mapping; persistent/mixed Gaussian scenes automatically use Spark's original
+  GPU readback. The library default remains GPU readback while the demo defaults to the
+  CPU experiment for current flat-sequence measurements.
 - The legacy Spark-owned SPZ v3 loader remains an explicit A/B compatibility path. It
   does not act as an implicit fallback for SPZ v4 content, so the entire legacy route
   can be removed cleanly after comparison.

@@ -1,5 +1,6 @@
 import { PackedSplats } from "@sparkjsdev/spark";
 
+import { registerSparkCpuSortSource } from "./SparkCpuSortSource.js";
 import { packDecodedGaussianFramePayload } from "./sparkPackedFrame.js";
 
 import type { SparkPackedFramePayload } from "./sparkPackedFrame.js";
@@ -42,5 +43,9 @@ export function createPackedSplatsFromPayload(
   packedSplats.maxSh = payload.shDegree;
   packedSplats.setMaxSh(payload.shDegree);
   packedSplats.needsUpdate = true;
+  registerSparkCpuSortSource(packedSplats, {
+    active: payload.sortActive,
+    centers: payload.sortCenters,
+  });
   return packedSplats;
 }

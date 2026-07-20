@@ -32,6 +32,7 @@ export interface FrameTimingSummary {
   renderCall: TimingDistribution;
   sampleCount: number;
   sort: TimingDistribution;
+  sortCpuKeys: TimingDistribution;
   sortOrderingUpload: TimingDistribution;
   sortReadback: TimingDistribution;
   sortWorker: TimingDistribution;
@@ -86,6 +87,7 @@ export function summariseFrameTimings(
   const renderCall: number[] = [];
   const renderIntervals: number[] = [];
   const sort: number[] = [];
+  const sortCpuKeys: number[] = [];
   const sortOrderingUpload: number[] = [];
   const sortReadback: number[] = [];
   const sortWorker: number[] = [];
@@ -170,6 +172,7 @@ export function summariseFrameTimings(
         ...(event.renderIntervalSamplesMs ?? []).filter((duration) => duration > 0),
       );
       sort.push(...(event.sortSamplesMs ?? []));
+      sortCpuKeys.push(...(event.sortCpuKeySamplesMs ?? []));
       sortOrderingUpload.push(...(event.sortOrderingUploadSamplesMs ?? []));
       sortReadback.push(...(event.sortReadbackSamplesMs ?? []));
       sortWorker.push(...(event.sortWorkerSamplesMs ?? []));
@@ -225,6 +228,7 @@ export function summariseFrameTimings(
     renderCall: distribution(renderCall),
     sampleCount: basePreparation.length,
     sort: distribution(sort),
+    sortCpuKeys: distribution(sortCpuKeys),
     sortOrderingUpload: distribution(sortOrderingUpload),
     sortReadback: distribution(sortReadback),
     sortWorker: distribution(sortWorker),

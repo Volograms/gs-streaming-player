@@ -22,6 +22,9 @@ acceptance criteria are covered by implementation and verification.
 - [x] Move neutral-to-Spark packing into a persistent renderer-owned worker pool using
       transferable input/output buffers, a synchronous non-browser fallback, bounded
       concurrency, and separate queue/worker/transfer/main-bind timings.
+- [x] Add an experimental flat-frame CPU sort-key provider that retains decoded centers,
+      mirrors Spark's camera metric, reuses Spark's radix-sort worker and ordering
+      upload, and automatically falls back to GPU readback for mixed Gaussian mappings.
 - [x] Add an offline command that repacks the existing flat quality-cut index with the
       official SPZ v4 native tools and marks every output tier with `codec: "spz-v4"`.
 - [ ] Measure v3 versus v4 throughput, worker utilisation, intermediate memory, and

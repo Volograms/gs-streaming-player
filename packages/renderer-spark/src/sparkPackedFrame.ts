@@ -11,6 +11,8 @@ export interface SparkPackedFramePayload {
   maxSplats: number;
   numSplats: number;
   packedArray: Uint32Array;
+  sortActive: Uint8Array;
+  sortCenters: Float32Array;
   sh1?: Uint32Array;
   sh2?: Uint32Array;
   sh3?: Uint32Array;
@@ -31,8 +33,10 @@ export function packDecodedGaussianFramePayload(
   const sh2Scratch = frame.shDegree >= 2 ? new Float32Array(15) : undefined;
   const sh3Scratch = frame.shDegree >= 3 ? new Float32Array(21) : undefined;
   const shValuesPerSplat = (((frame.shDegree + 1) ** 2 - 1) * 3) | 0;
+  const sortActive = new Uint8Array(frame.numSplats);
 
   for (let index = 0; index < frame.numSplats; index += 1) {
+    sortActive[index] = (frame.alphas[index] ?? 0) > 0 ? 1 : 0;
     const xyz = index * 3;
     const xyzw = index * 4;
     setPackedSplat(
@@ -73,6 +77,8 @@ export function packDecodedGaussianFramePayload(
     maxSplats,
     numSplats: frame.numSplats,
     packedArray,
+    sortActive,
+    sortCenters: frame.positions,
     ...(sh1 === undefined ? {} : { sh1 }),
     ...(sh2 === undefined ? {} : { sh2 }),
     ...(sh3 === undefined ? {} : { sh3 }),

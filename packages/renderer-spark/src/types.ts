@@ -10,6 +10,7 @@ export interface SparkRenderTimingSample {
   renderCallSamplesMs: readonly number[];
   renderIntervalSamplesMs: readonly number[];
   sortOrderingUploadSamplesMs: readonly number[];
+  sortCpuKeySamplesMs: readonly number[];
   sortReadbackSamplesMs: readonly number[];
   sortSamplesMs: readonly number[];
   sortWorkerSamplesMs: readonly number[];
@@ -29,6 +30,8 @@ export interface SparkRendererAdapterOptions {
   framePacker?: SparkFramePacker;
   /** Persistent Spark packing workers. Defaults to two in browsers. */
   maximumPackingWorkers?: number;
+  /** Flat-frame sorting source. GPU readback remains the safe default. */
+  dynamicSortMode?: "cpu-flat" | "gpu-readback";
   /** Caller-owned renderer. It is never disposed by the adapter. */
   renderer?: WebGLRenderer;
   /** Runtime factory overrides, primarily for non-WebGL tests and embedding. */

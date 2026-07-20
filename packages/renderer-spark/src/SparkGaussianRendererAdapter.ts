@@ -67,6 +67,14 @@ interface MutableResourceMetrics {
 
 interface InstrumentableSparkRenderer {
   display?: { mappingVersion: number };
+  sortKeyProvider?: (request: {
+    maxSplats: number;
+    numSplats: number;
+    readback: Uint32Array;
+    sortRadial: boolean;
+    viewDirection: Readonly<{ x: number; y: number; z: number }>;
+    viewOrigin: Readonly<{ x: number; y: number; z: number }>;
+  }) => boolean | Promise<boolean>;
   updateInternal(...args: unknown[]): Promise<unknown>;
 }
 
@@ -107,6 +115,7 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
   private sceneValue: Scene | undefined;
   private sparkValue: SparkRenderer | undefined;
   private sortTimeMs: number | undefined;
+  private readonly sortCpuKeySamplesMs: number[] = [];
   private readonly sortOrderingUploadSamplesMs: number[] = [];
   private readonly sortReadbackSamplesMs: number[] = [];
   private readonly sortSamplesMs: number[] = [];
@@ -581,6 +590,7 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
       renderCallSamplesMs: this.renderCallSamplesMs.splice(0),
       renderIntervalSamplesMs: this.renderIntervalSamplesMs.splice(0),
       sortOrderingUploadSamplesMs: this.sortOrderingUploadSamplesMs.splice(0),
+      sortCpuKeySamplesMs: this.sortCpuKeySamplesMs.splice(0),
       sortReadbackSamplesMs: this.sortReadbackSamplesMs.splice(0),
       sortSamplesMs: this.sortSamplesMs.splice(0),
       sortWorkerSamplesMs: this.sortWorkerSamplesMs.splice(0),
@@ -599,10 +609,31 @@ export class SparkGaussianRendererAdapter implements GaussianRendererAdapter {
     spark.onSortTiming = (sample) => {
       this.sortTimeMs = sample.totalDurationMs;
       this.sortSamplesMs.push(sample.totalDurationMs);
-      this.sortReadbackSamplesMs.push(sample.readbackDurationMs);
+      if (sample.readbackSource === "cpu") {
+        this.sortCpuKeySamplesMs.push(sample.readbackDurationMs);
+      } else {
+        this.sortReadbackSamplesMs.push(sample.readbackDurationMs);
+      }
       this.sortWorkerSamplesMs.push(sample.workerSortDurationMs);
       this.sortOrderingUploadSamplesMs.push(sample.orderingUploadDurationMs);
     };
+
+    if (this.options.dynamicSortMode === "cpu-flat") {
+      instrumented.sortKeyProvider = ({
+        numSplats,
+        readback,
+        sortRadial,
+        viewDirection,
+        viewOrigin,
+      }) =>
+        this.flatFrameDisplayValue?.fillCpuSortKeys({
+          numSplats,
+          readback,
+          sortRadial,
+          viewDirection,
+          viewOrigin,
+        }) ?? false;
+    }
 
     const updateInternal = instrumented.updateInternal.bind(instrumented);
     instrumented.updateInternal = async (...args: unknown[]) => {

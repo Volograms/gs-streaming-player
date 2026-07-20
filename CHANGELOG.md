@@ -16,6 +16,10 @@ All notable changes to this project will be documented here. The project uses
 - Persistent Spark-owned frame-packing workers with transferable neutral inputs and
   renderer-native outputs, independent packing concurrency, cancellation-safe worker
   replacement, and queue/worker/transfer/main-bind diagnostics.
+- Opt-in Spark CPU sort keys for sole-source flat dynamic frames, retaining neutral
+  centers through packing, preserving Spark's worker radix sort and ordering upload,
+  reporting CPU-key time separately, and falling back to GPU readback for mixed splat
+  mappings.
 - Explicit `spark-spz-v3`/`spz-v4` demo selection for clean A/B testing, plus a content
   command that repacks existing flat quality tiers through the official SPZ v4 tools.
 - Initial product and implementation plan.
