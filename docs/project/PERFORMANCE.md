@@ -401,6 +401,106 @@ readback but preserves the existing ordering upload and mapping-commit checks. M
 Gaussian mappings automatically fall back to the original GPU path. Hardware results for
 this path are pending.
 
+### 11. CPU flat sort: medium and full streaming — 2026-07-20
+
+These runs exercised the optional CPU sort-key provider during normal 30 fps playback,
+using official SPZ v4 frames, four Spark packing workers, a 200 MB compressed cache, and
+no preload-all mode:
+
+```text
+VITE_DYNAMIC_PRELOAD_ALL_FRAMES=false
+VITE_DYNAMIC_FRAME_CODEC=spz-v4
+VITE_DYNAMIC_PACK_CONCURRENCY=4
+VITE_DYNAMIC_SORT_SOURCE=cpu-flat
+```
+
+The frame range was 1–100. The camera and remaining worker/browser/machine details were
+not explicitly captured. The medium cache contained the entire tier when its summary was
+recorded; the full cache contained 65 of 100 frames and was at its 200 MB limit.
+
+| Metric                        | Medium, ~139k | Full, ~274k |
+| ----------------------------- | ------------: | ----------: |
+| Base samples                  |            84 |          82 |
+| Queue p50/p95                 |        0/0 ms |  420/546 ms |
+| Compressed fetch p50/p95      |       waiting |  211/256 ms |
+| Renderer minimum-ready p50/95 |      54/63 ms |  195/233 ms |
+| Neutral SPZ v4 decode p50/95  |      33/41 ms |  126/163 ms |
+| Spark pack total p50/p95      |      54/63 ms |  195/233 ms |
+| Pack worker p50/p95           |      52/60 ms |  193/230 ms |
+| Pack result transfer p50/p95  |        1/4 ms |     2/12 ms |
+| Presentation cadence p50/p95  |      34/44 ms |   36/222 ms |
+| Player presentation rate      |      29.0 fps |    12.5 fps |
+| Actual Spark display commits  |      28.9 fps |    12.3 fps |
+| Dropped frames                |             0 |           0 |
+| Spark sort p50/p95            |        6/9 ms |    21/34 ms |
+| CPU sort keys p50/p95         |        2/3 ms |      7/9 ms |
+| Sort worker p50/p95           |        2/3 ms |     9/20 ms |
+| Sort order upload p50/p95     |        0/1 ms |      0/0 ms |
+| GPU readback                  |      bypassed |    bypassed |
+
+The CPU sort experiment succeeds. Compared with the immediately preceding full-tier
+manual GPU-readback result, full sorting fell from 104/122 ms to 21/34 ms, approximately
+a 5.0x p50 and 3.6x p95 improvement. Actual Spark commits now track player handoffs to
+within 0.2 fps at both tiers, so the renderer is no longer silently coalescing most
+presentations. Medium playback is consequently visually near the 30 fps target.
+
+Full-tier playback remains preparation-bound. Its 126 ms median neutral decode followed
+by 195 ms median packing is about 321 ms of per-frame CPU work across two pipeline
+stages. Four packing workers have an optimistic isolated capacity of about 20.5 frames/s
+at the median and 17.2 frames/s at p95, before worker contention and other browser work.
+The 420/546 ms outer queue confirms that this stage is saturated. Internal pack queue
+time remains zero because admitted jobs obtain a packing worker immediately; the wait
+occurs before that pool and the running worker jobs themselves slow under concurrent
+load.
+
+The full run also cannot sustain its payload rate from delivery alone. Approximately
+3.05 MB at 30 fps requires about 732 Mbps, while the measured aggregate compressed
+throughput was 124.8 Mbps. The 200 MB cache masks this temporarily but holds only about
+65 full frames. This does not explain the medium result because all medium bytes were
+resident and its decode/pack pipeline maintained 29 fps.
+
+Individual full trace events recorded packing around 134–152 ms for frames 15–17 while
+their total base readiness was about 676–679 ms. Individual medium events recorded
+approximately 56 ms packing and 36 ms decode. The distribution summaries are preferred
+for capacity conclusions because they include the contention across the whole run.
+
+#### Fully compressed-byte-resident full-tier follow-up
+
+The compressed cache was increased to 400 MB and allowed to fill before playback. At
+capture time it held 391/400 MB, reported 200 cached resources and no active fetches.
+This removes compressed delivery from the measured playback interval without retaining
+all 100 decoded renderer frames.
+
+| Metric                       |      p50 |    p95 |
+| ---------------------------- | -------: | -----: |
+| Base samples                 |       88 |      — |
+| Outer preparation queue      |   241 ms | 336 ms |
+| Renderer minimum-ready       |   129 ms | 158 ms |
+| Neutral SPZ v4 decode        |    84 ms | 103 ms |
+| Spark pack total             |   129 ms | 157 ms |
+| Pack worker                  |   126 ms | 154 ms |
+| Pack result transfer         |     2 ms |   5 ms |
+| Presentation cadence         |    34 ms | 137 ms |
+| Player presentation rate     | 19.1 fps |      — |
+| Actual Spark display commits | 18.7 fps |      — |
+| Spark sort                   |    12 ms |  20 ms |
+| CPU sort keys                |     4 ms |   7 ms |
+| Sort worker                  |     6 ms |   8 ms |
+| Dropped frames               |        0 |      — |
+
+Removing delivery raised full-tier presentation from 12.5 to 19.1 fps and reduced
+decode, pack, and outer-queue latency, confirming that delivery and CPU preparation had
+previously contended with each other. It did not make preparation fast enough for 30
+fps. With four concurrent base preparations, the median sequential decode-plus-pack cost
+predicts `4 / (0.084 + 0.129) = 18.8` prepared frames/s, almost exactly the observed
+19.1 fps. The four-slot preparation scheduler is therefore saturated by useful work
+rather than by an unmeasured delay.
+
+Individual events agree with this attribution: full packing took approximately 114–131
+ms for frames 63–65, result transfer was 1.4–1.9 ms, and internal pack queue time was
+zero. The player again stalled instead of discarding deadlines, so zero reported drops
+does not imply uninterrupted 30 fps; cadence p95 reached 137 ms.
+
 ## Current conclusions
 
 1. Player scheduling, handoff, and the reusable display allocation can sustain 30 fps
@@ -409,9 +509,9 @@ this path are pending.
    remains valuable for large persistent static scenes.
 3. Flat SPZ removes dynamic tree traversal but full-tier SPZ decoding remains too slow
    for 30 freshly decoded frames/s on the measured development setup.
-4. Spark sorting is a separate cost. GPU readback dominates it, while the worker's index
-   sort and ordering upload are relatively small. The asynchronous pipeline sustained 30
-   fps in the fully resident tests.
+4. Spark sorting is a separate cost. The `cpu-flat` provider removes GPU readback for an
+   eligible flat dynamic mapping and reduced measured full-tier sorting from 104/122 ms
+   to 21/34 ms. Actual Spark display commits then closely tracked player handoffs.
 5. A larger compressed buffer absorbs bursts but cannot compensate indefinitely when
    steady-state delivery or decode throughput is below playback consumption.
 6. The codec/renderer split permits SPZ v4, SOG v2, and renderer-native experiments to
@@ -422,11 +522,13 @@ this path are pending.
 8. Moving Spark packing to renderer-owned workers removed meaningful queue, transfer,
    and main-thread-bind overhead in the first local runs. The remaining per-splat pack
    work scales predictably and can overlap across buffered frames.
-9. Near-30-fps player handoff can still outrun Spark display-mapping commits. Controlled
-   sort/readback measurements are required before claiming visually distinct 30 fps.
-10. The full-tier manual test attributes about 95% of Spark sort latency to GPU depth
-    readback. Optimising the existing CPU sort or ordering upload cannot materially
-    solve the visual presentation limit.
+9. The first `cpu-flat` runs reached 29.0 player handoffs and 28.9 actual display
+   commits per second at medium quality. This is the first evidence that the streaming
+   path can produce visually distinct near-30-fps medium-tier playback.
+10. Full-tier `cpu-flat` playback is no longer sort-bound. With all compressed bytes
+    resident, four concurrent sequential decode-and-pack preparations produced 19.1 fps,
+    matching their measured 18.8 fps capacity estimate. Compressed delivery lowers this
+    further when it overlaps the preparation workload.
 
 ## Next measurements
 
@@ -438,14 +540,19 @@ this path are pending.
 - Compare Spark packing worker counts 2, 4, and 6 using the new queue, worker,
   result-transfer, and main-thread-bind timers; report aggregate throughput and CPU
   utilisation rather than selecting the lowest isolated latency.
-- Repeat minimum and medium playback in the same production session with a stationary
-  camera, identical SH/render settings, warm cache, and cleared diagnostics. Explain the
-  observed minimum-tier 124 ms sort versus medium-tier 14 ms sort before changing
-  ordering policy.
+- Repeat minimum, medium, and full playback in the same production session with a
+  stationary and moving camera, identical SH/render settings, warm cache, and cleared
+  diagnostics. Verify CPU-sort visual correctness as well as timing.
 - Compare `cpu-flat` and `gpu-readback` with the same stationary and moving camera,
   minimum/medium/full frames, warm cache, and cleared diagnostics. Record CPU-key or GPU
   readback time, worker sort, total sort, actual display commits, visual artifacts, and
   the 13-byte-per-splat buffered-memory increase.
+- For a delivery-independent full-tier run, raise the compressed-byte cache above the
+  approximately 305 MB tier size, wait for all 100 byte payloads to become resident,
+  clear diagnostics, and then play without using decoded-frame preload-all mode.
+- Measure the full-tier decode/pack concurrency matrix (at least 2/2, 4/2, and 4/4 codec
+  and pack workers). Report aggregate prepared frames/s, per-stage latency, outer queue,
+  and CPU utilisation; more workers may increase contention rather than throughput.
 - Measure aggregate localhost delivery correctly across overlapping requests and compare
   fetch concurrency 4, 6, and 8.
 - Expose and test Spark decode worker counts 4 and 6, recording CPU utilisation and
