@@ -43,6 +43,9 @@ export function selectFrameTransferQuality(
 
   return {
     quality: {
+      ...(selected.quality.codec === undefined && source.codec === undefined
+        ? {}
+        : { codec: selected.quality.codec ?? source.codec }),
       detailLevel: selected.detailLevel,
       level: selected.quality.level,
       mode: "fixed",
@@ -52,6 +55,9 @@ export function selectFrameTransferQuality(
     },
     source: {
       ...source,
+      ...(selected.quality.codec === undefined
+        ? {}
+        : { codec: selected.quality.codec }),
       ...(selected.quality.byteSize === undefined
         ? {}
         : { byteSize: selected.quality.byteSize }),

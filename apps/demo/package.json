@@ -11,6 +11,8 @@
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
+    "@6g-path/gaussian-codec": "workspace:*",
+    "@6g-path/gaussian-codec-spz": "workspace:*",
     "@6g-path/gaussian-content-tools": "workspace:*",
     "@6g-path/gaussian-player": "workspace:*",
     "@6g-path/gaussian-renderer-spark": "workspace:*",

@@ -15,6 +15,10 @@ export {
   type PackedFrameMemoryBenchmarkResult,
 } from "./benchmarkPackedFrameMemory.js";
 export {
+  packDecodedGaussianFrame,
+  type PackedDecodedGaussianFrame,
+} from "./packDecodedGaussianFrame.js";
+export {
   SparkFrameSlot,
   type SparkFrameSlotOptions,
   type SparkFrameSlotSnapshot,

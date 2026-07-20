@@ -21,6 +21,7 @@
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
+    "@6g-path/gaussian-codec": "workspace:*",
     "@6g-path/shared": "workspace:*",
     "ajv": "^8.20.0",
     "typebox": "^1.3.6"

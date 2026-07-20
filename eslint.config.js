@@ -13,6 +13,7 @@ export default tseslint.config(
       "**/dist/**",
       "**/node_modules/**",
       "playwright-report/**",
+      "packages/codec-spz/src/vendor/**",
       "test-results/**",
     ],
   },

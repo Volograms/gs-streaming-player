@@ -6,6 +6,26 @@ acceptance criteria are covered by implementation and verification.
 
 ## Active implementation slice: Flat dynamic quality-tier playback
 
+### Renderer-neutral codec boundary and SPZ v4 comparison
+
+- [x] Add a renderer-neutral decoded Gaussian frame contract and codec registry without
+      adding Spark or Three.js types to `player-core`.
+- [x] Integrate Niantic's official SPZ v4 streaming decoder in a persistent browser
+      worker pool and transfer decoded attribute buffers without cloning them back to
+      the main thread.
+- [x] Add a Spark renderer conversion layer that packs neutral attributes into
+      `PackedSplats`, keeping the renderer-native representation outside the codec.
+- [x] Keep legacy Spark SPZ v3 and neutral SPZ v4 as explicit, non-fallback demo paths
+      for clean A/B tests and later legacy removal.
+- [x] Split diagnostics into neutral codec decode, Spark adapter packing, and legacy
+      Spark SPZ decode timings.
+- [x] Add an offline command that repacks the existing flat quality-cut index with the
+      official SPZ v4 native tools and marks every output tier with `codec: "spz-v4"`.
+- [ ] Measure v3 versus v4 throughput, worker utilisation, intermediate memory, and
+      end-to-end 30 fps stability on the same hardware and tier set.
+- [ ] Add a second codec (candidate: SOG v2) and a second renderer adapter (candidate:
+      PlayCanvas) to validate that neither change affects byte buffering or playback.
+
 - [x] Integrate flat SPZ dynamic frames through Spark `PackedSplats` with LoD disabled,
       while retaining the existing paged RAD path for static scenes.
 - [x] Resolve each frame's transfer URL from the quality-controller decision and its

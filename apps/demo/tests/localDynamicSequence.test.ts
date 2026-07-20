@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   createLocalDynamicSequence,
   loadLocalDynamicSequence,
+  readLocalDynamicFrameCodec,
 } from "../src/localDynamicSequence.js";
 
 describe("createLocalDynamicSequence", () => {
@@ -52,6 +53,21 @@ describe("createLocalDynamicSequence", () => {
         VITE_DYNAMIC_RAD_START_FRAME: "41",
       }),
     ).toThrow(/END_FRAME/);
+  });
+
+  it("keeps legacy Spark SPZ implicit and marks official SPZ v4 explicitly", () => {
+    expect(readLocalDynamicFrameCodec({})).toBe("spark-spz-v3");
+    expect(
+      createLocalDynamicSequence({
+        VITE_DYNAMIC_FRAME_CODEC: "spz-v4",
+        VITE_DYNAMIC_RAD_BASE_URL: "/assets/actor",
+        VITE_DYNAMIC_RAD_END_FRAME: "40",
+        VITE_DYNAMIC_RAD_START_FRAME: "40",
+      })?.frames[0]?.codec,
+    ).toBe("spz-v4");
+    expect(() =>
+      readLocalDynamicFrameCodec({ VITE_DYNAMIC_FRAME_CODEC: "unknown" }),
+    ).toThrow(/VITE_DYNAMIC_FRAME_CODEC/);
   });
 
   it("loads generated flat quality tiers and resolves their URLs", async () => {

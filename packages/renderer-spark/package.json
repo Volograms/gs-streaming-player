@@ -19,6 +19,7 @@
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
+    "@6g-path/gaussian-codec": "workspace:*",
     "@6g-path/gaussian-player": "workspace:*",
     "@6g-path/shared": "workspace:*",
     "@sparkjsdev/spark": "2.1.0",

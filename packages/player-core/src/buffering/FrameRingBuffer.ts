@@ -25,6 +25,10 @@ import type {
   GaussianRendererAdapter,
   PreparedFrame,
 } from "../renderer/types.js";
+import type {
+  DecodedGaussianFrame,
+  GaussianFrameDecoderRegistry,
+} from "@6g-path/gaussian-codec";
 import type { Transform } from "@6g-path/shared";
 
 interface FrameRecord {
@@ -47,6 +51,8 @@ interface FrameRecord {
 
 export interface FrameRingBufferOptions extends FrameRingBufferConfiguration {
   compressedFrameFetch?: typeof fetch;
+  /** Optional renderer-neutral codecs keyed by the frame source's codec identifier. */
+  decoderRegistry?: GaussianFrameDecoderRegistry;
   now?: () => number;
   onTrace?: FrameRingBufferTraceListener;
   presentationQualityTarget?: FrameQualityTarget;
@@ -63,6 +69,7 @@ type SnapshotListener = (snapshot: FrameRingBufferSnapshot) => void;
 export class FrameRingBuffer {
   private readonly basePreparationScheduler: FramePreparationScheduler;
   private readonly compressedFrameCache: CompressedFrameCache | undefined;
+  private readonly decoderRegistry: GaussianFrameDecoderRegistry | undefined;
   private readonly futureFrameCount: number;
   private readonly listeners = new Set<SnapshotListener>();
   private readonly loop: boolean;
@@ -83,6 +90,7 @@ export class FrameRingBuffer {
 
   constructor(options: FrameRingBufferOptions) {
     this.renderer = options.renderer;
+    this.decoderRegistry = options.decoderRegistry;
     this.sequence = options.sequence;
     this.transformValue = options.sequence.transform;
     this.futureFrameCount = options.futureFrameCount ?? 3;
@@ -485,6 +493,11 @@ export class FrameRingBuffer {
       totalBytes: record.requestedBytes,
       type: "base-requested",
     });
+    const trace = (event: Omit<FrameRingBufferTraceEvent, "atMs" | "frameIndex">) => {
+      this.trace({ ...event, frameIndex });
+    };
+    const codecId = preparedSource.codec ?? selectedTransfer?.quality.codec;
+    const requiresExternalDecode = codecId !== undefined;
     const enqueueDecode = (cachedBytes?: ArrayBuffer) => {
       const decodeQueuedAtMs = this.now();
       return this.basePreparationScheduler.enqueue(
@@ -503,64 +516,72 @@ export class FrameRingBuffer {
             type: "base-started",
           });
           this.emit();
-          return this.renderer.prepareFrame(this.sequence.id, preparedSource, {
-            ...(cachedBytes === undefined ? {} : { compressedBytes: cachedBytes }),
-            signal: controller.signal,
-            minimumQualityOnly: true,
-            onProgress: ({ loadedBytes, totalBytes }) => {
-              record.downloadedBytes = loadedBytes;
-              record.requestedBytes = totalBytes ?? record.requestedBytes;
-              const progressKey = `${loadedBytes}:${record.requestedBytes}`;
-              if (progressKey !== record.traceProgressKey) {
-                record.traceProgressKey = progressKey;
-                this.trace({
-                  durationMs: this.now() - baseRequestedAtMs,
-                  frameIndex,
-                  loadedBytes,
-                  totalBytes: record.requestedBytes,
-                  type: "base-progress",
-                });
-              }
-              this.emit();
-            },
-            onTrace: ({
-              chunkIndex,
-              elapsedMs,
-              pageIndex,
-              phase,
-              quality,
-              reusedPage,
-              stageDurationMs,
-            }) => {
-              this.trace({
-                ...(chunkIndex === undefined ? {} : { chunkIndex }),
-                durationMs: elapsedMs,
-                frameIndex,
-                ...(pageIndex === undefined ? {} : { pageIndex }),
+          const prepareRendererFrame = (decodedFrame?: DecodedGaussianFrame) =>
+            this.renderer.prepareFrame(this.sequence.id, preparedSource, {
+              ...(cachedBytes === undefined ? {} : { compressedBytes: cachedBytes }),
+              ...(decodedFrame === undefined ? {} : { decodedFrame }),
+              signal: controller.signal,
+              minimumQualityOnly: true,
+              onProgress: ({ loadedBytes, totalBytes }) => {
+                record.downloadedBytes = loadedBytes;
+                record.requestedBytes = totalBytes ?? record.requestedBytes;
+                const progressKey = `${loadedBytes}:${record.requestedBytes}`;
+                if (progressKey !== record.traceProgressKey) {
+                  record.traceProgressKey = progressKey;
+                  this.trace({
+                    durationMs: this.now() - baseRequestedAtMs,
+                    frameIndex,
+                    loadedBytes,
+                    totalBytes: record.requestedBytes,
+                    type: "base-progress",
+                  });
+                }
+                this.emit();
+              },
+              onTrace: ({
+                chunkIndex,
+                elapsedMs,
+                pageIndex,
                 phase,
-                ...(quality === undefined
-                  ? {}
-                  : { quality: this.copyQuality(quality) }),
-                ...(reusedPage === undefined ? {} : { reusedPage }),
-                ...(stageDurationMs === undefined ? {} : { stageDurationMs }),
-                type: "renderer-phase",
-              });
-            },
-            ...(requestedTransform === undefined
-              ? {}
-              : { transform: requestedTransform }),
-            ...(selectedTransfer === undefined
-              ? {}
-              : {
-                  targetQualityLevel: selectedTransfer.quality.level,
-                  transferQuality: selectedTransfer.quality,
-                }),
-          });
+                quality,
+                reusedPage,
+                stageDurationMs,
+              }) => {
+                this.trace({
+                  ...(chunkIndex === undefined ? {} : { chunkIndex }),
+                  durationMs: elapsedMs,
+                  frameIndex,
+                  ...(pageIndex === undefined ? {} : { pageIndex }),
+                  phase,
+                  ...(quality === undefined
+                    ? {}
+                    : { quality: this.copyQuality(quality) }),
+                  ...(reusedPage === undefined ? {} : { reusedPage }),
+                  ...(stageDurationMs === undefined ? {} : { stageDurationMs }),
+                  type: "renderer-phase",
+                });
+              },
+              ...(requestedTransform === undefined
+                ? {}
+                : { transform: requestedTransform }),
+              ...(selectedTransfer === undefined
+                ? {}
+                : {
+                    targetQualityLevel: selectedTransfer.quality.level,
+                    transferQuality: selectedTransfer.quality,
+                  }),
+            });
+          return codecId === undefined
+            ? prepareRendererFrame()
+            : this.decodeFrame(codecId, cachedBytes, controller.signal, trace).then(
+                prepareRendererFrame,
+              );
         },
       );
     };
     const basePreparation =
-      this.compressedFrameCache === undefined || selectedTransfer === undefined
+      this.compressedFrameCache === undefined ||
+      (selectedTransfer === undefined && !requiresExternalDecode)
         ? enqueueDecode()
         : this.compressedFrameCache
             .get(
@@ -604,6 +625,35 @@ export class FrameRingBuffer {
     this.records.set(frameIndex, record);
     this.emit();
     return record.preparation;
+  }
+
+  private async decodeFrame(
+    codecId: string,
+    cachedBytes: ArrayBuffer | undefined,
+    signal: AbortSignal,
+    trace: (event: Omit<FrameRingBufferTraceEvent, "atMs" | "frameIndex">) => void,
+  ): Promise<DecodedGaussianFrame> {
+    if (cachedBytes === undefined) {
+      throw new Error(
+        `Codec '${codecId}' requires the independent compressed-frame buffer.`,
+      );
+    }
+    if (this.decoderRegistry === undefined || !this.decoderRegistry.has(codecId)) {
+      throw new Error(`No Gaussian frame decoder is registered for '${codecId}'.`);
+    }
+    const decodeStartedAt = this.now();
+    trace({ codecId, type: "codec-decode-started" });
+    const decodedFrame = await this.decoderRegistry.decode(
+      codecId,
+      new Uint8Array(cachedBytes),
+      { coordinateSystem: "RUB", signal },
+    );
+    trace({
+      codecId,
+      durationMs: this.now() - decodeStartedAt,
+      type: "codec-decode-ready",
+    });
+    return decodedFrame;
   }
 
   /**
@@ -716,12 +766,11 @@ export class FrameRingBuffer {
         source,
         this.presentationQualityTarget.detailLevel,
       );
-      if (selectedTransfer === undefined) {
+      const preparedSource = selectedTransfer?.source ?? source;
+      if (selectedTransfer === undefined && preparedSource.codec === undefined) {
         continue;
       }
-      requests.push(
-        this.toCompressedFrameRequest(requestedFrameIndex, selectedTransfer.source),
-      );
+      requests.push(this.toCompressedFrameRequest(requestedFrameIndex, preparedSource));
     }
     this.compressedFrameCache.setPlan(requests);
   }

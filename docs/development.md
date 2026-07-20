@@ -93,6 +93,54 @@ first, clears all child metadata, and applies Spark's footprint-preserving LoD-o
 conversion before SPZ encoding. The resulting files therefore load through
 `PackedSplats` as ordinary non-LoD assets.
 
+### Repacking flat tiers as official SPZ v4
+
+The original quality-cut exporter writes Spark-compatible SPZ v3. For a renderer-neutral
+decode comparison, build Niantic's official native SPZ tools at the revision pinned in
+[`packages/codec-spz/UPSTREAM.md`](../packages/codec-spz/UPSTREAM.md):
+
+```bash
+git clone https://github.com/nianticlabs/spz.git ../spz
+git -C ../spz checkout 21715c3b481380ad51809698a6ba24c9d88145b0
+cmake -G Ninja -S ../spz -B ../spz/build-native -DCMAKE_BUILD_TYPE=Release
+cmake --build ../spz/build-native
+```
+
+Re-encode every tier referenced by an existing index:
+
+```bash
+pnpm gs-content repack-spz-v4 \
+  ../sparkjs/data-ply/dynamic/rafa-pitch-cuts/quality-cuts.json \
+  --output-dir ../sparkjs/data-ply/dynamic/rafa-pitch-cuts-v4 \
+  --spz-tools-dir ../spz/build-native
+```
+
+The command uses the official `spz_to_ply` and `ply_to_spz` executables, preserves the
+relative tier filenames, validates the v4 `NGSP` header, updates byte sizes, and writes
+`codec: "spz-v4"` into the copied index. Existing outputs are protected; use `--force`
+only when intentionally replacing the generated set. The PLY intermediate means this is
+an offline compatibility path, not a lossless byte-to-byte transcode.
+
+Expose the resulting set and run the neutral v4 decoder plus Spark adapter:
+
+```bash
+ln -s /absolute/path/to/rafa-pitch-cuts-v4 \
+  apps/demo/public/assets/local-dynamic-cuts-v4
+
+VITE_DYNAMIC_FRAME_CODEC=spz-v4 \
+VITE_DYNAMIC_QUALITY_INDEX_URL=/assets/local-dynamic-cuts-v4/quality-cuts.json \
+VITE_DYNAMIC_RAD_START_FRAME=1 \
+VITE_DYNAMIC_RAD_END_FRAME=100 \
+VITE_DYNAMIC_RAD_FRAME_RATE=30 \
+pnpm dev
+```
+
+For the legacy A/B run, point back to the original v3 index and set
+`VITE_DYNAMIC_FRAME_CODEC=spark-spz-v3` (the default). Do not select `spz-v4` for v3
+files: codec choice is explicit and there is no silent cross-version fallback. The
+compressed cache and playback scheduler are identical in both runs; only decode and
+renderer preparation differ.
+
 Expose the generated directory to the local demo:
 
 ```bash
@@ -123,9 +171,10 @@ handoff so independently encoded SPZ frames are sorted correctly.
 
 Normal streaming uses two independent stages. A byte-budgeted compressed SPZ cache runs
 ahead of playback, then a twelve-frame renderer window (the current frame, one previous,
-and ten future frames) decodes resident bytes through Spark's worker pool. Network waits
-therefore do not occupy decode slots. Demo defaults are 200 MB, six concurrent fetches,
-and four concurrent frame decodes. Override them for device/network experiments:
+and ten future frames) submits resident bytes through the selected codec and renderer
+preparation path. Network waits therefore do not occupy decode slots. Demo defaults are
+200 MB, six concurrent fetches, and four concurrent frame decodes. Override them for
+device/network experiments:
 
 ```bash
 VITE_DYNAMIC_COMPRESSED_BUFFER_MB=200 \
@@ -173,11 +222,14 @@ submission, `Spark update` covers Spark's generator/update cycle, and `Spark sor
 measures actual sort jobs started by that cycle. `Sort GPU readback`, `Sort worker`, and
 `Sort order upload` divide that total into the depth readback, worker computation, and
 ordering-texture update stages. `Flat frame copy` measures the CPU attribute copy into
-the reusable display allocation. Samples are emitted in batches approximately every 500
-ms so measurement does not add a React update or console entry to every displayed frame.
-The viewport overlay reports the current `Dynamic cap` in splats and the number of
-capacity-growing `Reallocs`; the latter should remain stable once the largest frame seen
-so far fits the shared allocation.
+the reusable display allocation. For the neutral path, `Neutral codec decode` measures
+official SPZ v4 decompression and attribute reconstruction in its worker, while
+`Spark adapter pack` measures conversion to `PackedSplats`. `Legacy Spark SPZ decode` is
+shown separately for v3 comparisons. Samples are emitted in batches approximately every
+500 ms so measurement does not add a React update or console entry to every displayed
+frame. The viewport overlay reports the current `Dynamic cap` in splats and the number
+of capacity-growing `Reallocs`; the latter should remain stable once the largest frame
+seen so far fits the shared allocation.
 
 Record comparable hardware results in the living
 [`project/PERFORMANCE.md`](project/PERFORMANCE.md) report. It defines the stage names,

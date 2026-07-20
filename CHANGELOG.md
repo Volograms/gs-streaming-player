@@ -7,6 +7,14 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- Renderer-neutral Gaussian codec contracts and registry, separating opaque compressed
+  byte buffering from decoding and renderer-native packing.
+- Official Niantic SPZ v4 worker decoder with persistent concurrency, transferable
+  attribute arrays, pinned vendored WASM, and an explicit `spz-v4` content codec ID.
+- Spark adapter packing from neutral Gaussian attributes into `PackedSplats`, with
+  separate codec-decode and renderer-pack performance diagnostics.
+- Explicit `spark-spz-v3`/`spz-v4` demo selection for clean A/B testing, plus a content
+  command that repacks existing flat quality tiers through the official SPZ v4 tools.
 - Initial product and implementation plan.
 - Milestone M0 pnpm workspace with independently buildable player, Spark renderer,
   telemetry, content-tool, shared, and demo packages.

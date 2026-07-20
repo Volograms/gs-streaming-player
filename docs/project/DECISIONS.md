@@ -16,6 +16,7 @@ used during day-to-day implementation.
 | 0008 | Gate presentation quality and use an absolute clock | Accepted |
 | 0009 | Export flat dynamic quality tiers from RAD trees    | Accepted |
 | 0010 | Separate compressed and decoded frame buffers       | Accepted |
+| 0011 | Separate Gaussian codecs from renderer adapters     | Accepted |
 
 ## Working conventions
 
@@ -103,6 +104,12 @@ used during day-to-day implementation.
 - Separate tier files are accepted for the first measurable version. A packed
   multi-frame container and temporal compression remain a later optimisation after the
   flat-tier playback baseline is measured.
+- Compressed-byte streaming, Gaussian decoding, and renderer-native packing are separate
+  boundaries. Content selects a codec explicitly; the first neutral path uses official
+  Niantic SPZ v4 and the first renderer sink is Spark `PackedSplats`.
+- The legacy Spark-owned SPZ v3 loader remains an explicit A/B compatibility path. It
+  does not act as an implicit fallback for SPZ v4 content, so the entire legacy route
+  can be removed cleanly after comparison.
 - Renderer-native packed frame storage remains an experiment until its measured
   clone/bind cost is compared with SPZ decoding. The benchmark uses an ephemeral
   contiguous payload and does not establish a file header, manifest contract, or stable

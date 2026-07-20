@@ -121,7 +121,15 @@ export function PlaybackPerformancePanel({
           <dd>{formatTiming(summary.sortOrderingUpload)}</dd>
         </div>
         <div>
-          <dt>SPZ decode + worker transfer p50 / p95</dt>
+          <dt>Neutral codec decode p50 / p95</dt>
+          <dd>{formatTiming(summary.codecDecode)}</dd>
+        </div>
+        <div>
+          <dt>Spark adapter pack p50 / p95</dt>
+          <dd>{formatTiming(summary.flatPack)}</dd>
+        </div>
+        <div>
+          <dt>Legacy Spark SPZ decode p50 / p95</dt>
           <dd>{formatTiming(summary.flatDecode)}</dd>
         </div>
         <div>

@@ -1,5 +1,6 @@
 import { waitWithAbort } from "./abort.js";
 import { SparkRendererAbortError, SparkRendererStateError } from "./errors.js";
+import { packDecodedGaussianFrame } from "./packDecodedGaussianFrame.js";
 import { applyTransform } from "./transform.js";
 
 import type {
@@ -147,7 +148,8 @@ export class SparkFrameSlot {
     this.abortController = controller;
     const unlinkExternalSignal = this.linkExternalSignal(options.signal, controller);
     const preparationStartedAt = this.options.getNow();
-    const fixedTransfer = options.transferQuality?.mode === "fixed";
+    const fixedTransfer =
+      options.decodedFrame !== undefined || options.transferQuality?.mode === "fixed";
     const trace = (
       phase: RendererFramePreparationPhase,
       quality?: FramePresentationQuality,
@@ -188,14 +190,26 @@ export class SparkFrameSlot {
     };
 
     try {
+      const packedFrame =
+        options.decodedFrame === undefined
+          ? undefined
+          : packDecodedGaussianFrame(options.decodedFrame, this.options.getNow);
+      if (packedFrame !== undefined) {
+        trace("flat-pack", undefined, { stageDurationMs: packedFrame.durationMs });
+      }
       const mesh = this.options.createSplatMesh({
         editable: false,
-        ...(options.compressedBytes === undefined
-          ? { url: source.url }
-          : {
-              fileBytes: options.compressedBytes,
-              fileName: source.url,
-            }),
+        ...(packedFrame !== undefined
+          ? {
+              maxSplats: packedFrame.packedSplats.maxSplats,
+              packedSplats: packedFrame.packedSplats,
+            }
+          : options.compressedBytes === undefined
+            ? { url: source.url }
+            : {
+                fileBytes: options.compressedBytes,
+                fileName: source.url,
+              }),
         ...(fixedTransfer ? { enableLod: false, lod: false, paged: false } : {}),
         onProgress: (event) => {
           if (controller.signal.aborted) {
@@ -217,6 +231,11 @@ export class SparkFrameSlot {
         },
         ...(!fixedTransfer ? { paged: true } : {}),
       });
+      if (packedFrame !== undefined) {
+        mesh.numSplats = packedFrame.packedSplats.numSplats;
+        mesh.maxSh = Math.min(3, options.decodedFrame?.shDegree ?? 0) as 0 | 1 | 2 | 3;
+        mesh.updateGenerator();
+      }
       mesh.visible = false;
       this.meshValue = mesh;
       installPreparationTrace(mesh);
@@ -225,7 +244,7 @@ export class SparkFrameSlot {
       await waitWithAbort(mesh.initialized, controller.signal, () => undefined);
       installPreparationTrace(mesh);
       trace("resource-initialized");
-      if (fixedTransfer) {
+      if (fixedTransfer && packedFrame === undefined) {
         trace("flat-decode", undefined, {
           stageDurationMs: this.options.getNow() - resourceCreatedAt,
         });
@@ -234,7 +253,7 @@ export class SparkFrameSlot {
         throw new SparkRendererStateError(`Frame slot ${this.slotId} was released.`);
       }
       if (fixedTransfer) {
-        this.fixedDetailLevelValue = options.transferQuality?.detailLevel;
+        this.fixedDetailLevelValue = options.transferQuality?.detailLevel ?? 1;
         this.maximumSplatCountValue =
           options.transferQuality?.splatCount ?? mesh.numSplats;
         this.loadedBytesValue =

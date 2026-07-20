@@ -4,11 +4,14 @@ import type {
   StaticSceneObject,
 } from "../manifest/types.js";
 import type { QualityDecision } from "../quality/types.js";
+import type { DecodedGaussianFrame } from "@6g-path/gaussian-codec";
 import type { Transform } from "@6g-path/shared";
 
 export interface FramePreparationOptions {
   /** Complete compressed frame bytes supplied by an independent network buffer. */
   compressedBytes?: ArrayBuffer;
+  /** Renderer-neutral attributes decoded before entering the renderer adapter. */
+  decodedFrame?: Readonly<DecodedGaussianFrame>;
   signal?: AbortSignal;
   /** Stop after the renderer's minimum drawable quality instead of refinement. */
   minimumQualityOnly?: boolean;
@@ -23,6 +26,8 @@ export interface FramePreparationOptions {
 }
 
 export interface FrameTransferQuality {
+  /** Decoder identifier for this independently addressable representation. */
+  codec?: string;
   /** Content detail represented by this complete asset in the range (0, 1]. */
   detailLevel: number;
   /** Manifest quality-level identifier. */
@@ -67,6 +72,7 @@ export type FrameQualityProgressCallback = (
 export type RendererFramePreparationPhase =
   | "resource-created"
   | "resource-initialized"
+  | "flat-pack"
   | "flat-decode"
   | "flat-render-fence"
   | "metadata-ready"

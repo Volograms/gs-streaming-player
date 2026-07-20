@@ -21,6 +21,8 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "paths": {
+      "@6g-path/gaussian-codec": ["./packages/codec-core/src/index.ts"],
+      "@6g-path/gaussian-codec-spz": ["./packages/codec-spz/src/index.ts"],
       "@6g-path/gaussian-content-tools": ["./packages/content-tools/src/index.ts"],
       "@6g-path/gaussian-player": ["./packages/player-core/src/index.ts"],
       "@6g-path/gaussian-renderer-spark": ["./packages/renderer-spark/src/index.ts"],

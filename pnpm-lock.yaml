@@ -74,6 +74,12 @@ importers:
 
   apps/demo:
     dependencies:
+      '@6g-path/gaussian-codec':
+        specifier: workspace:*
+        version: link:../../packages/codec-core
+      '@6g-path/gaussian-codec-spz':
+        specifier: workspace:*
+        version: link:../../packages/codec-spz
       '@6g-path/gaussian-content-tools':
         specifier: workspace:*
         version: link:../../packages/content-tools
@@ -103,6 +109,14 @@ importers:
         specifier: 0.180.0
         version: 0.180.0
 
+  packages/codec-core: {}
+
+  packages/codec-spz:
+    dependencies:
+      '@6g-path/gaussian-codec':
+        specifier: workspace:*
+        version: link:../codec-core
+
   packages/content-tools:
     dependencies:
       '@6g-path/gaussian-player':
@@ -111,6 +125,9 @@ importers:
 
   packages/player-core:
     dependencies:
+      '@6g-path/gaussian-codec':
+        specifier: workspace:*
+        version: link:../codec-core
       '@6g-path/shared':
         specifier: workspace:*
         version: link:../shared
@@ -123,6 +140,9 @@ importers:
 
   packages/renderer-spark:
     dependencies:
+      '@6g-path/gaussian-codec':
+        specifier: workspace:*
+        version: link:../codec-core
       '@6g-path/gaussian-player':
         specifier: workspace:*
         version: link:../player-core

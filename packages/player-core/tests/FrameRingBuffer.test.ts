@@ -1,3 +1,4 @@
+import { GaussianFrameDecoderRegistry } from "@6g-path/gaussian-codec";
 import { describe, expect, it, vi } from "vitest";
 
 import { FrameRingBuffer } from "../src/index.js";
@@ -11,6 +12,7 @@ import type {
   GaussianRendererAdapter,
   PreparedFrame,
 } from "../src/index.js";
+import type { DecodedGaussianFrame } from "@6g-path/gaussian-codec";
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -178,6 +180,61 @@ function createRendererHarness({ automaticQuality = true } = {}) {
 }
 
 describe("FrameRingBuffer", () => {
+  it("decodes codec-tagged bytes before passing neutral attributes to the renderer", async () => {
+    const harness = createRendererHarness();
+    const sequence = createSequence(1);
+    sequence.frames[0] = {
+      ...sequence.frames[0]!,
+      byteSize: 4,
+      codec: "spz-v4",
+      url: "/frame-0.spz",
+    };
+    const decodedFrame: DecodedGaussianFrame = {
+      alphas: new Float32Array([1]),
+      antialiased: false,
+      codecId: "spz-v4",
+      colors: new Float32Array([1, 1, 1]),
+      coordinateSystem: "RUB",
+      numSplats: 1,
+      positions: new Float32Array([0, 0, 0]),
+      rotations: new Float32Array([0, 0, 0, 1]),
+      scales: new Float32Array([1, 1, 1]),
+      shDegree: 0,
+      sphericalHarmonics: new Float32Array(),
+    };
+    const decode = vi.fn(async () => decodedFrame);
+    const trace: FrameRingBufferTraceEvent[] = [];
+    const buffer = new FrameRingBuffer({
+      compressedBufferMaximumBytes: 16,
+      compressedFrameFetch: vi.fn(async () =>
+        Promise.resolve(new Response(new Uint8Array([1, 2, 3, 4]))),
+      ),
+      decoderRegistry: new GaussianFrameDecoderRegistry([
+        { codecId: "spz-v4", decode },
+      ]),
+      futureFrameCount: 0,
+      onTrace: (event) => trace.push(event),
+      renderer: harness.renderer,
+      sequence,
+    });
+
+    void buffer.initialise(0).catch(() => undefined);
+
+    await vi.waitFor(() => expect(harness.prepareFrame).toHaveBeenCalledOnce());
+    expect(decode).toHaveBeenCalledWith(
+      expect.any(Uint8Array),
+      expect.objectContaining({ coordinateSystem: "RUB" }),
+    );
+    expect(harness.prepareFrame.mock.calls[0]?.[2]).toMatchObject({
+      compressedBytes: expect.any(ArrayBuffer),
+      decodedFrame,
+    });
+    expect(trace.map(({ type }) => type)).toEqual(
+      expect.arrayContaining(["codec-decode-started", "codec-decode-ready"]),
+    );
+    buffer.dispose();
+  });
+
   it("prefetches compressed bytes beyond the decoded frame window", async () => {
     const harness = createRendererHarness();
     const sequence = createSequence(8);

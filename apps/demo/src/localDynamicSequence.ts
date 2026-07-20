@@ -11,6 +11,8 @@ const DEFAULT_END_FRAME = 50;
 
 type Environment = Record<string, string | undefined>;
 
+export type LocalDynamicFrameCodec = "spark-spz-v3" | "spz-v4";
+
 interface QualityCutFrame {
   qualityLevels: GaussianQualityLevel[];
   sourceFile: string;
@@ -52,6 +54,16 @@ function readFrameRate(environment: Environment): number {
   return parsed;
 }
 
+export function readLocalDynamicFrameCodec(
+  environment: Environment,
+): LocalDynamicFrameCodec {
+  const value = environment.VITE_DYNAMIC_FRAME_CODEC ?? "spark-spz-v3";
+  if (value !== "spark-spz-v3" && value !== "spz-v4") {
+    throw new Error("VITE_DYNAMIC_FRAME_CODEC must be 'spark-spz-v3' or 'spz-v4'.");
+  }
+  return value;
+}
+
 export function createLocalDynamicSequence(
   environment: Environment,
 ): DynamicGaussianSequence | undefined {
@@ -78,6 +90,7 @@ export function createLocalDynamicSequence(
   }
 
   const frameRate = readFrameRate(environment);
+  const codec = readLocalDynamicFrameCodec(environment);
   const sourceFrameIndices = Array.from(
     { length: endFrame - startFrame + 1 },
     (_, index) => startFrame + index,
@@ -87,6 +100,7 @@ export function createLocalDynamicSequence(
     frameCount: sourceFrameIndices.length,
     frameRate,
     frames: sourceFrameIndices.map((sourceFrameIndex, frameIndex) => ({
+      ...(codec === "spz-v4" ? { codec } : {}),
       frameIndex,
       metadata: { sourceFrameIndex },
       timestampSeconds: frameIndex / frameRate,
@@ -146,6 +160,7 @@ export async function loadLocalDynamicSequence(
     );
   }
   const frameRate = readFrameRate(environment);
+  const codec = readLocalDynamicFrameCodec(environment);
   const radBaseUrl = environment.VITE_DYNAMIC_RAD_BASE_URL?.replace(/\/+$/, "");
   const sourceFrameIndices = Array.from(
     { length: endFrame - startFrame + 1 },
@@ -163,7 +178,7 @@ export async function loadLocalDynamicSequence(
         );
       }
       const qualityLevels = cutFrame.qualityLevels.map((quality) =>
-        normaliseQualityLevel(quality, indexUrl),
+        normaliseQualityLevel(quality, indexUrl, codec),
       );
       const fallbackUrl =
         radBaseUrl === undefined
@@ -176,6 +191,7 @@ export async function loadLocalDynamicSequence(
         );
       }
       return {
+        ...(codec === "spz-v4" ? { codec } : {}),
         frameIndex,
         metadata: { sourceFrameIndex },
         qualityLevels,
@@ -254,12 +270,14 @@ function readQualityRatio(
 function normaliseQualityLevel(
   quality: GaussianQualityLevel,
   indexUrl: string,
+  codec: LocalDynamicFrameCodec,
 ): GaussianQualityLevel {
   const inferredDetailLevel =
     readQualityRatio(quality, "targetLeafRatio") ??
     readQualityRatio(quality, "actualLeafRatio");
   return {
     ...quality,
+    ...(codec === "spz-v4" ? { codec } : {}),
     ...(quality.detailLevel === undefined && inferredDetailLevel !== undefined
       ? { detailLevel: inferredDetailLevel }
       : {}),

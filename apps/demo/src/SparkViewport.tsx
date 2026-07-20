@@ -1,3 +1,5 @@
+import { GaussianFrameDecoderRegistry } from "@6g-path/gaussian-codec";
+import { SpzV4Decoder } from "@6g-path/gaussian-codec-spz";
 import {
   BufferAwareQualityController,
   ClientThroughputEstimator,
@@ -17,6 +19,7 @@ import { DynamicTransferQualityControls } from "./DynamicTransferQualityControls
 import {
   hasLocalDynamicSequenceConfiguration,
   loadLocalDynamicSequence,
+  readLocalDynamicFrameCodec,
 } from "./localDynamicSequence.js";
 import { PackedFrameMemoryBenchmarkControls } from "./PackedFrameMemoryBenchmarkControls.js";
 import { RendererMetricsOverlay } from "./RendererMetricsOverlay.js";
@@ -46,6 +49,7 @@ type DynamicAssetStatus = "failed" | "loading" | "not-configured" | "ready";
 
 const staticRadUrl = import.meta.env.VITE_STATIC_RAD_URL;
 const dynamicSequenceConfigured = hasLocalDynamicSequenceConfiguration(import.meta.env);
+const dynamicFrameCodec = readLocalDynamicFrameCodec(import.meta.env);
 const preloadCompleteDynamicSequence =
   import.meta.env.VITE_DYNAMIC_PRELOAD_ALL_FRAMES === "true";
 const dynamicSequenceId = "local-dynamic-sequence";
@@ -162,6 +166,12 @@ export function SparkViewport({
     let unsubscribeBuffer: (() => void) | undefined;
     let unsubscribePlayback: (() => void) | undefined;
     const controller = new AbortController();
+    const decoderRegistry =
+      dynamicFrameCodec === "spz-v4"
+        ? new GaussianFrameDecoderRegistry([
+            new SpzV4Decoder({ maximumWorkers: dynamicDecodeConcurrency }),
+          ])
+        : undefined;
     const adapter = new SparkGaussianRendererAdapter({
       autoRender: false,
       canvas,
@@ -363,6 +373,7 @@ export function SparkViewport({
             : 10;
           const buffer = new FrameRingBuffer({
             compressedBufferMaximumBytes,
+            ...(decoderRegistry === undefined ? {} : { decoderRegistry }),
             futureFrameCount,
             loop: true,
             maximumBasePreparationConcurrency: dynamicDecodeConcurrency,
@@ -485,6 +496,7 @@ export function SparkViewport({
         adapter.renderer.setAnimationLoop(null);
       }
       adapter.dispose();
+      decoderRegistry?.dispose();
     };
   }, []);
 

@@ -103,4 +103,48 @@ describe("gs-manifest CLI", () => {
     expect(exitCode).toBe(2);
     expect(output.stderr.join("\n")).toContain("--output-dir");
   });
+
+  it("forwards SPZ v4 repacking options", async () => {
+    const output = createIo();
+    const requests: unknown[] = [];
+    const exitCode = await runCli(
+      [
+        "repack-spz-v4",
+        "cuts/quality-cuts.json",
+        "--output-dir",
+        "cuts-v4",
+        "--spz-tools-dir",
+        "/opt/spz/build-native",
+        "--force",
+      ],
+      output.io,
+      {
+        repackSpzV4: async (request) => {
+          requests.push(request);
+          return 0;
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(requests).toEqual([
+      {
+        force: true,
+        indexPath: "cuts/quality-cuts.json",
+        outputDir: "cuts-v4",
+        spzToolsDir: "/opt/spz/build-native",
+      },
+    ]);
+  });
+
+  it("requires the SPZ v4 output and tool directories", async () => {
+    const output = createIo();
+    const exitCode = await runCli(
+      ["repack-spz-v4", "cuts/quality-cuts.json"],
+      output.io,
+    );
+
+    expect(exitCode).toBe(2);
+    expect(output.stderr.join("\n")).toContain("--spz-tools-dir");
+  });
 });

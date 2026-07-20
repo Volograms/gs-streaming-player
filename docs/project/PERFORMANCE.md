@@ -5,7 +5,7 @@ important results, test conditions, interpretations, and limitations independent
 chat history. Update it when a renderer, decoder, scheduler, content encoding, browser,
 or device change materially affects the pipeline.
 
-Last updated: 2026-07-17.
+Last updated: 2026-07-20.
 
 ## Measurement rules
 
@@ -27,17 +27,19 @@ Last updated: 2026-07-17.
 
 ## Pipeline terminology
 
-| Stage                        | Meaning                                                                                                                                                                                                    |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Compressed fetch             | Whole flat-SPZ payload delivery into the byte-budgeted cache. A cache hit has no fetch wait.                                                                                                               |
-| Decode queue                 | Wait after compressed bytes are resident and before a Spark worker is available.                                                                                                                           |
-| SPZ decode + worker transfer | Spark worker RPC that inflates SPZ, decodes and repacks every splat into `PackedSplats`, and returns the typed arrays. Current `flat-decode` timing also includes resource initialisation around that RPC. |
-| RAD root preparation         | Paged RAD metadata, root chunk fetch/decode, GPU-page allocation/upload, tree registration/update/traversal, and minimum-renderable confirmation.                                                          |
-| Refinement                   | Work required to reach the configured presentation-quality target after base readiness.                                                                                                                    |
-| Flat frame copy              | CPU attribute copy from a buffered frame into the one reusable GPU-facing `PackedSplats` allocation.                                                                                                       |
-| Spark sort                   | GPU depth readback, worker index sort, and ordering-texture upload/submission. It is separate from SPZ decode.                                                                                             |
-| Presentation gate            | Final achieved-quality check immediately before handoff.                                                                                                                                                   |
-| Handoff                      | Visibility/display-resource switch after the gate passes.                                                                                                                                                  |
+| Stage                   | Meaning                                                                                                                                           |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Compressed fetch        | Whole flat-SPZ payload delivery into the byte-budgeted cache. A cache hit has no fetch wait.                                                      |
+| Decode queue            | Wait after compressed bytes are resident and before a Spark worker is available.                                                                  |
+| Legacy Spark SPZ decode | Spark worker RPC that inflates SPZ v3, reconstructs and packs every splat into `PackedSplats`, and returns typed arrays.                          |
+| Neutral codec decode    | Official SPZ v4 WASM decompression and reconstruction into renderer-neutral Gaussian attribute arrays in the codec worker pool.                   |
+| Spark adapter pack      | Main-thread conversion from neutral Gaussian attributes into Spark `PackedSplats`; it excludes transfer and sorting.                              |
+| RAD root preparation    | Paged RAD metadata, root chunk fetch/decode, GPU-page allocation/upload, tree registration/update/traversal, and minimum-renderable confirmation. |
+| Refinement              | Work required to reach the configured presentation-quality target after base readiness.                                                           |
+| Flat frame copy         | CPU attribute copy from a buffered frame into the one reusable GPU-facing `PackedSplats` allocation.                                              |
+| Spark sort              | GPU depth readback, worker index sort, and ordering-texture upload/submission. It is separate from SPZ decode.                                    |
+| Presentation gate       | Final achieved-quality check immediately before handoff.                                                                                          |
+| Handoff                 | Visibility/display-resource switch after the gate passes.                                                                                         |
 
 ## Test content and expected rate
 
@@ -275,6 +277,24 @@ The equivalent full-tier SH3 hardware result is still required. It must record t
 payload expansion as well as clone and bind time before any renderer-native runtime
 format is accepted.
 
+### 7. Official SPZ v4 neutral-path smoke test — 2026-07-20
+
+An actual 27,882-splat, SH0 preview frame was round-tripped from the Spark-generated v3
+file through the official Niantic native tools (`spz_to_ply`, then `ply_to_spz`). The
+source was approximately 351 KB and the v4 output approximately 347 KB. These rounded
+sizes are a format-path sanity check, not a compression comparison because the PLY
+intermediate can quantise or normalise attributes.
+
+The official v4 WASM decoder then loaded that output in a persistent browser worker,
+returned renderer-neutral attribute arrays, and the Spark adapter packed and presented
+the result in the Playwright Chromium demo smoke test. This validates integration and
+lifecycle only: headless software WebGL took about 1.2 minutes and is not a useful
+throughput measurement.
+
+Diagnostics now report neutral codec decode and Spark adapter packing separately from
+the legacy Spark-owned v3 decode path. A controlled hardware A/B measurement over the
+same complete tier set remains pending.
+
 ## Current conclusions
 
 1. Player scheduling, handoff, and the reusable display allocation can sustain 30 fps
@@ -288,7 +308,9 @@ format is accepted.
    fps in the fully resident tests.
 5. A larger compressed buffer absorbs bursts but cannot compensate indefinitely when
    steady-state delivery or decode throughput is below playback consumption.
-6. Renderer-native packed binding is currently the most promising lower-bound path, but
+6. The codec/renderer split permits SPZ v4, SOG v2, and renderer-native experiments to
+   share the same compressed buffer, scheduler, clock, and presentation machinery.
+7. Renderer-native packed binding is currently the most promising lower-bound path, but
    its storage expansion, SH3 behaviour, portability, and target-device results must be
    measured before a format decision.
 
@@ -296,6 +318,9 @@ format is accepted.
 
 - Run the packed-memory experiment on minimum, medium, and full SH3 tiers in the same
   production browser and hardware session.
+- Compare legacy Spark SPZ v3 with official neutral SPZ v4 using identical frames,
+  tiers, cache state, worker counts, and hardware; report codec decode and Spark adapter
+  pack independently.
 - Add internal Spark worker timers for worker acquisition, compressed-byte handoff,
   Deflate inflation, SPZ attribute decoding, `PackedSplats` packing, result handoff, and
   main-thread initialisation.

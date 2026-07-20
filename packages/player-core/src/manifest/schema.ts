@@ -59,6 +59,7 @@ export const TransformSchema = Type.Object(
 export const GaussianQualityLevelSchema = Type.Object(
   {
     level: NonNegativeIntegerSchema,
+    codec: Type.Optional(NonEmptyStringSchema),
     url: Type.Optional(NonEmptyStringSchema),
     detailLevel: Type.Optional(Type.Number({ exclusiveMinimum: 0, maximum: 1 })),
     byteSize: Type.Optional(NonNegativeIntegerSchema),
@@ -87,6 +88,7 @@ export const GaussianFrameSourceSchema = Type.Object(
     frameIndex: NonNegativeIntegerSchema,
     timestampSeconds: NonNegativeNumberSchema,
     url: NonEmptyStringSchema,
+    codec: Type.Optional(NonEmptyStringSchema),
     byteSize: Type.Optional(NonNegativeIntegerSchema),
     metadataUrl: Type.Optional(NonEmptyStringSchema),
     qualityLevels: Type.Optional(Type.Array(GaussianQualityLevelSchema)),

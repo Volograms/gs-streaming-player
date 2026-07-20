@@ -13,3 +13,9 @@ export type {
   RadQualityCutsRequest,
   RadQualityCutsRunner,
 } from "./rad-cuts/runRadQualityCuts.js";
+export { repackSpzV4 } from "./spz-v4/repackSpzV4.js";
+export type {
+  RepackSpzV4Io,
+  RepackSpzV4Request,
+  RepackSpzV4Runner,
+} from "./spz-v4/repackSpzV4.js";

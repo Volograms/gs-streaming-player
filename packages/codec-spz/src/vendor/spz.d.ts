@@ -1,0 +1,181 @@
+/*
+MIT License
+
+Copyright (c) 2025 Adobe Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
+// Order MUST match spz::CoordinateSystem in splat-types.h: the auto-numbered
+// values 0..16 here are the same integer codes the WASM module returns. New
+// entries must be appended at the same position in both lists.
+export enum CoordinateSystem {
+  UNSPECIFIED,
+  LDB,
+  RDB,
+  LUB,
+  RUB,
+  LDF,
+  RDF,
+  LUF,
+  RUF,
+  LFD,
+  RFD,
+  LFU,
+  RFU,
+  LBD,
+  RBD,
+  LBU,
+  RBU,
+}
+
+/**
+ * Identifies one of the six per-point attributes in a SPZ splat.
+ *
+ * Declared as a namespace + union type (rather than `enum`) so the integer
+ * codes match exactly what the WASM module delivers to streaming `onChunk`
+ * callbacks. This lets `attr === SplatAttribute.Sh` numeric comparisons
+ * type-check directly and lets `spz-helpers.d.ts` re-export this single
+ * definition without structural duplication.
+ */
+export declare namespace SplatAttribute {
+  const Positions: 0;
+  const Alphas:    1;
+  const Colors:    2;
+  const Scales:    3;
+  const Rotations: 4;
+  const Sh:        5;
+}
+export type SplatAttribute = 0 | 1 | 2 | 3 | 4 | 5;
+
+
+
+export interface PackOptions {
+  version: number;
+  from: CoordinateSystem;
+  sh1Bits: number;
+  shRestBits: number;
+}
+
+export interface UnpackOptions {
+  to: CoordinateSystem;
+}
+
+export class GaussianCloud {
+  numPoints: number;
+  shDegree: number;
+  antialiased: boolean;
+
+  /**
+   * Per-point attributes as flat `Float32Array`s (interleaved coordinates
+   * within each attribute). For very large splats at SH degree 3+, the single
+   * `sh` buffer can hit browser `TypedArray` size limits — those callers
+   * should use the streaming API (`loadSpzStreaming` /
+   * `loadSpzStreamingAsync`) which routes chunks into caller-managed
+   * destinations instead.
+   */
+  positions: Float32Array;
+  scales: Float32Array;
+  rotations: Float32Array;
+  alphas: Float32Array;
+  colors: Float32Array;
+  sh: Float32Array;
+}
+
+/** Header info delivered to `SpzStreamCallbacks.onHeader`. */
+export interface SpzStreamHeader {
+  numPoints: number;
+  shDegree: number;
+  antialiased: boolean;
+  extensions: unknown[];
+}
+
+/**
+ * Callbacks for `loadSpzStreaming`. The streaming API never allocates a
+ * JS-heap buffer that scales with `numPoints`; chunks are delivered as views
+ * over a small reusable WASM-side scratch.
+ */
+export interface SpzStreamCallbacks {
+  /** Called once with header info before any chunks. */
+  onHeader?(info: SpzStreamHeader): void;
+
+  /**
+   * Called repeatedly with chunks of unpacked floats for each attribute.
+   *
+   * `data` is a TypedArray VIEW over WASM linear memory and is valid only for
+   * the duration of this call. Either copy it (`new Float32Array(data)`) or
+   * consume it synchronously (e.g. `gl.texSubImage2D(..., data)`). Any
+   * subsequent WASM allocation may detach the view.
+   *
+   * Chunks for a given attribute arrive in order; attributes are streamed
+   * sequentially in the order defined by `SplatAttribute`.
+   */
+  onChunk(attr: SplatAttribute, pointOffset: number, data: Float32Array): void;
+
+  /** Called once after the last chunk on a successful decode. */
+  onDone?(): void;
+
+  /** Called instead of `onDone` if decoding fails at any point. */
+  onError?(message: string): void;
+}
+
+// Wrappers for the module interface
+export interface SpzModule {
+  // Enums
+  CoordinateSystem: typeof CoordinateSystem;
+  SplatAttribute: typeof SplatAttribute;
+
+  // Loaders / Savers
+  loadSpzFromBuffer(data: Uint8Array, options: UnpackOptions): GaussianCloud;
+
+  /**
+   * Stream-decode an SPZ from a buffer already placed in the WASM heap, invoking
+   * `callbacks.onChunk` for each ~64K-point slice of each attribute. Never
+   * allocates a JS-heap buffer that scales with `numPoints` — chunks are
+   * delivered as TypedArray views over WASM scratch, valid only for the
+   * duration of the callback.
+   *
+   * Use this for arbitrarily large splats, or when chunks should land directly
+   * in their final destination (GPU buffer, multiple Float32Arrays, OPFS, etc.)
+   * without an intermediate JS-heap copy. The caller owns `ptr`.
+   */
+  loadSpzStreaming(ptr: number, byteLength: number, options: UnpackOptions, callbacks: SpzStreamCallbacks): void;
+
+  saveSpzToBuffer(cloud: GaussianCloud, options: PackOptions): Uint8Array;
+
+  /** Returns true if the build has extension support enabled, false otherwise. */
+  SpzHasExtensionSupport(): boolean;
+
+  LATEST_SPZ_HEADER_VERSION: number;
+
+  /** Points per WASM-scratch chunk delivered to `SpzStreamCallbacks.onChunk`. */
+  STREAM_CHUNK_POINTS: number;
+
+  /** Allocates `size` bytes in the WASM heap. Returns the heap offset (pointer). */
+  _malloc(size: number): number;
+
+  /** Frees a pointer previously returned by `_malloc`. */
+  _free(ptr: number): void;
+
+  /** Direct view into WASM linear memory as bytes. Backing buffer changes on heap growth. */
+  HEAPU8: Uint8Array;
+}
+
+export default function createSpzModule(overrides?: any): Promise<SpzModule>;
+

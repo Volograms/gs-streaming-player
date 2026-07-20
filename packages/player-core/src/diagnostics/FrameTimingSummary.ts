@@ -10,12 +10,14 @@ export interface TimingDistribution {
 
 export interface FrameTimingSummary {
   basePreparation: TimingDistribution;
+  codecDecode: TimingDistribution;
   compressedFetch: TimingDistribution;
   compressedFetchThroughputBps?: number;
   displayCommitCadence: TimingDistribution;
   displayCommitFramesPerSecond?: number;
   estimatedBaseThroughputBps?: number;
   flatFrameCopy: TimingDistribution;
+  flatPack: TimingDistribution;
   flatDecode: TimingDistribution;
   handoff: TimingDistribution;
   minimumRenderable: TimingDistribution;
@@ -61,11 +63,13 @@ export function summariseFrameTimings(
   events: readonly Readonly<FrameRingBufferTraceEvent>[],
 ): FrameTimingSummary {
   const basePreparation: number[] = [];
+  const codecDecode: number[] = [];
   const compressedFetch: number[] = [];
   const compressedFetchThroughputSamples: number[] = [];
   const displayCommitIntervals: number[] = [];
   const handoff: number[] = [];
   const flatFrameCopy: number[] = [];
+  const flatPack: number[] = [];
   const flatDecode: number[] = [];
   const minimumRenderable: number[] = [];
   const presentationWait: number[] = [];
@@ -88,6 +92,9 @@ export function summariseFrameTimings(
     if (event.type === "base-ready" && event.durationMs !== undefined) {
       basePreparation.push(event.durationMs);
     }
+    if (event.type === "codec-decode-ready" && event.durationMs !== undefined) {
+      codecDecode.push(event.durationMs);
+    }
     if (event.type === "compressed-fetch-ready" && event.durationMs !== undefined) {
       compressedFetch.push(event.durationMs);
       if (event.loadedBytes !== undefined && event.durationMs > 0) {
@@ -95,6 +102,13 @@ export function summariseFrameTimings(
           (event.loadedBytes * 8_000) / event.durationMs,
         );
       }
+    }
+    if (
+      event.type === "renderer-phase" &&
+      event.phase === "flat-pack" &&
+      event.stageDurationMs !== undefined
+    ) {
+      flatPack.push(event.stageDurationMs);
     }
     if (
       event.type === "renderer-phase" &&
@@ -169,6 +183,7 @@ export function summariseFrameTimings(
 
   return {
     basePreparation: distribution(basePreparation),
+    codecDecode: distribution(codecDecode),
     compressedFetch: distribution(compressedFetch),
     ...(estimatedBaseThroughputBps === undefined
       ? {}
@@ -179,6 +194,7 @@ export function summariseFrameTimings(
       ? {}
       : { displayCommitFramesPerSecond: 1_000 / meanDisplayCommitInterval }),
     flatFrameCopy: distribution(flatFrameCopy),
+    flatPack: distribution(flatPack),
     flatDecode: distribution(flatDecode),
     handoff: distribution(handoff),
     minimumRenderable: distribution(minimumRenderable),

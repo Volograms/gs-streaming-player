@@ -8,18 +8,27 @@ Demo application
        |
        v
 GaussianSequencePlayer (player-core)
-  |          |             |
-  v          v             v
-Renderer   Quality       Telemetry
-adapter    controller    provider
-  |
-  v
-Spark + Three.js
+  |          |             |          |
+  v          v             v          v
+Byte cache  Codec       Renderer    Quality / telemetry
+            decoder     adapter     policies
+                         |
+                         v
+                    Spark + Three.js
 ```
 
 `player-core` owns playback time, frame selection, buffering, scheduling, and events. It
-describes rendering work through `GaussianRendererAdapter`; the Spark package implements
-that boundary without leaking Spark types into core.
+owns the compressed-byte reservoir but does not interpret encoded Gaussian payloads.
+Codec packages decode those bytes into renderer-neutral Gaussian attribute arrays.
+`player-core` then describes rendering work through `GaussianRendererAdapter`; the Spark
+package packs the neutral attributes into `PackedSplats` without leaking Spark types
+into core.
+
+Codec identity is explicit content metadata. The first external codec is official
+Niantic SPZ v4. The old Spark-owned SPZ v3 loader remains a deliberately separate
+compatibility path for A/B measurements and can be removed without changing the byte
+cache, scheduler, playback clock, or renderer interface. Future SOG v2 codecs and
+PlayCanvas renderers plug into the same two independent boundaries.
 
 Quality controllers receive normalised playback, network, and metric snapshots. They
 produce decisions rather than performing requests or renderer mutations. This permits
@@ -33,8 +42,10 @@ framework-independent packages.
 ## Initial package dependency direction
 
 ```text
-shared <--- player-core <--- renderer-spark
-                    ^ <--- telemetry-6g
+shared <--- codec-core <--- codec-spz
+                  ^
+                  +--- player-core <--- renderer-spark
+                                  ^ <--- telemetry-6g
 
 player packages <--- demo
 ```

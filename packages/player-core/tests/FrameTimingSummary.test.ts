@@ -17,6 +17,21 @@ describe("summariseFrameTimings", () => {
         type: "compressed-fetch-ready",
       },
       {
+        atMs: 18,
+        codecId: "spz-v4",
+        durationMs: 8,
+        frameIndex: 0,
+        type: "codec-decode-ready",
+      },
+      {
+        atMs: 18.5,
+        durationMs: 18.5,
+        frameIndex: 0,
+        phase: "flat-pack",
+        stageDurationMs: 4,
+        type: "renderer-phase",
+      },
+      {
         atMs: 19,
         durationMs: 19,
         frameIndex: 0,
@@ -64,12 +79,14 @@ describe("summariseFrameTimings", () => {
 
     expect(summariseFrameTimings(events)).toMatchObject({
       basePreparation: { count: 1, medianMs: 25, p95Ms: 25 },
+      codecDecode: { count: 1, medianMs: 8 },
       compressedFetch: { count: 1, medianMs: 25 },
       compressedFetchThroughputBps: 320_000,
       displayCommitCadence: { count: 2, medianMs: 32, p95Ms: 34 },
       displayCommitFramesPerSecond: 1000 / 33,
       estimatedBaseThroughputBps: 320_000,
       flatFrameCopy: { count: 1, medianMs: 2 },
+      flatPack: { count: 1, medianMs: 4 },
       flatDecode: { count: 1, medianMs: 9 },
       handoff: { count: 2, maximumMs: 1 },
       minimumRenderable: { count: 1, medianMs: 20 },

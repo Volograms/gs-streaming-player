@@ -1,4 +1,5 @@
 import { runRadQualityCuts } from "../rad-cuts/runRadQualityCuts.js";
+import { repackSpzV4 } from "../spz-v4/repackSpzV4.js";
 import {
   countManifestFrames,
   validateManifestFile,
@@ -8,6 +9,7 @@ import type {
   RadQualityCutsRequest,
   RadQualityCutsRunner,
 } from "../rad-cuts/runRadQualityCuts.js";
+import type { RepackSpzV4Request, RepackSpzV4Runner } from "../spz-v4/repackSpzV4.js";
 
 export interface CliIo {
   stderr: (message: string) => void;
@@ -17,6 +19,7 @@ export interface CliIo {
 const USAGE = `Usage:
   pnpm gs-manifest validate <manifest.json> [--check-assets]
   pnpm gs-content extract-rad-cuts <frame.rad> [more.rad ...] --output-dir <dir> [options]
+  pnpm gs-content repack-spz-v4 <quality-cuts.json> --output-dir <dir> --spz-tools-dir <dir> [--force]
 
 Options:
   --check-assets  Verify local files and remote URLs referenced by the manifest.
@@ -30,6 +33,7 @@ Options:
   --help          Show this help.`;
 
 export interface CliDependencies {
+  repackSpzV4?: RepackSpzV4Runner;
   runRadQualityCuts?: RadQualityCutsRunner;
 }
 
@@ -50,6 +54,13 @@ export async function runCli(
       return 2;
     }
     return (dependencies.runRadQualityCuts ?? runRadQualityCuts)(request, io);
+  }
+  if (command === "repack-spz-v4") {
+    const request = parseRepackSpzV4Request(args.slice(1), io);
+    if (request === undefined) {
+      return 2;
+    }
+    return (dependencies.repackSpzV4 ?? repackSpzV4)(request, io);
   }
 
   const positional = args.slice(1).filter((argument) => !argument.startsWith("--"));
@@ -87,6 +98,63 @@ export async function runCli(
     `  ${result.manifest.dynamicSequences.length} sequence(s), ${countManifestFrames(result.manifest)} frame(s)`,
   );
   return 0;
+}
+
+function parseRepackSpzV4Request(
+  args: readonly string[],
+  io: CliIo,
+): RepackSpzV4Request | undefined {
+  const request: RepackSpzV4Request = {
+    force: false,
+    indexPath: "",
+    outputDir: "",
+    spzToolsDir: "",
+  };
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === undefined) {
+      continue;
+    }
+    if (!argument.startsWith("--")) {
+      if (request.indexPath !== "") {
+        io.stderr("repack-spz-v4 accepts exactly one quality-cuts index.");
+        io.stderr(USAGE);
+        return undefined;
+      }
+      request.indexPath = argument;
+      continue;
+    }
+    if (argument === "--force") {
+      request.force = true;
+      continue;
+    }
+    const value = args[index + 1];
+    if (value === undefined || value.startsWith("--")) {
+      io.stderr(`Option ${argument} requires a value.`);
+      io.stderr(USAGE);
+      return undefined;
+    }
+    index += 1;
+    if (argument === "--output-dir") {
+      request.outputDir = value;
+    } else if (argument === "--spz-tools-dir") {
+      request.spzToolsDir = value;
+    } else {
+      io.stderr(`Unknown option: ${argument}`);
+      io.stderr(USAGE);
+      return undefined;
+    }
+  }
+  if (
+    request.indexPath === "" ||
+    request.outputDir === "" ||
+    request.spzToolsDir === ""
+  ) {
+    io.stderr("A quality-cuts index, --output-dir, and --spz-tools-dir are required.");
+    io.stderr(USAGE);
+    return undefined;
+  }
+  return request;
 }
 
 function parseRadQualityCutsRequest(

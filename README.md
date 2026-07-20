@@ -1,12 +1,14 @@
 # Gaussian Streaming Player
 
 Adaptive browser player for composited Gaussian Splat content in the 6G-PATH project.
-The player is designed for persistent static splats, per-frame dynamic `.RAD` sequences,
-conventional Three.js meshes, video-style buffering, and network-aware progressive
-quality.
+The player is designed for persistent static splats, per-frame dynamic Gaussian
+sequences, conventional Three.js meshes, video-style buffering, and network-aware
+progressive quality. Compressed streaming, Gaussian codecs, and renderer adapters are
+independent boundaries; the current comparison paths are legacy Spark SPZ v3 and an
+official Niantic SPZ v4 decoder feeding the Spark adapter.
 
 The repository and content-manifest foundations are complete. The active implementation
-slice is Spark rendering and dynamic scene composition. See the
+slice is renderer-neutral codec integration and dynamic playback measurement. See the
 [project plan](docs/project-summary.md) and the live
 [task tracker](docs/project/TODO.md).
 
@@ -48,6 +50,8 @@ pnpm exec playwright install chromium
 | Path                      | Package                            | Responsibility                                     |
 | ------------------------- | ---------------------------------- | -------------------------------------------------- |
 | `packages/player-core`    | `@6g-path/gaussian-player`         | Renderer-independent playback contracts and engine |
+| `packages/codec-core`     | `@6g-path/gaussian-codec`          | Renderer-neutral decoded-frame and codec contracts |
+| `packages/codec-spz`      | `@6g-path/gaussian-codec-spz`      | Official Niantic SPZ v4 browser decoder            |
 | `packages/renderer-spark` | `@6g-path/gaussian-renderer-spark` | Spark and Three.js integration                     |
 | `packages/telemetry-6g`   | `@6g-path/gaussian-telemetry-6g`   | Normalised 6G telemetry providers                  |
 | `packages/content-tools`  | `@6g-path/gaussian-content-tools`  | Manifest and content preparation tools             |

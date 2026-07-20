@@ -61,6 +61,8 @@ export type FrameRingBufferTraceEventType =
   | "compressed-fetch-ready"
   | "compressed-cache-hit"
   | "compressed-fetch-failed"
+  | "codec-decode-started"
+  | "codec-decode-ready"
   | "renderer-phase"
   | "base-ready"
   | "refinement-started"
@@ -91,6 +93,7 @@ export interface FrameRingBufferTraceEvent {
   frames?: readonly FrameRingBufferTraceFrame[];
   loadedBytes?: number;
   chunkIndex?: number;
+  codecId?: string;
   pageIndex?: number;
   phase?: RendererFramePreparationPhase;
   quality?: Readonly<FramePresentationQuality>;

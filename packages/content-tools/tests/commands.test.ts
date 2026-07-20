@@ -6,6 +6,7 @@ describe("isContentToolCommand", () => {
   it("recognises planned commands", () => {
     expect(isContentToolCommand("validate-sequence")).toBe(true);
     expect(isContentToolCommand("extract-rad-cuts")).toBe(true);
+    expect(isContentToolCommand("repack-spz-v4")).toBe(true);
   });
 
   it("rejects unknown commands", () => {

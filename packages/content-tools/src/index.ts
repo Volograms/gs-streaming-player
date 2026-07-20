@@ -3,6 +3,7 @@ export const CONTENT_TOOL_COMMANDS = [
   "extract-rad-cuts",
   "inspect-rad",
   "measure-quality-levels",
+  "repack-spz-v4",
   "validate-sequence",
 ] as const;
 
