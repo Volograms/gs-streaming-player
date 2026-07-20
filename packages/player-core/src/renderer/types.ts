@@ -162,6 +162,8 @@ export interface RendererMetrics {
   dynamicGpuReallocationCount?: number;
   failedResourceLoadCount: number;
   flatFrameCopyTimeMs?: number;
+  /** Renderer-native presentation commit, including any deferred GPU data update. */
+  frameCommitTimeMs?: number;
   frameTimeMs?: number;
   gpuPageCapacity?: number;
   gpuPageCount?: number;
@@ -192,7 +194,8 @@ export interface GaussianRendererAdapter {
     frame: GaussianFrameSource,
     options: FramePreparationOptions,
   ): Promise<PreparedFrame>;
-  presentFrame(frame: PreparedFrame): void;
+  /** Commit a prepared frame. Renderers with deferred GPU updates may complete asynchronously. */
+  presentFrame(frame: PreparedFrame): void | Promise<void>;
   hideFrame(frame: PreparedFrame): void;
   releaseFrame(frame: PreparedFrame): void;
   refineFrame(

@@ -4,7 +4,42 @@ This file tracks implementation against the epics in
 [`project-summary.md`](../project-summary.md). A task is checked only after its
 acceptance criteria are covered by implementation and verification.
 
-## Active implementation slice: Flat dynamic quality-tier playback
+## Active implementation slice: Multi-renderer and multi-codec validation
+
+### Renderer adapters and dedicated demos
+
+- [x] Record Spark, Babylon.js, and PlayCanvas as co-equal renderer-adapter targets;
+      retain Spark as a supported option rather than replacing it.
+- [x] Choose dedicated renderer demos with shared renderer-neutral integration code
+      instead of initialising multiple engines in one application.
+- [x] Add a Babylon.js adapter for neutral SPZ v4 frames, including persistent dynamic
+      mesh reuse, transforms, presentation readiness, resource ownership, and metrics.
+- [x] Add a dedicated Babylon.js SPZ demo using the existing byte cache, playback
+      controller, transfer-tier selection, and optional immersive-VR/WebXR entry.
+- [ ] Compare Babylon.js and Spark using identical SPZ v4 frames, cache state, worker
+      limits, desktop hardware, and diagnostics.
+- [ ] Add a PlayCanvas adapter/demo for an explicitly supported SPZ path if its runtime
+      ingestion boundary permits a meaningful comparison.
+- [ ] Add SOG v2 as a second codec/runtime representation and start with a dedicated
+      PlayCanvas SOG demo; keep Babylon SOG support as a lower-priority follow-on.
+- [ ] Validate renderer/codec capability reporting so unsupported combinations fail
+      clearly rather than silently selecting another path.
+- [ ] Run the chosen candidates on Meta Quest 3 and representative mobile Safari after
+      desktop format/adapter comparisons have narrowed the device matrix.
+
+### Pilot network adaptation
+
+- [x] Re-scope the final 6G epic: the pilot uses client-measured fetch throughput,
+      latency, compressed-buffer state, stalls, and renderer capacity because its Wi-Fi
+      last hop exposes no useful 6G-specific client telemetry.
+- [ ] Calibrate safety margin and hysteresis for the expected sub-500-Mbps pilot path,
+      using bytes per frame rather than splat count as the transfer constraint.
+- [ ] Validate the generic adaptive policy over the 6G-testbed-plus-Wi-Fi path and
+      document that it is client-measured rather than telemetry-assisted.
+- [ ] Retain the normalised 6G telemetry provider as a deferred extension point without
+      making it a pilot completion dependency.
+
+## Previous implementation slice: Flat dynamic quality-tier playback
 
 ### Renderer-neutral codec boundary and SPZ v4 comparison
 

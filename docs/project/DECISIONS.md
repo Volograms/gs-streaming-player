@@ -17,6 +17,8 @@ used during day-to-day implementation.
 | 0009 | Export flat dynamic quality tiers from RAD trees    | Accepted |
 | 0010 | Separate compressed and decoded frame buffers       | Accepted |
 | 0011 | Separate Gaussian codecs from renderer adapters     | Accepted |
+| 0012 | Support multiple renderer adapters and demos        | Accepted |
+| 0013 | Use client-measured network state for the pilot     | Accepted |
 
 ## Working conventions
 
@@ -121,6 +123,14 @@ used during day-to-day implementation.
 - The legacy Spark-owned SPZ v3 loader remains an explicit A/B compatibility path. It
   does not act as an implicit fallback for SPZ v4 content, so the entire legacy route
   can be removed cleanly after comparison.
+- Spark, Babylon.js, PlayCanvas, and later renderers are co-equal adapter packages.
+  Spark remains supported for its existing flat-SPZ and paged-RAD use cases. Each engine
+  has a dedicated demo and optional XR entry point instead of loading multiple engines
+  into one comparison application.
+- The 6G pilot uses completed-transfer throughput, request timing, buffer state, stalls,
+  and renderer capacity for adaptation because its Wi-Fi last hop exposes no useful
+  6G-specific client telemetry. The normalised 6G provider remains an extension point,
+  but the pilot does not claim a telemetry-assisted policy.
 - Renderer-native packed frame storage remains an experiment until its measured
   clone/bind cost is compared with SPZ decoding. The benchmark uses an ephemeral
   contiguous payload and does not establish a file header, manifest contract, or stable

@@ -7,6 +7,18 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- Babylon.js renderer adapter for neutral SPZ v4 frames, with worker-based conversion to
+  Babylon's native splat memory, one persistent dynamic `GaussianSplattingMesh`,
+  serialised asynchronous handoff, transforms, resource metrics, and explicit RAD
+  rejection.
+- Dedicated Babylon.js SPZ comparison demo sharing content configuration, byte caching,
+  tier selection, decoded lookahead, and playback with the Spark demo while owning its
+  engine, controls, diagnostics, and optional immersive-VR WebXR experience.
+- Renderer-neutral demo-support package plus architectural decisions retaining Spark as
+  a supported adapter, using dedicated per-engine demos, and re-scoping the pilot to
+  client-measured testbed/Wi-Fi adaptation.
+- Asynchronous renderer presentation support in player-core so a frame is not published
+  as presented before a renderer-native mesh update completes.
 - Renderer-neutral Gaussian codec contracts and registry, separating opaque compressed
   byte buffering from decoding and renderer-native packing.
 - Official Niantic SPZ v4 worker decoder with persistent concurrency, transferable

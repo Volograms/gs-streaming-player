@@ -259,6 +259,39 @@ Record comparable hardware results in the living
 preserves the current RAD/SPZ/fully-resident/packed-memory baselines, and provides a run
 template so content and instrumentation differences remain visible.
 
+## Babylon.js SPZ comparison demo
+
+The Babylon demo is a separate application so it does not load Spark, Three.js, or a
+second canvas into the same measurement. It uses the same SPZ v4 quality index and
+player-core buffer as the neutral Spark run:
+
+```bash
+VITE_DYNAMIC_FRAME_CODEC=spz-v4 \
+VITE_DYNAMIC_QUALITY_INDEX_URL=/assets/local-dynamic-cuts-v4/quality-cuts.json \
+VITE_DYNAMIC_RAD_START_FRAME=1 \
+VITE_DYNAMIC_RAD_END_FRAME=100 \
+VITE_DYNAMIC_RAD_FRAME_RATE=30 \
+pnpm dev:babylon
+```
+
+Babylon defaults to two decode workers, two adapter-packing workers, six fetches, ten
+future decoded frames, and the same 200 MB compressed cache. These conservative worker
+defaults are intentional for eventual mobile and Quest testing. Override them only as
+part of a recorded device experiment:
+
+```bash
+VITE_DYNAMIC_DECODE_CONCURRENCY=2 \
+VITE_DYNAMIC_PACK_CONCURRENCY=2 \
+VITE_DYNAMIC_FETCH_CONCURRENCY=6 \
+VITE_DYNAMIC_FUTURE_FRAMES=10 \
+pnpm dev:babylon
+```
+
+WebXR initialisation is enabled by default and degrades to desktop mode when
+unavailable. Set `VITE_ENABLE_XR=false` for a non-XR profile. See the
+[Babylon renderer guide](babylon-renderer-integration.md) for ownership and capability
+details.
+
 The viewport's `Packed-memory experiment` is a paused-frame diagnostic for evaluating a
 renderer-native runtime payload before defining one. Present any flat SPZ frame, pause
 playback, and choose `Test current frame`. The test first snapshots the decoded base and

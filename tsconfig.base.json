@@ -24,7 +24,11 @@
       "@6g-path/gaussian-codec": ["./packages/codec-core/src/index.ts"],
       "@6g-path/gaussian-codec-spz": ["./packages/codec-spz/src/index.ts"],
       "@6g-path/gaussian-content-tools": ["./packages/content-tools/src/index.ts"],
+      "@6g-path/gaussian-demo-support": ["./packages/demo-support/src/index.ts"],
       "@6g-path/gaussian-player": ["./packages/player-core/src/index.ts"],
+      "@6g-path/gaussian-renderer-babylon": [
+        "./packages/renderer-babylon/src/index.ts"
+      ],
       "@6g-path/gaussian-renderer-spark": ["./packages/renderer-spark/src/index.ts"],
       "@6g-path/gaussian-telemetry-6g": ["./packages/telemetry-6g/src/index.ts"],
       "@6g-path/shared": ["./packages/shared/src/index.ts"]

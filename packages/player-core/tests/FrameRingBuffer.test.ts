@@ -485,6 +485,30 @@ describe("FrameRingBuffer", () => {
     expect(buffer.snapshot.currentFrameIndex).toBe(1);
   });
 
+  it("does not publish a frame until an asynchronous renderer handoff completes", async () => {
+    const harness = createRendererHarness();
+    const handoff = deferred<void>();
+    harness.presentFrame.mockImplementation(() => handoff.promise);
+    const buffer = new FrameRingBuffer({
+      futureFrameCount: 0,
+      previousFrameCount: 0,
+      renderer: harness.renderer,
+      sequence: createSequence(1),
+    });
+
+    const initialising = buffer.initialise(0);
+    harness.resolve(0);
+    await vi.waitFor(() => expect(harness.presentFrame).toHaveBeenCalledOnce());
+    expect(buffer.snapshot.currentFrameIndex).toBeUndefined();
+    expect(
+      buffer.snapshot.frames.find(({ frameIndex }) => frameIndex === 0)?.status,
+    ).not.toBe("presented");
+
+    handoff.resolve();
+    await initialising;
+    expect(buffer.snapshot.currentFrameIndex).toBe(0);
+  });
+
   it("retains the presented frame during a seek outside the destination window", async () => {
     const harness = createRendererHarness();
     const buffer = new FrameRingBuffer({

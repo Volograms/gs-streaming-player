@@ -327,7 +327,14 @@ export class FrameRingBuffer {
         previous.status = "ready";
       }
     }
-    this.renderer.presentFrame(preparedFrame);
+    await this.renderer.presentFrame(preparedFrame);
+    this.assertNotDisposed();
+    if (
+      this.isAborted(options.signal) ||
+      requestRevision !== this.presentationRequestRevision
+    ) {
+      throw this.presentationAbortError();
+    }
     const record = this.requireRecord(frameIndex);
     record.status = "presented";
     record.targetQualityLevel = this.presentationQualityTarget.detailLevel;
