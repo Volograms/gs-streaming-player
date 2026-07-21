@@ -11,9 +11,11 @@ produced by the official SPZ v4 codec. The adapter:
 
 - converts neutral positions, scales, RGBA, XYZW rotations, and SH0-SH3 data into
   Babylon's 32-byte `.splat` memory layout in a persistent worker pool;
-- retains one `GaussianSplattingMesh` and updates it at presentation instead of creating
-  one Babylon mesh per buffered frame;
-- serialises asynchronous mesh updates so rapid seeks cannot overlap uploads;
+- retains two front/back `GaussianSplattingMesh` slots instead of creating one Babylon
+  mesh per buffered frame;
+- serialises asynchronous mesh updates, keeps the current slot visible while the other
+  is updated, waits for Babylon's first valid depth ordering, and swaps slots at a
+  render boundary so rapid seeks cannot overlap uploads or expose an incomplete frame;
 - keeps compressed buffering, codec decoding, scheduling, playback, and tier selection
   in renderer-independent packages;
 - loads ordinary Babylon-supported splat and mesh assets, but explicitly rejects Spark
@@ -24,6 +26,12 @@ Babylon still derives covariances, updates Gaussian textures, and depth-sorts in
 `GaussianSplattingMesh.updateDataAsync()`. This comparison therefore measures a real
 Babylon ingestion path; it is not a custom Babylon shader or a claim that the current
 handoff is already optimal.
+
+The front/back handoff intentionally keeps two dynamic GPU allocations resident. The
+`dynamicGpuCapacity` renderer metric reports their combined capacity. Record this cost
+when testing memory limits on Quest and mobile devices. A caller-owned scene must keep
+rendering while `presentFrame()` is pending because the final slot switch is fenced to
+`Scene.onBeforeRenderObservable`.
 
 ## Run the dedicated demo
 

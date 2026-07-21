@@ -8,9 +8,9 @@ All notable changes to this project will be documented here. The project uses
 ### Added
 
 - Babylon.js renderer adapter for neutral SPZ v4 frames, with worker-based conversion to
-  Babylon's native splat memory, one persistent dynamic `GaussianSplattingMesh`,
-  serialised asynchronous handoff, transforms, resource metrics, and explicit RAD
-  rejection.
+  Babylon's native splat memory, two persistent front/back `GaussianSplattingMesh`
+  slots, depth-sort-fenced asynchronous handoff, transforms, resource metrics, and
+  explicit RAD rejection.
 - Dedicated Babylon.js SPZ comparison demo sharing content configuration, byte caching,
   tier selection, decoded lookahead, and playback with the Spark demo while owning its
   engine, controls, diagnostics, and optional immersive-VR WebXR experience.
@@ -144,6 +144,10 @@ All notable changes to this project will be documented here. The project uses
 
 ### Fixed
 
+- Babylon frame changes no longer overwrite the visible Gaussian mesh while its
+  replacement textures and first valid depth ordering are pending. The adapter swaps two
+  persistent mesh slots atomically at a render boundary, and its default orbit camera
+  now starts on the front side of the current dynamic fixture.
 - Compressed-frame prefetch now binds the browser `fetch` implementation to the global
   receiver, preventing `Illegal invocation` failures when the byte cache starts its
   forward network plan.

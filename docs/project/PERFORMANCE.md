@@ -5,7 +5,7 @@ important results, test conditions, interpretations, and limitations independent
 chat history. Update it when a renderer, decoder, scheduler, content encoding, browser,
 or device change materially affects the pipeline.
 
-Last updated: 2026-07-20.
+Last updated: 2026-07-21.
 
 ## Measurement rules
 
@@ -501,6 +501,28 @@ ms for frames 63–65, result transfer was 1.4–1.9 ms, and internal pack queue
 zero. The player again stalled instead of discarding deadlines, so zero reported drops
 does not imply uninterrupted 30 fps; cadence p95 reached 137 ms.
 
+### 12. Initial Babylon SPZ v4 inspection — 2026-07-21
+
+The first Babylon comparison run used the same neutral SPZ v4 sequence and player-core
+buffer. The following values are individual paused/manual observations copied from the
+demo rather than percentile distributions. Delivery was constrained, so the medium and
+full total preparation values are not codec/adapter throughput measurements.
+
+| Tier / rendered splats | SPZ decode | Babylon pack | Total prepare | Mesh update | Render loop |
+| ---------------------- | ---------: | -----------: | ------------: | ----------: | ----------: |
+| Minimum, about 69.5k   |    25.4 ms |       5.8 ms |       31.4 ms |     23.0 ms |    59.5 fps |
+| Medium, about 137.2k   |    29.5 ms |      12.6 ms |    1,687.2 ms |     48.9 ms |    59.2 fps |
+| Full, about 275.6k     |    62.1 ms |      31.3 ms |    3,319.2 ms |     95.8 ms |    59.9 fps |
+
+The Babylon renderer loop remained near 60 fps while paused, but manual frame changes
+visibly flickered even at the smallest tier. This isolated the artifact from network and
+codec cost. Inspection showed that the adapter was overwriting its sole visible
+`GaussianSplattingMesh`: Babylon defers replacement texture application until a depth
+sort completes, so the active mesh could be unavailable or internally transitional. The
+follow-up adapter uses two persistent mesh slots, waits for the staging slot's depth
+sort fence, and swaps visibility in `onBeforeRender`. Its continuity and doubled bounded
+GPU capacity still require browser and target-device measurement.
+
 ## Current conclusions
 
 1. Player scheduling, handoff, and the reusable display allocation can sustain 30 fps
@@ -561,6 +583,9 @@ does not imply uninterrupted 30 fps; cadence p95 reached 137 ms.
   matrix with browser/GPU/CPU/SSD details.
 - Record memory consumption for compressed bytes, decoded buffered frames, reusable GPU
   capacity, and temporary decode buffers at each tier.
+- Verify Babylon front/back handoff continuity at preview, minimum, medium, and full
+  tiers, then record both mesh-slot GPU capacity and handoff latency on desktop and
+  Quest.
 - Use the resulting decode breakdown to compare SPZ with a temporary renderer-native
   payload and one lightweight-compressed packed payload before designing a container.
 

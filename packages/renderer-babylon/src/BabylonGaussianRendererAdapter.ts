@@ -60,6 +60,8 @@ interface MutableResourceMetric {
   visible: boolean;
 }
 
+type DynamicMeshSlot = 0 | 1;
+
 export class BabylonGaussianRendererAdapter
   implements GaussianRendererAdapter, BabylonRendererContext
 {
@@ -68,7 +70,10 @@ export class BabylonGaussianRendererAdapter
   private cameraValue:
     ArcRotateCamera | import("@babylonjs/core/Cameras/camera.js").Camera | undefined;
   private disposed = false;
-  private dynamicMeshValue: GaussianSplattingMesh | undefined;
+  private activeDynamicMeshSlot: DynamicMeshSlot | undefined;
+  private dynamicMeshCapacities: [number, number] = [0, 0];
+  private dynamicMeshesValue:
+    readonly [GaussianSplattingMesh, GaussianSplattingMesh] | undefined;
   private dynamicGpuReallocationCount = 0;
   private engineValue: Engine | undefined;
   private failedResourceLoadCount = 0;
@@ -86,6 +91,7 @@ export class BabylonGaussianRendererAdapter
   private renderCallTimeMs: number | undefined;
   private renderFramesPerSecond: number | undefined;
   private presentationQueue: Promise<void> = Promise.resolve();
+  private readonly pendingHandoffCancellations = new Set<(error: Error) => void>();
   private resizeObserver: ResizeObserver | undefined;
   private readonly resourceMetrics = new Map<string, MutableResourceMetric>();
   private sceneValue: Scene | undefined;
@@ -134,7 +140,7 @@ export class BabylonGaussianRendererAdapter
         this.options.camera ??
         new ArcRotateCamera(
           "gaussian-player-camera",
-          -Math.PI / 2,
+          Math.PI / 2,
           Math.PI / 2,
           3,
           Vector3.Zero(),
@@ -153,18 +159,19 @@ export class BabylonGaussianRendererAdapter
       if (this.options.scene === undefined) {
         new HemisphericLight("gaussian-player-light", new Vector3(0, 1, 0), scene);
       }
-      const dynamicMesh = new GaussianSplattingMesh(
-        "gaussian-player-dynamic",
-        null,
-        scene,
-        false,
-      );
-      dynamicMesh.setEnabled(false);
+      const dynamicMeshes = [
+        new GaussianSplattingMesh("gaussian-player-dynamic-a", null, scene, false),
+        new GaussianSplattingMesh("gaussian-player-dynamic-b", null, scene, false),
+      ] as const;
+      for (const dynamicMesh of dynamicMeshes) {
+        dynamicMesh.isVisible = false;
+        dynamicMesh.setEnabled(false);
+      }
 
       this.engineValue = engine;
       this.sceneValue = scene;
       this.cameraValue = camera;
-      this.dynamicMeshValue = dynamicMesh;
+      this.dynamicMeshesValue = dynamicMeshes;
       this.framePackerValue =
         this.options.framePacker ??
         createDefaultBabylonFramePacker(
@@ -322,8 +329,11 @@ export class BabylonGaussianRendererAdapter
 
   hideFrame(frame: PreparedFrame): void {
     if (this.activeFrame === frame) {
-      this.requireDynamicMesh().setEnabled(false);
+      const mesh = this.requireActiveDynamicMesh();
+      mesh.isVisible = false;
+      mesh.setEnabled(false);
       this.activeFrame = undefined;
+      this.activeDynamicMeshSlot = undefined;
     }
     const metric = this.resourceMetrics.get(this.frameResourceId(frame));
     if (metric !== undefined) {
@@ -367,7 +377,7 @@ export class BabylonGaussianRendererAdapter
       resource.transform = transform;
     }
     if (this.activeFrame === frame) {
-      applyBabylonTransform(this.requireDynamicMesh(), transform);
+      applyBabylonTransform(this.requireActiveDynamicMesh(), transform);
     }
   }
 
@@ -450,7 +460,13 @@ export class BabylonGaussianRendererAdapter
     for (const objectId of [...this.loadedObjects.keys()]) {
       this.releaseObject(objectId);
     }
-    this.dynamicMeshValue?.dispose(false);
+    const disposalError = new Error("The Babylon renderer adapter was disposed.");
+    for (const cancel of [...this.pendingHandoffCancellations]) {
+      cancel(disposalError);
+    }
+    for (const dynamicMesh of this.dynamicMeshesValue ?? []) {
+      dynamicMesh.dispose(false);
+    }
     if (this.options.framePacker === undefined) {
       this.framePackerValue?.dispose?.();
     }
@@ -537,39 +553,120 @@ export class BabylonGaussianRendererAdapter
   ): Promise<void> {
     this.assertInitialised();
     const startedAt = this.now();
-    const mesh = this.requireDynamicMesh();
-    applyBabylonTransform(mesh, resource.transform);
-    await mesh.updateDataAsync(
-      resource.payload.splatBuffer,
-      resource.payload.sphericalHarmonics.length === 0
-        ? undefined
-        : resource.payload.sphericalHarmonics,
-      undefined,
-      resource.payload.shDegree,
-    );
-    this.assertInitialised();
-    mesh.setEnabled(true);
-    this.frameCommitTimeMs = this.now() - startedAt;
-    const textureWidth = Math.max(1, this.engine.getCaps().maxTextureSize);
-    const requiredCapacity =
-      textureWidth * Math.max(1, Math.ceil(resource.payload.numSplats / textureWidth));
-    if (requiredCapacity > this.maximumSplatCapacity) {
-      this.maximumSplatCapacity = requiredCapacity;
-      this.dynamicGpuReallocationCount += 1;
-    }
-    if (this.activeFrame !== undefined) {
-      const previousMetric = this.resourceMetrics.get(
-        this.frameResourceId(this.activeFrame),
+    const stagingSlot = this.getStagingDynamicMeshSlot();
+    const mesh = this.requireDynamicMeshes()[stagingSlot]!;
+    mesh.isVisible = false;
+    mesh.setEnabled(false);
+    try {
+      applyBabylonTransform(mesh, resource.transform);
+      await mesh.updateDataAsync(
+        resource.payload.splatBuffer,
+        resource.payload.sphericalHarmonics.length === 0
+          ? undefined
+          : resource.payload.sphericalHarmonics,
+        undefined,
+        resource.payload.shDegree,
       );
-      if (previousMetric !== undefined) {
-        previousMetric.visible = false;
+      this.assertInitialised();
+
+      const textureWidth = Math.max(1, this.engine.getCaps().maxTextureSize);
+      const requiredCapacity =
+        textureWidth *
+        Math.max(1, Math.ceil(resource.payload.numSplats / textureWidth));
+      if (requiredCapacity > this.dynamicMeshCapacities[stagingSlot]!) {
+        this.dynamicMeshCapacities[stagingSlot] = requiredCapacity;
+        this.maximumSplatCapacity = this.dynamicMeshCapacities.reduce(
+          (total, capacity) => total + capacity,
+          0,
+        );
+        this.dynamicGpuReallocationCount += 1;
       }
+
+      // Babylon applies replacement textures only after its depth-sort worker returns.
+      // Keep this back-buffer mesh invisible until that fence has settled, then swap both
+      // mesh visibility flags in onBeforeRender so every rendered frame has one complete GS.
+      mesh.setEnabled(true);
+      await this.waitForDepthSortAndSwap(stagingSlot);
+      this.assertInitialised();
+
+      this.frameCommitTimeMs = this.now() - startedAt;
+      if (this.activeFrame !== undefined) {
+        const previousMetric = this.resourceMetrics.get(
+          this.frameResourceId(this.activeFrame),
+        );
+        if (previousMetric !== undefined) {
+          previousMetric.visible = false;
+        }
+      }
+      this.activeFrame = frame;
+      const metric = this.resourceMetrics.get(this.frameResourceId(frame));
+      if (metric !== undefined) {
+        metric.visible = true;
+      }
+    } catch (error) {
+      mesh.isVisible = false;
+      mesh.setEnabled(false);
+      throw error;
     }
-    this.activeFrame = frame;
-    const metric = this.resourceMetrics.get(this.frameResourceId(frame));
-    if (metric !== undefined) {
-      metric.visible = true;
+  }
+
+  private getStagingDynamicMeshSlot(): DynamicMeshSlot {
+    return this.activeDynamicMeshSlot === 0 ? 1 : 0;
+  }
+
+  private requireActiveDynamicMesh(): GaussianSplattingMesh {
+    if (this.activeDynamicMeshSlot === undefined) {
+      throw new Error("The Babylon renderer has no active dynamic mesh.");
     }
+    return this.requireDynamicMeshes()[this.activeDynamicMeshSlot]!;
+  }
+
+  private requireDynamicMeshes(): readonly [
+    GaussianSplattingMesh,
+    GaussianSplattingMesh,
+  ] {
+    return this.requireInitialised(this.dynamicMeshesValue, "dynamic meshes");
+  }
+
+  private waitForDepthSortAndSwap(stagingSlot: DynamicMeshSlot): Promise<void> {
+    const meshes = this.requireDynamicMeshes();
+    const stagingMesh = meshes[stagingSlot]!;
+    const previousMesh =
+      this.activeDynamicMeshSlot === undefined
+        ? undefined
+        : meshes[this.activeDynamicMeshSlot];
+
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const cleanUp = () => {
+        this.sceneValue?.onBeforeRenderObservable.remove(observer);
+        this.pendingHandoffCancellations.delete(cancel);
+      };
+      const cancel = (error: Error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanUp();
+        reject(error);
+      };
+      this.pendingHandoffCancellations.add(cancel);
+      const observer = this.scene.onBeforeRenderObservable.add(() => {
+        if (!stagingMesh._isDepthSortSettled) {
+          return;
+        }
+        settled = true;
+        previousMesh?.setEnabled(false);
+        if (previousMesh !== undefined) {
+          previousMesh.isVisible = false;
+        }
+        stagingMesh.isVisible = true;
+        stagingMesh.setEnabled(true);
+        this.activeDynamicMeshSlot = stagingSlot;
+        cleanUp();
+        resolve();
+      });
+    });
   }
 
   private assertNotDisposed(): void {
@@ -580,10 +677,6 @@ export class BabylonGaussianRendererAdapter
 
   private frameResourceId(frame: PreparedFrame): string {
     return `${frame.sequenceId}:frame:${frame.frameIndex}`;
-  }
-
-  private requireDynamicMesh(): GaussianSplattingMesh {
-    return this.requireInitialised(this.dynamicMeshValue, "dynamic mesh");
   }
 
   private requireFramePacker(): BabylonFramePacker {

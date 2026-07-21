@@ -83,6 +83,9 @@ importers:
       '@6g-path/gaussian-content-tools':
         specifier: workspace:*
         version: link:../../packages/content-tools
+      '@6g-path/gaussian-demo-support':
+        specifier: workspace:*
+        version: link:../../packages/demo-support
       '@6g-path/gaussian-player':
         specifier: workspace:*
         version: link:../../packages/player-core
@@ -109,6 +112,30 @@ importers:
         specifier: 0.180.0
         version: 0.180.0
 
+  apps/demo-babylon:
+    dependencies:
+      '@6g-path/gaussian-codec':
+        specifier: workspace:*
+        version: link:../../packages/codec-core
+      '@6g-path/gaussian-codec-spz':
+        specifier: workspace:*
+        version: link:../../packages/codec-spz
+      '@6g-path/gaussian-demo-support':
+        specifier: workspace:*
+        version: link:../../packages/demo-support
+      '@6g-path/gaussian-player':
+        specifier: workspace:*
+        version: link:../../packages/player-core
+      '@6g-path/gaussian-renderer-babylon':
+        specifier: workspace:*
+        version: link:../../packages/renderer-babylon
+      react:
+        specifier: ^19.2.7
+        version: 19.2.7
+      react-dom:
+        specifier: ^19.2.7
+        version: 19.2.7(react@19.2.7)
+
   packages/codec-core: {}
 
   packages/codec-spz:
@@ -122,6 +149,15 @@ importers:
       '@6g-path/gaussian-player':
         specifier: workspace:*
         version: link:../player-core
+
+  packages/demo-support:
+    dependencies:
+      '@6g-path/gaussian-player':
+        specifier: workspace:*
+        version: link:../player-core
+      '@6g-path/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/player-core:
     dependencies:

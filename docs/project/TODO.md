@@ -16,6 +16,9 @@ acceptance criteria are covered by implementation and verification.
       mesh reuse, transforms, presentation readiness, resource ownership, and metrics.
 - [x] Add a dedicated Babylon.js SPZ demo using the existing byte cache, playback
       controller, transfer-tier selection, and optional immersive-VR/WebXR entry.
+- [x] Stabilise Babylon frame presentation with a two-slot depth-sort-fenced handoff so
+      the old frame remains drawable until its replacement is ready; start the default
+      orbit camera from the front of the current fixture.
 - [ ] Compare Babylon.js and Spark using identical SPZ v4 frames, cache state, worker
       limits, desktop hardware, and diagnostics.
 - [ ] Add a PlayCanvas adapter/demo for an explicitly supported SPZ path if its runtime

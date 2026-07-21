@@ -127,6 +127,11 @@ used during day-to-day implementation.
   Spark remains supported for its existing flat-SPZ and paged-RAD use cases. Each engine
   has a dedicated demo and optional XR entry point instead of loading multiple engines
   into one comparison application.
+- Babylon dynamic presentation uses two persistent front/back mesh slots. The current
+  frame remains visible while the other slot uploads and reaches a settled Babylon depth
+  sort, then both visibility flags change at one render boundary. This bounded extra GPU
+  allocation is preferred to a blank or partially ordered frame and must be included in
+  Quest/mobile memory measurements.
 - The 6G pilot uses completed-transfer throughput, request timing, buffer state, stalls,
   and renderer capacity for adaptation because its Wi-Fi last hop exposes no useful
   6G-specific client telemetry. The normalised 6G provider remains an extension point,
