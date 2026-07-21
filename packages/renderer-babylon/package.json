@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@6g-path/gaussian-codec": "workspace:*",
+    "@6g-path/gaussian-codec-spz": "workspace:*",
     "@6g-path/gaussian-player": "workspace:*",
     "@6g-path/shared": "workspace:*",
     "@babylonjs/core": "9.17.0",

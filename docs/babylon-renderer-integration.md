@@ -17,8 +17,9 @@ produced by the official SPZ v4 codec. The adapter:
 - serialises asynchronous mesh updates, keeps the current slot visible while the other
   is updated, waits for Babylon's first valid depth ordering, and swaps slots at a
   render boundary so rapid seeks cannot overlap uploads or expose an incomplete frame;
-- keeps compressed buffering, codec decoding, scheduling, playback, and tier selection
-  in renderer-independent packages;
+- keeps compressed buffering, scheduling, playback, and tier selection in
+  renderer-independent packages, while optionally fusing the shared SPZ streaming
+  decoder with Babylon-specific final packing;
 - loads ordinary Babylon-supported splat and mesh assets, but explicitly rejects Spark
   `.RAD` static assets;
 - optionally creates Babylon's standard immersive-VR WebXR experience and entry UI.
@@ -66,6 +67,12 @@ create an XR session does not prevent desktop playback.
 worker-packed path; set it to `false` only to compare the previous Babylon-native
 `.splat` ingestion route. This toggle changes no source tier, splat count, or quality
 target.
+
+`VITE_BABYLON_FUSED_SPZ_PACKING` also defaults to enabled. It streams SPZ chunks
+directly into Babylon's native texture payload in one worker and does not create the
+standalone neutral decoder workers. Set it to `false` while leaving native texture
+packing enabled to run the neutral-SPZ-then-Babylon-pack A/B fallback with identical
+content quality.
 
 The comparison demos start at 25% and their adaptive policy never requests less. A 10%
 preview cut remains available in the manual selector for explicit diagnostic

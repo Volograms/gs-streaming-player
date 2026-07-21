@@ -21,6 +21,8 @@ export interface BabylonRendererAdapterOptions {
    * the experimental direct-texture upload path. Defaults to true.
    */
   useNativeTexturePacking?: boolean;
+  /** Decode SPZ v4 directly into Babylon texture arrays. Defaults to true. */
+  useFusedSpzPacking?: boolean;
   /** Caller-owned scene; adapter-loaded nodes are still released on disposal. */
   scene?: Scene;
 }

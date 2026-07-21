@@ -1,16 +1,14 @@
 import { SPZ_V4_CODEC_ID } from "./header.js";
-import createSpzModule from "./vendor/spz.js";
+import { decodeSpzV4Streaming } from "./streaming.js";
 
 import type { SpzDecodeRequest, SpzDecodeResponse } from "./protocol.js";
-import type { SpzModule, SpzStreamHeader } from "./vendor/spz.js";
+import type { SpzStreamHeader, SpzStreamingDiagnostics } from "./streaming.js";
 import type {
   DecodedGaussianFrame,
   GaussianCoordinateSystem,
 } from "@6g-path/gaussian-codec";
 
 const SH_C0 = 0.28209479177387814;
-const modulePromise = createSpzModule();
-
 const workerScope = globalThis as unknown as {
   onmessage: ((event: MessageEvent<SpzDecodeRequest>) => void) | null;
   postMessage(message: SpzDecodeResponse, transfer?: Transferable[]): void;
@@ -18,15 +16,18 @@ const workerScope = globalThis as unknown as {
 
 workerScope.onmessage = ({ data }) => {
   void decode(data).then(
-    (frame) => {
-      workerScope.postMessage({ frame, id: data.id, ok: true }, [
-        frame.positions.buffer,
-        frame.scales.buffer,
-        frame.rotations.buffer,
-        frame.alphas.buffer,
-        frame.colors.buffer,
-        frame.sphericalHarmonics.buffer,
-      ]);
+    ({ diagnostics, frame, outputAllocatedBytes }) => {
+      workerScope.postMessage(
+        { diagnostics, frame, id: data.id, ok: true, outputAllocatedBytes },
+        [
+          frame.positions.buffer,
+          frame.scales.buffer,
+          frame.rotations.buffer,
+          frame.alphas.buffer,
+          frame.colors.buffer,
+          frame.sphericalHarmonics.buffer,
+        ],
+      );
     },
     (error: unknown) => {
       workerScope.postMessage({ error: errorMessage(error), id: data.id, ok: false });
@@ -34,49 +35,28 @@ workerScope.onmessage = ({ data }) => {
   );
 };
 
-async function decode(request: SpzDecodeRequest): Promise<DecodedGaussianFrame> {
-  const spz = await modulePromise;
+async function decode(request: SpzDecodeRequest): Promise<{
+  diagnostics: SpzStreamingDiagnostics;
+  frame: DecodedGaussianFrame;
+  outputAllocatedBytes: number;
+}> {
   const bytes = new Uint8Array(request.bytes);
   let frame: DecodedGaussianFrame | undefined;
-  const pointer = spz._malloc(bytes.byteLength);
-  if (bytes.byteLength > 0 && pointer === 0) {
-    throw new Error(`SPZ WASM input allocation failed for ${bytes.byteLength} bytes.`);
+  const diagnostics = await decodeSpzV4Streaming(bytes, request.coordinateSystem, {
+    onHeader: (header) => {
+      frame = createFrame(header, request.coordinateSystem);
+    },
+    onChunk: (attribute, pointOffset, chunk) => {
+      if (frame === undefined) {
+        throw new Error("SPZ decoder emitted attributes before its header.");
+      }
+      copyAttribute(frame, attribute, pointOffset, chunk);
+    },
+  });
+  if (frame === undefined) {
+    throw new Error("SPZ v4 decoder completed without a frame header.");
   }
-  try {
-    spz.HEAPU8.set(bytes, pointer);
-    let decodeError: Error | undefined;
-    spz.loadSpzStreaming(
-      pointer,
-      bytes.byteLength,
-      { to: coordinateSystemValue(spz, request.coordinateSystem) },
-      {
-        onHeader: (header) => {
-          frame = createFrame(header, request.coordinateSystem);
-        },
-        onChunk: (attribute, pointOffset, chunk) => {
-          if (frame === undefined) {
-            throw new Error("SPZ decoder emitted attributes before its header.");
-          }
-          copyAttribute(frame, attribute, pointOffset, chunk);
-        },
-        onDone: () => undefined,
-        onError: (message) => {
-          decodeError = new Error(message);
-        },
-      },
-    );
-    if (decodeError !== undefined) {
-      throw decodeError;
-    }
-    if (frame === undefined) {
-      throw new Error("SPZ v4 decoder completed without a frame header.");
-    }
-    return frame;
-  } finally {
-    if (pointer !== 0) {
-      spz._free(pointer);
-    }
-  }
+  return { diagnostics, frame, outputAllocatedBytes: decodedFrameByteLength(frame) };
 }
 
 function createFrame(
@@ -145,11 +125,15 @@ function copyAttribute(
   throw new Error(`SPZ v4 decoder returned unknown attribute ${attribute}.`);
 }
 
-function coordinateSystemValue(
-  spz: SpzModule,
-  coordinateSystem: GaussianCoordinateSystem,
-): number {
-  return spz.CoordinateSystem[coordinateSystem];
+function decodedFrameByteLength(frame: DecodedGaussianFrame): number {
+  return (
+    frame.positions.byteLength +
+    frame.scales.byteLength +
+    frame.rotations.byteLength +
+    frame.alphas.byteLength +
+    frame.colors.byteLength +
+    frame.sphericalHarmonics.byteLength
+  );
 }
 
 function errorMessage(error: unknown): string {

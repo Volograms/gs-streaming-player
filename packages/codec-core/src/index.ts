@@ -3,5 +3,6 @@ export type {
   DecodedGaussianFrame,
   GaussianCoordinateSystem,
   GaussianFrameDecodeOptions,
+  GaussianFrameDecodeTraceEvent,
   GaussianFrameDecoder,
 } from "./types.js";

@@ -180,6 +180,9 @@ importers:
       '@6g-path/gaussian-codec':
         specifier: workspace:*
         version: link:../codec-core
+      '@6g-path/gaussian-codec-spz':
+        specifier: workspace:*
+        version: link:../codec-spz
       '@6g-path/gaussian-player':
         specifier: workspace:*
         version: link:../player-core

@@ -47,7 +47,21 @@ export interface DecodedGaussianFrame {
 export interface GaussianFrameDecodeOptions {
   /** Coordinate system requested by the consumer. */
   coordinateSystem?: GaussianCoordinateSystem;
+  /** Optional codec-internal timing milestones for performance diagnostics. */
+  onTrace?: (event: Readonly<GaussianFrameDecodeTraceEvent>) => void;
   signal?: AbortSignal;
+}
+
+export interface GaussianFrameDecodeTraceEvent {
+  bytesProcessed?: number;
+  durationMs: number;
+  phase:
+    | "attribute-write"
+    | "input-allocation"
+    | "input-copy"
+    | "output-allocation"
+    | "result-transfer"
+    | "wasm-decode";
 }
 
 export interface GaussianFrameDecoder {

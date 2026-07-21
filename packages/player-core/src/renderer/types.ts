@@ -90,7 +90,14 @@ export type RendererFramePreparationPhase =
   | "tree-registration"
   | "tree-update"
   | "tree-traversal"
-  | "minimum-renderable";
+  | "minimum-renderable"
+  | "spz-attribute-write"
+  | "spz-decode"
+  | "spz-input-allocation"
+  | "spz-input-copy"
+  | "spz-native-pack"
+  | "spz-output-allocation"
+  | "spz-wasm-decode";
 
 export interface RendererFramePreparationTraceEvent {
   chunkIndex?: number;
@@ -180,6 +187,8 @@ export interface RendererMetrics {
 }
 
 export interface GaussianRendererAdapter {
+  /** Whether this adapter can consume a compressed codec without a neutral frame. */
+  canPrepareCompressedFrame?(codecId: string): boolean;
   initialise(): Promise<void>;
   loadStaticObject(
     object: StaticSceneObject,

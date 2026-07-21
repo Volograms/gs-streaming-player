@@ -98,14 +98,21 @@ export function App() {
       framePreparationMs: undefined,
       packMs: undefined,
     };
-    const decoderRegistry = new GaussianFrameDecoderRegistry([
-      new SpzV4Decoder({ maximumWorkers: decodeConcurrency }),
-    ]);
+    const useNativeTexturePacking =
+      import.meta.env.VITE_BABYLON_NATIVE_TEXTURE_PACKING !== "false";
+    const useFusedSpzPacking =
+      useNativeTexturePacking &&
+      import.meta.env.VITE_BABYLON_FUSED_SPZ_PACKING !== "false";
+    const decoderRegistry = new GaussianFrameDecoderRegistry(
+      useFusedSpzPacking
+        ? []
+        : [new SpzV4Decoder({ maximumWorkers: decodeConcurrency })],
+    );
     const adapter = new BabylonGaussianRendererAdapter({
       canvas,
       maximumPackingWorkers: packConcurrency,
-      useNativeTexturePacking:
-        import.meta.env.VITE_BABYLON_NATIVE_TEXTURE_PACKING !== "false",
+      useFusedSpzPacking,
+      useNativeTexturePacking,
     });
     const environment: Record<string, string | undefined> = {
       VITE_DYNAMIC_FRAME_CODEC: import.meta.env.VITE_DYNAMIC_FRAME_CODEC ?? "spz-v4",
@@ -125,6 +132,10 @@ export function App() {
       } else if (event.type === "base-ready") {
         latestTimings.framePreparationMs = event.durationMs;
       } else if (event.type === "renderer-phase" && event.phase === "flat-pack") {
+        latestTimings.packMs = event.stageDurationMs;
+      } else if (event.type === "renderer-phase" && event.phase === "spz-decode") {
+        latestTimings.codecDecodeMs = event.stageDurationMs;
+      } else if (event.type === "renderer-phase" && event.phase === "spz-native-pack") {
         latestTimings.packMs = event.stageDurationMs;
       }
     }

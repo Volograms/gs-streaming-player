@@ -235,6 +235,41 @@ describe("FrameRingBuffer", () => {
     buffer.dispose();
   });
 
+  it("lets a renderer consume supported compressed frames without neutral decoding", async () => {
+    const harness = createRendererHarness();
+    harness.renderer.canPrepareCompressedFrame = (codecId) => codecId === "spz-v4";
+    const sequence = createSequence(1);
+    sequence.frames[0] = {
+      ...sequence.frames[0]!,
+      byteSize: 4,
+      codec: "spz-v4",
+      url: "/frame-0.spz",
+    };
+    const decode = vi.fn();
+    const buffer = new FrameRingBuffer({
+      compressedBufferMaximumBytes: 16,
+      compressedFrameFetch: vi.fn(async () =>
+        Promise.resolve(new Response(new Uint8Array([1, 2, 3, 4]))),
+      ),
+      decoderRegistry: new GaussianFrameDecoderRegistry([
+        { codecId: "spz-v4", decode },
+      ]),
+      futureFrameCount: 0,
+      renderer: harness.renderer,
+      sequence,
+    });
+
+    void buffer.initialise(0).catch(() => undefined);
+
+    await vi.waitFor(() => expect(harness.prepareFrame).toHaveBeenCalledOnce());
+    expect(decode).not.toHaveBeenCalled();
+    expect(harness.prepareFrame.mock.calls[0]?.[2]).toMatchObject({
+      compressedBytes: expect.any(ArrayBuffer),
+    });
+    expect(harness.prepareFrame.mock.calls[0]?.[2].decodedFrame).toBeUndefined();
+    buffer.dispose();
+  });
+
   it("prefetches compressed bytes beyond the decoded frame window", async () => {
     const harness = createRendererHarness();
     const sequence = createSequence(8);

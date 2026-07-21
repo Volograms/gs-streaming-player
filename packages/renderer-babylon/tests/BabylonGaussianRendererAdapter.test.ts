@@ -14,6 +14,25 @@ interface NativeUploadTestAdapter {
 }
 
 describe("BabylonGaussianRendererAdapter native texture upload", () => {
+  it("advertises fused SPZ only when both direct paths are enabled", () => {
+    expect(
+      new BabylonGaussianRendererAdapter({}).canPrepareCompressedFrame("spz-v4"),
+    ).toBe(true);
+    expect(
+      new BabylonGaussianRendererAdapter({
+        useFusedSpzPacking: false,
+      }).canPrepareCompressedFrame("spz-v4"),
+    ).toBe(false);
+    expect(
+      new BabylonGaussianRendererAdapter({
+        useNativeTexturePacking: false,
+      }).canPrepareCompressedFrame("spz-v4"),
+    ).toBe(false);
+    expect(
+      new BabylonGaussianRendererAdapter({}).canPrepareCompressedFrame("sog"),
+    ).toBe(false);
+  });
+
   it("starts exactly one explicit depth sort for a first texture upload", () => {
     const { calls, mesh } = createMesh(0, null);
 
@@ -58,8 +77,7 @@ function createMesh(
     _shDegree: 0,
     _splatPositions: new Float32Array(),
     _updateTextures: () => calls.push("textures"),
-    _updateSplatIndexBuffer: (count: number) =>
-      calls.push(`indices:${String(count)}`),
+    _updateSplatIndexBuffer: (count: number) => calls.push(`indices:${String(count)}`),
     _vertexCount: vertexCount,
     covariancesATexture,
     getBoundingInfo: () => ({ reConstruct }),
@@ -81,6 +99,8 @@ function upload(mesh: GaussianSplattingMesh): void {
     sphericalHarmonics: [],
     textureSize: { height: 1, width: 1 },
   };
-  const adapter = new BabylonGaussianRendererAdapter({}) as unknown as NativeUploadTestAdapter;
+  const adapter = new BabylonGaussianRendererAdapter(
+    {},
+  ) as unknown as NativeUploadTestAdapter;
   adapter.updateMeshFromNativeTextures(mesh, payload);
 }

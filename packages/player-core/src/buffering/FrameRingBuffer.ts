@@ -504,7 +504,11 @@ export class FrameRingBuffer {
       this.trace({ ...event, frameIndex });
     };
     const codecId = preparedSource.codec ?? selectedTransfer?.quality.codec;
-    const requiresExternalDecode = codecId !== undefined;
+    const rendererConsumesCompressedFrame =
+      codecId !== undefined &&
+      this.renderer.canPrepareCompressedFrame?.(codecId) === true;
+    const requiresExternalDecode =
+      codecId !== undefined && !rendererConsumesCompressedFrame;
     const enqueueDecode = (cachedBytes?: ArrayBuffer) => {
       const decodeQueuedAtMs = this.now();
       return this.basePreparationScheduler.enqueue(
@@ -578,7 +582,7 @@ export class FrameRingBuffer {
                     transferQuality: selectedTransfer.quality,
                   }),
             });
-          return codecId === undefined
+          return codecId === undefined || rendererConsumesCompressedFrame
             ? prepareRendererFrame()
             : this.decodeFrame(codecId, cachedBytes, controller.signal, trace).then(
                 prepareRendererFrame,
@@ -588,7 +592,9 @@ export class FrameRingBuffer {
     };
     const basePreparation =
       this.compressedFrameCache === undefined ||
-      (selectedTransfer === undefined && !requiresExternalDecode)
+      (selectedTransfer === undefined &&
+        !requiresExternalDecode &&
+        !rendererConsumesCompressedFrame)
         ? enqueueDecode()
         : this.compressedFrameCache
             .get(
@@ -653,7 +659,18 @@ export class FrameRingBuffer {
     const decodedFrame = await this.decoderRegistry.decode(
       codecId,
       new Uint8Array(cachedBytes),
-      { coordinateSystem: "RUB", signal },
+      {
+        coordinateSystem: "RUB",
+        onTrace: ({ bytesProcessed, durationMs, phase }) =>
+          trace({
+            ...(bytesProcessed === undefined ? {} : { loadedBytes: bytesProcessed }),
+            codecId,
+            codecPhase: phase,
+            durationMs,
+            type: "codec-phase",
+          }),
+        signal,
+      },
     );
     trace({
       codecId,

@@ -18,9 +18,11 @@ interface DecodeJob {
   bytes: Readonly<Uint8Array>;
   coordinateSystem: NonNullable<GaussianFrameDecodeOptions["coordinateSystem"]>;
   id: number;
+  onTrace?: GaussianFrameDecodeOptions["onTrace"];
   reject(error: unknown): void;
   resolve(frame: DecodedGaussianFrame): void;
   signal?: AbortSignal;
+  startedAt?: number;
 }
 
 interface WorkerSlot {
@@ -66,6 +68,7 @@ export class SpzV4Decoder implements GaussianFrameDecoder {
         bytes: compressedBytes,
         coordinateSystem: options.coordinateSystem ?? "RUB",
         id: this.nextJobId,
+        ...(options.onTrace === undefined ? {} : { onTrace: options.onTrace }),
         reject,
         resolve,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -137,6 +140,43 @@ export class SpzV4Decoder implements GaussianFrameDecoder {
       }
       delete slot.job;
       if (data.ok) {
+        const completedAt = performance.now();
+        const diagnostics = data.diagnostics;
+        for (const [phase, durationMs, bytesProcessed] of [
+          [
+            "input-allocation",
+            diagnostics.inputAllocationDurationMs,
+            job.bytes.byteLength,
+          ],
+          ["input-copy", diagnostics.inputCopyDurationMs, job.bytes.byteLength],
+          [
+            "output-allocation",
+            diagnostics.outputAllocationDurationMs,
+            data.outputAllocatedBytes,
+          ],
+          ["wasm-decode", diagnostics.wasmDecodeDurationMs, job.bytes.byteLength],
+          [
+            "attribute-write",
+            diagnostics.attributeWriteDurationMs,
+            data.outputAllocatedBytes,
+          ],
+          [
+            "result-transfer",
+            Math.max(
+              0,
+              completedAt -
+                (job.startedAt ?? completedAt) -
+                diagnostics.totalDurationMs,
+            ),
+            data.outputAllocatedBytes,
+          ],
+        ] as const) {
+          job.onTrace?.({
+            ...(bytesProcessed === undefined ? {} : { bytesProcessed }),
+            durationMs,
+            phase,
+          });
+        }
         job.resolve(data.frame);
       } else {
         job.reject(new Error(data.error));
@@ -173,6 +213,7 @@ export class SpzV4Decoder implements GaussianFrameDecoder {
         return;
       }
       slot.job = job;
+      job.startedAt = performance.now();
       const bytes = new Uint8Array(job.bytes).slice().buffer;
       try {
         slot.worker.postMessage(

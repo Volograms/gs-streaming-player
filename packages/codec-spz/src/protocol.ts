@@ -1,3 +1,4 @@
+import type { SpzStreamingDiagnostics } from "./streaming.js";
 import type {
   DecodedGaussianFrame,
   GaussianCoordinateSystem,
@@ -11,4 +12,10 @@ export interface SpzDecodeRequest {
 
 export type SpzDecodeResponse =
   | { error: string; id: number; ok: false }
-  | { frame: DecodedGaussianFrame; id: number; ok: true };
+  | {
+      diagnostics: SpzStreamingDiagnostics;
+      frame: DecodedGaussianFrame;
+      id: number;
+      ok: true;
+      outputAllocatedBytes: number;
+    };

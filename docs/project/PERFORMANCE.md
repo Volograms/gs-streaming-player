@@ -594,6 +594,78 @@ notably full-tier decode increased from 52.6 to 77.4 ms—so those changes are n
 attributed to the sorting patch. The next experiment may now target SPZ decode while
 keeping this single-sort renderer path and all quality settings fixed.
 
+### 15. SPZ v4 decode baseline and hotspot attribution — 2026-07-21
+
+The post-single-sort full-tier sample establishes a 77.4 ms SPZ decode baseline at
+274,071 rendered splats. This displayed value includes decoder scheduling, the compressed
+input copy, worker execution, and delivery of the transferred neutral attribute buffers.
+
+Sampling the previously supplied desktop CPU trace and excluding idle samples attributed
+about 68.9% of active SPZ-worker time to the official WASM decode plus its JS/WASM call
+bridge, and about 18.9% to the repository's `copyAttribute` conversion/copy function.
+The remaining samples were spread across worker dispatch, allocation/runtime support,
+garbage collection, and profiling noise. A synthetic 274k-splat JavaScript run also made
+the typed-array bounds fallback removal effectively neutral, so that edit is not a useful
+performance experiment.
+
+The first SPZ change should therefore target the WASM decode boundary or remove a whole
+neutral-attribute materialization pass. Queue tuning, input-buffer allocation reuse, and
+minor loop rewrites are explicitly deferred because the trace does not identify them as
+material contributors. Any renderer-specific fusion must remain a separate experiment
+from the renderer-neutral decoder so its architectural and timing effects are visible.
+
+### 16. Babylon fused SPZ-to-native implementation — 2026-07-21
+
+Babylon can now advertise direct handling of `spz-v4` compressed frames. Its existing
+packing worker invokes the shared SPZ streaming decoder and writes each scratch chunk
+directly into Babylon's final center, covariance, RGBA, and SH texture arrays. The
+renderer-neutral decoder and neutral-to-Babylon packer remain available by setting
+`useFusedSpzPacking: false`, so this experiment does not change other renderers.
+
+For SH degree 3, the old neutral frame allocates 236 bytes per splat: positions, scales,
+rotations, alpha, RGB, and 45 SH float values. The fused writer does not allocate that
+frame. It retains only 12 temporary bytes per splat for positive scales until the
+sequential rotation stream arrives, then emits the existing native texture payload. The
+compressed cache is not detached; a compact compressed-input clone is still required
+when ownership transfers to the worker.
+
+New trace phases split SPZ input allocation, input copy, exclusive WASM decode, native
+output allocation, attribute writing/packing, and worker-result transfer. In fused mode,
+the `SPZ decode` card sums only input and WASM time; `Babylon pack` sums native allocation
+and attribute writes, avoiding double-counting the combined worker invocation.
+
+A same-machine desktop rerun produced the following displayed samples. As in the
+single-sort experiment, these are individual paused observations rather than percentile
+distributions. The neutral comparison is the post-single-sort run in section 14.
+
+| Transfer tier | Rendered splats | Render fps (paused) | SPZ decode | Babylon pack | Decode + pack | Frame prepare | Mesh update |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| minimum (25%) | 68,518 | 59.9 fps | 7.2 ms | 21.9 ms | 29.1 ms | 29.8 ms | 6.4 ms |
+| medium (50%) | 139,333 | 59.5 fps | 16.5 ms | 45.2 ms | 61.7 ms | 63.7 ms | 14.3 ms |
+| full (100%) | 279,486 | 60.2 fps | 38.6 ms | 86.1 ms | 124.7 ms | 663.9 ms | 38.3 ms |
+
+The fused path reduced the displayed SPZ decode stage by 46.3%, 47.5%, and 50.1% at
+minimum, medium, and full respectively. That is not the complete speedup because native
+attribute writing is now charged to `Babylon pack`; pack was unchanged at minimum,
+36.1% slower at medium, and 8.2% slower at full. The cross-path `decode + pack` total is
+the fairer comparison:
+
+| Transfer tier | Neutral decode + pack | Fused decode + pack | Change | Throughput gain |
+| --- | ---: | ---: | ---: | ---: |
+| minimum (25%) | 35.3 ms | 29.1 ms | -6.2 ms (-17.6%) | 1.21x |
+| medium (50%) | 64.6 ms | 61.7 ms | -2.9 ms (-4.5%) | 1.05x |
+| full (100%) | 157.0 ms | 124.7 ms | -32.3 ms (-20.6%) | 1.26x |
+
+This validates removal of the renderer-neutral materialisation pass, with the clearest
+absolute gain at full quality. It does not yet make full-quality 30 fps preparation
+possible: 124.7 ms of serial worker time is about 8 frames/s per worker, before queueing
+and presentation. `Frame prepare` again includes scheduler and queue delay, so its large
+full-tier value is not attributed directly to fusion. Mesh-update variation is also not
+attributed to the codec change because fusion does not alter the native payload or the
+single-sort presentation algorithm. A multi-frame trace is still required to quantify
+allocation, transfer, and garbage-collection changes rather than inferring them from
+these cards.
+
 ## Current conclusions
 
 1. Player scheduling, handoff, and the reusable display allocation can sustain 30 fps
@@ -625,12 +697,17 @@ keeping this single-sort renderer path and all quality settings fixed.
 11. Babylon's native-texture single-sort change reduced the sampled full-tier mesh update
     from 63.0 to 28.7 ms (54.4%, 2.20x commit throughput) without changing the 100% splat
     payload. Full-tier SPZ decode and Babylon packing are now the measured desktop limits.
+12. Babylon's fused SPZ-to-native worker path removed the renderer-neutral materialisation
+    and reduced the sampled combined decode-plus-pack time by 17.6% at minimum, 4.5% at
+    medium, and 20.6% at full quality. This optimisation is Babylon-specific above the
+    shared streaming decoder; other renderers need their own native output writer to
+    obtain the same copy/allocation reduction.
 
 ## Next measurements
 
-- Profile SPZ v4 full-tier decode with the single-sort Babylon path fixed, separating
-  coefficient unpacking, dequantization, allocation, and worker-result transfer before
-  selecting one decode change.
+- Capture fused and neutral multi-frame traces at all three tiers to compare p50/p95,
+  allocation, worker-result transfer, and garbage collection; use combined decode-plus-
+  pack time for the cross-path throughput comparison.
 - Run the packed-memory experiment on minimum, medium, and full SH3 tiers in the same
   production browser and hardware session.
 - Compare legacy Spark SPZ v3 with official neutral SPZ v4 using identical frames,

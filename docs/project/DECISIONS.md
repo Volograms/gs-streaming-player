@@ -138,6 +138,12 @@ used during day-to-day implementation.
   fallback because the texture hooks are internal to Babylon. It is an adapter-specific
   optimisation, not a change to neutral SPZ decoding, player-core buffering, or content
   quality selection.
+- Renderer adapters may advertise direct support for a compressed codec when a fused
+  decode-to-native path avoids a large neutral intermediate. The player still owns
+  fetching, caching, scheduling, and fallback selection; the shared SPZ streaming core
+  remains codec-owned, while final texture/buffer packing remains renderer-specific.
+  Babylon is the first implementation. Spark and future renderers keep the neutral path
+  until their own measured native sink justifies equivalent work.
 - Demo and pilot playback use a 25% dynamic transfer floor. A 10% preview asset remains
   available through the manual demo controls for diagnostics, but is not selected by the
   initial or buffer-aware policy.

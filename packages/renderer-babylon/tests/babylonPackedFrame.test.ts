@@ -1,7 +1,8 @@
-import { FromHalfFloat, ToHalfFloat } from "@babylonjs/core/Misc/halfFloat.js";
 import { Matrix, Quaternion } from "@babylonjs/core/Maths/math.vector.js";
+import { FromHalfFloat, ToHalfFloat } from "@babylonjs/core/Misc/halfFloat.js";
 import { describe, expect, it } from "vitest";
 
+import { BabylonSpzNativeTextureWriter } from "../src/babylonSpzNativeFrame.js";
 import {
   packDecodedGaussianFrameForBabylon,
   packDecodedGaussianFrameForBabylonNativeTextures,
@@ -91,6 +92,58 @@ describe("packDecodedGaussianFrameForBabylon", () => {
     expect(packed.centers[3]).toBeCloseTo(expected.factor, 6);
     expect([...packed.covariancesA]).toEqual(expected.covariancesA);
     expect([...packed.covariancesB]).toEqual(expected.covariancesB);
+  });
+
+  it("writes streamed SPZ chunks directly into the same native texture layout", () => {
+    const positions = new Float32Array([1, 2, 3]);
+    const alphaLogits = new Float32Array([0]);
+    const colorDc = new Float32Array([0.25, -0.5, 1]);
+    const scaleLogs = new Float32Array([Math.log(0.1), Math.log(0.2), Math.log(0.3)]);
+    const rotations = new Float32Array([0.2, -0.3, 0.4, 0.5]);
+    const sphericalHarmonics = new Float32Array([
+      -1, -0.5, 0, 0.5, 1, 0.25, -0.25, 0.75, -0.75,
+    ]);
+    const neutral: DecodedGaussianFrame = {
+      alphas: new Float32Array([0.5]),
+      antialiased: false,
+      codecId: "spz-v4",
+      colors: new Float32Array(
+        [...colorDc].map((value) => 0.5 + 0.28209479177387814 * value),
+      ),
+      coordinateSystem: "RUB",
+      numSplats: 1,
+      positions,
+      rotations,
+      scales: new Float32Array([...scaleLogs].map((value) => Math.exp(value))),
+      shDegree: 1,
+      sphericalHarmonics,
+    };
+    const expected = packDecodedGaussianFrameForBabylonNativeTextures(neutral, {
+      height: 1,
+      width: 4,
+    });
+    const writer = new BabylonSpzNativeTextureWriter(
+      { antialiased: false, extensions: [], numPoints: 1, shDegree: 1 },
+      { maximumTextureSize: 4, requirePowerOfTwoHeight: false },
+    );
+
+    writer.write(0, 0, positions);
+    writer.write(1, 0, alphaLogits);
+    writer.write(2, 0, colorDc);
+    writer.write(3, 0, scaleLogs);
+    writer.write(4, 0, rotations);
+    writer.write(5, 0, sphericalHarmonics);
+    const actual = writer.finish();
+
+    expect(actual.payload.centers).toEqual(expected.centers);
+    expect(actual.payload.colors).toEqual(expected.colors);
+    expect(actual.payload.covariancesA).toEqual(expected.covariancesA);
+    expect(actual.payload.covariancesB).toEqual(expected.covariancesB);
+    expect(actual.payload.sphericalHarmonics).toEqual(expected.sphericalHarmonics);
+    expect(actual.payload.boundsMinimum).toEqual(expected.boundsMinimum);
+    expect(actual.payload.boundsMaximum).toEqual(expected.boundsMaximum);
+    expect(actual.temporaryAllocatedBytes).toBe(3 * Float32Array.BYTES_PER_ELEMENT);
+    expect(actual.outputAllocatedBytes).toBe(192);
   });
 });
 

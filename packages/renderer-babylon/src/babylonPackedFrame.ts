@@ -170,15 +170,15 @@ export function packDecodedGaussianFrameForBabylonNativeTextures(
   };
 }
 
-function quantiseUnit(value: number): number {
+export function quantiseUnit(value: number): number {
   return Math.round(Math.min(1, Math.max(0, value)) * 255);
 }
 
-function quantiseSigned(value: number): number {
+export function quantiseSigned(value: number): number {
   return Math.round(Math.min(1, Math.max(-1, value)) * 127.5 + 127.5);
 }
 
-function createSphericalHarmonics(
+export function createSphericalHarmonics(
   numSplats: number,
   coefficientCount: number,
   textureLength = numSplats,
@@ -209,7 +209,7 @@ function packSphericalHarmonics(
   }
 }
 
-function packCovariance(
+export function packCovariance(
   initialX: number,
   initialY: number,
   initialZ: number,

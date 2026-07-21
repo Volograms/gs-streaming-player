@@ -2,6 +2,7 @@ import {
   packDecodedGaussianFrameForBabylon,
   packDecodedGaussianFrameForBabylonNativeTextures,
 } from "./babylonPackedFrame.js";
+import { packSpzV4ForBabylonNativeTextures } from "./babylonSpzNativeFrame.js";
 
 import type {
   BabylonFramePackingRequest,
@@ -14,8 +15,32 @@ const workerScope = globalThis as unknown as {
 };
 
 workerScope.onmessage = ({ data }) => {
+  void pack(data);
+};
+
+async function pack(data: BabylonFramePackingRequest): Promise<void> {
   const startedAt = performance.now();
   try {
+    if ("spzBytes" in data) {
+      const result = await packSpzV4ForBabylonNativeTextures(
+        new Uint8Array(data.spzBytes),
+        data.coordinateSystem,
+        data.constraints,
+      );
+      workerScope.postMessage(
+        {
+          id: data.id,
+          nativePayload: result.payload,
+          ok: true,
+          outputAllocatedBytes: result.outputAllocatedBytes,
+          spzDiagnostics: result.diagnostics,
+          temporaryAllocatedBytes: result.temporaryAllocatedBytes,
+          workerDurationMs: performance.now() - startedAt,
+        },
+        nativePayloadTransferList(result.payload),
+      );
+      return;
+    }
     if (data.nativeTextureSize !== undefined) {
       const nativePayload = packDecodedGaussianFrameForBabylonNativeTextures(
         data.frame,
@@ -28,13 +53,7 @@ workerScope.onmessage = ({ data }) => {
           ok: true,
           workerDurationMs: performance.now() - startedAt,
         },
-        [
-          nativePayload.centers.buffer,
-          nativePayload.covariancesA.buffer,
-          nativePayload.covariancesB.buffer,
-          nativePayload.colors.buffer,
-          ...nativePayload.sphericalHarmonics.map(({ buffer }) => buffer),
-        ],
+        nativePayloadTransferList(nativePayload),
       );
       return;
     }
@@ -55,6 +74,18 @@ workerScope.onmessage = ({ data }) => {
       ok: false,
     });
   }
-};
+}
+
+function nativePayloadTransferList(
+  payload: import("./babylonPackedFrame.js").BabylonNativeTexturePayload,
+): Transferable[] {
+  return [
+    payload.centers.buffer,
+    payload.covariancesA.buffer,
+    payload.covariancesB.buffer,
+    payload.colors.buffer,
+    ...payload.sphericalHarmonics.map(({ buffer }) => buffer),
+  ];
+}
 
 export {};

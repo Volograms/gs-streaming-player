@@ -1,5 +1,6 @@
 import { packDecodedGaussianFrameForBabylon } from "./babylonPackedFrame.js";
 import { packDecodedGaussianFrameForBabylonNativeTextures } from "./babylonPackedFrame.js";
+import { packSpzV4ForBabylonNativeTextures } from "./babylonSpzNativeFrame.js";
 
 import type {
   BabylonFramePackingRequest,
@@ -10,13 +11,19 @@ import type {
   BabylonPackedFramePayload,
   BabylonTextureSize,
 } from "./babylonPackedFrame.js";
+import type { BabylonSpzTextureConstraints } from "./babylonSpzNativeFrame.js";
 import type { DecodedGaussianFrame } from "@6g-path/gaussian-codec";
+import type { GaussianCoordinateSystem } from "@6g-path/gaussian-codec";
+import type { SpzStreamingDiagnostics } from "@6g-path/gaussian-codec-spz";
 
 export interface BabylonFramePackingResult {
   execution: "main-thread" | "worker";
   payload: BabylonPackedFramePayload | BabylonNativeTexturePayload;
   queueDurationMs: number;
   resultTransferDurationMs: number;
+  spzDiagnostics?: SpzStreamingDiagnostics;
+  outputAllocatedBytes?: number;
+  temporaryAllocatedBytes?: number;
   totalDurationMs: number;
   workerDurationMs: number;
 }
@@ -28,6 +35,12 @@ export interface BabylonFramePacker {
     signal?: AbortSignal,
     nativeTextureSize?: BabylonTextureSize,
   ): Promise<BabylonFramePackingResult>;
+  packSpz?(
+    compressedBytes: Readonly<Uint8Array>,
+    coordinateSystem: GaussianCoordinateSystem,
+    constraints: BabylonSpzTextureConstraints,
+    signal?: AbortSignal,
+  ): Promise<BabylonFramePackingResult>;
 }
 
 export interface BabylonPackingWorkerLike {
@@ -38,7 +51,10 @@ export interface BabylonPackingWorkerLike {
 }
 
 interface PackingJob {
-  frame: DecodedGaussianFrame;
+  compressedBytes?: Readonly<Uint8Array>;
+  constraints?: BabylonSpzTextureConstraints;
+  coordinateSystem?: GaussianCoordinateSystem;
+  frame?: DecodedGaussianFrame;
   id: number;
   queuedAt: number;
   reject(error: unknown): void;
@@ -82,6 +98,34 @@ export class BabylonFramePackingPool implements BabylonFramePacker {
     signal?: AbortSignal,
     nativeTextureSize?: BabylonTextureSize,
   ): Promise<BabylonFramePackingResult> {
+    return this.enqueue(
+      { frame, ...(nativeTextureSize === undefined ? {} : { nativeTextureSize }) },
+      signal,
+    );
+  }
+
+  packSpz(
+    compressedBytes: Readonly<Uint8Array>,
+    coordinateSystem: GaussianCoordinateSystem,
+    constraints: BabylonSpzTextureConstraints,
+    signal?: AbortSignal,
+  ): Promise<BabylonFramePackingResult> {
+    return this.enqueue({ compressedBytes, constraints, coordinateSystem }, signal);
+  }
+
+  private enqueue(
+    input: Partial<
+      Pick<
+        PackingJob,
+        | "compressedBytes"
+        | "constraints"
+        | "coordinateSystem"
+        | "frame"
+        | "nativeTextureSize"
+      >
+    >,
+    signal?: AbortSignal,
+  ): Promise<BabylonFramePackingResult> {
     if (this.disposed) {
       return Promise.reject(new Error("The Babylon frame packing pool was disposed."));
     }
@@ -90,13 +134,12 @@ export class BabylonFramePackingPool implements BabylonFramePacker {
     }
     return new Promise<BabylonFramePackingResult>((resolve, reject) => {
       const job: PackingJob = {
-        frame,
+        ...input,
         id: this.nextJobId,
         queuedAt: this.now(),
         reject,
         resolve,
         ...(signal === undefined ? {} : { signal }),
-        ...(nativeTextureSize === undefined ? {} : { nativeTextureSize }),
       };
       this.nextJobId += 1;
       const abort = () => this.abortJob(job);
@@ -175,6 +218,16 @@ export class BabylonFramePackingPool implements BabylonFramePacker {
           execution: "worker",
           payload: "nativePayload" in data ? data.nativePayload : data.payload,
           queueDurationMs,
+          ...("spzDiagnostics" in data && data.spzDiagnostics !== undefined
+            ? { spzDiagnostics: data.spzDiagnostics }
+            : {}),
+          ...("outputAllocatedBytes" in data && data.outputAllocatedBytes !== undefined
+            ? { outputAllocatedBytes: data.outputAllocatedBytes }
+            : {}),
+          ...("temporaryAllocatedBytes" in data &&
+          data.temporaryAllocatedBytes !== undefined
+            ? { temporaryAllocatedBytes: data.temporaryAllocatedBytes }
+            : {}),
           resultTransferDurationMs: Math.max(
             0,
             totalDurationMs - queueDurationMs - data.workerDurationMs,
@@ -220,16 +273,35 @@ export class BabylonFramePackingPool implements BabylonFramePacker {
       slot.job = job;
       job.startedAt = this.now();
       try {
-        slot.worker.postMessage(
-          {
-            frame: job.frame,
-            id: job.id,
-            ...(job.nativeTextureSize === undefined
-              ? {}
-              : { nativeTextureSize: job.nativeTextureSize }),
-          },
-          decodedFrameTransferList(job.frame),
-        );
+        if (job.frame !== undefined) {
+          slot.worker.postMessage(
+            {
+              frame: job.frame,
+              id: job.id,
+              ...(job.nativeTextureSize === undefined
+                ? {}
+                : { nativeTextureSize: job.nativeTextureSize }),
+            },
+            decodedFrameTransferList(job.frame),
+          );
+        } else if (
+          job.compressedBytes !== undefined &&
+          job.constraints !== undefined &&
+          job.coordinateSystem !== undefined
+        ) {
+          const spzBytes = new Uint8Array(job.compressedBytes).slice().buffer;
+          slot.worker.postMessage(
+            {
+              constraints: job.constraints,
+              coordinateSystem: job.coordinateSystem,
+              id: job.id,
+              spzBytes,
+            },
+            [spzBytes],
+          );
+        } else {
+          throw new Error("Babylon packing job has no valid input representation.");
+        }
       } catch (error) {
         delete slot.job;
         job.reject(error);
@@ -263,6 +335,35 @@ export class SynchronousBabylonFramePacker implements BabylonFramePacker {
       payload,
       queueDurationMs: 0,
       resultTransferDurationMs: 0,
+      totalDurationMs: workerDurationMs,
+      workerDurationMs,
+    };
+  }
+
+  async packSpz(
+    compressedBytes: Readonly<Uint8Array>,
+    coordinateSystem: GaussianCoordinateSystem,
+    constraints: BabylonSpzTextureConstraints,
+    signal?: AbortSignal,
+  ): Promise<BabylonFramePackingResult> {
+    if (signal?.aborted === true) {
+      throw abortError();
+    }
+    const startedAt = this.now();
+    const result = await packSpzV4ForBabylonNativeTextures(
+      compressedBytes,
+      coordinateSystem,
+      constraints,
+    );
+    const workerDurationMs = this.now() - startedAt;
+    return {
+      execution: "main-thread",
+      outputAllocatedBytes: result.outputAllocatedBytes,
+      payload: result.payload,
+      queueDurationMs: 0,
+      resultTransferDurationMs: 0,
+      spzDiagnostics: result.diagnostics,
+      temporaryAllocatedBytes: result.temporaryAllocatedBytes,
       totalDurationMs: workerDurationMs,
       workerDurationMs,
     };

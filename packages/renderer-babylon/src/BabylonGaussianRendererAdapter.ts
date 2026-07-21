@@ -6,6 +6,7 @@ import "@babylonjs/core/XR/features/WebXRControllerPointerSelection.js";
 import "@babylonjs/core/XR/features/WebXRHandTracking.js";
 import "@babylonjs/core/XR/features/WebXRNearInteraction.js";
 
+import { SPZ_V4_CODEC_ID } from "@6g-path/gaussian-codec-spz";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera.js";
 import { Engine } from "@babylonjs/core/Engines/engine.js";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight.js";
@@ -227,6 +228,16 @@ export class BabylonGaussianRendererAdapter
     }
   }
 
+  canPrepareCompressedFrame(codecId: string): boolean {
+    return (
+      codecId === SPZ_V4_CODEC_ID &&
+      this.options.useNativeTexturePacking !== false &&
+      this.options.useFusedSpzPacking !== false &&
+      (this.framePackerValue?.packSpz !== undefined ||
+        this.options.framePacker === undefined)
+    );
+  }
+
   /** Creates Babylon's standard WebXR experience and entry UI for this scene. */
   async createDefaultXrExperience(
     options: WebXRDefaultExperienceOptions = {},
@@ -283,18 +294,32 @@ export class BabylonGaussianRendererAdapter
   ): Promise<PreparedFrame> {
     this.assertInitialised();
     throwIfAborted(options.signal);
-    if (options.decodedFrame === undefined) {
+    const codecId = frame.codec ?? options.transferQuality?.codec;
+    const useFusedSpz =
+      options.decodedFrame === undefined &&
+      options.compressedBytes !== undefined &&
+      codecId !== undefined &&
+      this.canPrepareCompressedFrame(codecId);
+    if (options.decodedFrame === undefined && !useFusedSpz) {
       throw new Error("The Babylon adapter requires a renderer-neutral decoded frame.");
     }
     const startedAt = this.now();
     options.onTrace?.({ elapsedMs: 0, phase: "resource-created" });
-    const packing = await this.requireFramePacker().pack(
-      options.decodedFrame,
-      options.signal,
-      this.options.useNativeTexturePacking === false
-        ? undefined
-        : this.nativeTextureSizeFor(options.decodedFrame.numSplats),
-    );
+    const framePacker = this.requireFramePacker();
+    const packing = useFusedSpz
+      ? await framePacker.packSpz!(
+          new Uint8Array(options.compressedBytes!),
+          "RUB",
+          this.spzTextureConstraints(),
+          options.signal,
+        )
+      : await framePacker.pack(
+          options.decodedFrame!,
+          options.signal,
+          this.options.useNativeTexturePacking === false
+            ? undefined
+            : this.nativeTextureSizeFor(options.decodedFrame!.numSplats),
+        );
     throwIfAborted(options.signal);
     const quality: FramePresentationQuality = {
       achievedDetailLevel: options.transferQuality?.detailLevel ?? 1,
@@ -314,6 +339,28 @@ export class BabylonGaussianRendererAdapter
       ["flat-pack", packing.totalDurationMs],
     ] as const) {
       options.onTrace?.({ elapsedMs, phase, stageDurationMs });
+    }
+    if (packing.spzDiagnostics !== undefined) {
+      const diagnostics = packing.spzDiagnostics;
+      for (const [phase, stageDurationMs] of [
+        ["spz-input-allocation", diagnostics.inputAllocationDurationMs],
+        ["spz-input-copy", diagnostics.inputCopyDurationMs],
+        ["spz-output-allocation", diagnostics.outputAllocationDurationMs],
+        ["spz-wasm-decode", diagnostics.wasmDecodeDurationMs],
+        ["spz-attribute-write", diagnostics.attributeWriteDurationMs],
+        [
+          "spz-decode",
+          diagnostics.inputAllocationDurationMs +
+            diagnostics.inputCopyDurationMs +
+            diagnostics.wasmDecodeDurationMs,
+        ],
+        [
+          "spz-native-pack",
+          diagnostics.outputAllocationDurationMs + diagnostics.attributeWriteDurationMs,
+        ],
+      ] as const) {
+        options.onTrace?.({ elapsedMs, phase, stageDurationMs });
+      }
     }
     options.onTrace?.({ elapsedMs, phase: "minimum-renderable", quality });
 
@@ -657,6 +704,16 @@ export class BabylonGaussianRendererAdapter
       height = 2 ** Math.ceil(Math.log2(height));
     }
     return { height, width };
+  }
+
+  private spzTextureConstraints(): {
+    maximumTextureSize: number;
+    requirePowerOfTwoHeight: boolean;
+  } {
+    return {
+      maximumTextureSize: this.engine.getCaps().maxTextureSize,
+      requirePowerOfTwoHeight: this.engine.version === 1 && !this.engine.isWebGPU,
+    };
   }
 
   /**

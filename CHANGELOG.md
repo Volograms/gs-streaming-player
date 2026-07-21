@@ -7,6 +7,12 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- Fused Babylon SPZ v4 preparation: player-core can now route supported compressed
+  frames directly to an adapter, and Babylon's packing worker streams decoded chunks
+  into final center, covariance, RGBA, and SH texture arrays. The neutral Float32 frame
+  and second worker handoff are bypassed without changing tier, splat count, SH, or the
+  existing neutral fallback. Codec-internal allocation, copy, WASM, attribute-write, and
+  result-transfer timing phases are also exposed for A/B profiling.
 - Use a 25% dynamic-transfer floor in the comparison demos and their adaptive policy,
   while retaining 10% preview cuts in the manual controls for diagnostic comparisons.
 - Experimental Babylon direct native-texture packing for neutral SPZ frames. Covariance

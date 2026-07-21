@@ -22,6 +22,12 @@ acceptance criteria are covered by implementation and verification.
 - [ ] Measure the Babylon native-texture upload experiment at 25%, 50%, and 100% on
       desktop and Quest 3. It moves Babylon's per-splat covariance expansion out of the
       main-thread handoff; retain the documented `.splat` upload as an A/B fallback.
+- [x] Add a renderer capability for direct compressed-frame preparation and fuse SPZ v4
+      streaming decode with Babylon native-texture packing. Keep the neutral decoder as
+      the fallback for Spark, other renderers, and Babylon compatibility tests.
+- [ ] Measure fused versus neutral Babylon SPZ preparation at 25%, 50%, and 100%,
+      including per-stage timing, peak memory/GC, prepared-frame throughput, mesh
+      update, and presented cadence on desktop and Quest 3.
 - [ ] Compare Babylon.js and Spark using identical SPZ v4 frames, cache state, worker
       limits, desktop hardware, and diagnostics.
 - [ ] Add a PlayCanvas adapter/demo for an explicitly supported SPZ path if its runtime

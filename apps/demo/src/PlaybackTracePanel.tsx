@@ -11,6 +11,7 @@ const eventLabels: Record<FrameRingBufferTraceEvent["type"], string> = {
   "compressed-fetch-started": "compressed fetch started",
   "codec-decode-ready": "codec decode ready",
   "codec-decode-started": "codec decode started",
+  "codec-phase": "codec phase",
   evicted: "evicted",
   failed: "failed",
   "presentation-ready": "presentation gate passed",
@@ -47,6 +48,9 @@ function describeEvent(event: Readonly<FrameRingBufferTraceEvent>): string {
   }
   if (event.codecId !== undefined) {
     details.push(event.codecId);
+  }
+  if (event.codecPhase !== undefined) {
+    details.push(event.codecPhase);
   }
   if (event.durationMs !== undefined) {
     details.push(
