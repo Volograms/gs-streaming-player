@@ -132,6 +132,15 @@ used during day-to-day implementation.
   sort, then both visibility flags change at one render boundary. This bounded extra GPU
   allocation is preferred to a blank or partially ordered frame and must be included in
   Quest/mobile memory measurements.
+- Babylon's dynamic 25%+ path may precompute its final covariance/texture payload in a
+  renderer-owned worker and submit it through Babylon's existing texture/sort machinery.
+  This removes the repeated main-thread `.splat` expansion but is guarded by an explicit
+  fallback because the texture hooks are internal to Babylon. It is an adapter-specific
+  optimisation, not a change to neutral SPZ decoding, player-core buffering, or content
+  quality selection.
+- Demo and pilot playback use a 25% dynamic transfer floor. A 10% preview asset remains
+  available through the manual demo controls for diagnostics, but is not selected by the
+  initial or buffer-aware policy.
 - The 6G pilot uses completed-transfer throughput, request timing, buffer state, stalls,
   and renderer capacity for adaptation because its Wi-Fi last hop exposes no useful
   6G-specific client telemetry. The normalised 6G provider remains an extension point,

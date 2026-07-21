@@ -27,6 +27,7 @@ interface LatestTimings {
 }
 
 const minimumDynamicSplatCount = 100;
+const minimumDynamicTransferDetail = 0.25;
 
 function positiveInteger(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
@@ -103,6 +104,8 @@ export function App() {
     const adapter = new BabylonGaussianRendererAdapter({
       canvas,
       maximumPackingWorkers: packConcurrency,
+      useNativeTexturePacking:
+        import.meta.env.VITE_BABYLON_NATIVE_TEXTURE_PACKING !== "false",
     });
     const environment: Record<string, string | undefined> = {
       VITE_DYNAMIC_FRAME_CODEC: import.meta.env.VITE_DYNAMIC_FRAME_CODEC ?? "spz-v4",
@@ -151,9 +154,17 @@ export function App() {
         }
         const levels = collectTransferLevels(sequence.frames[0]?.qualityLevels ?? []);
         const initialDetail =
+          levels.find(
+            ({ detailLevel, minimumPlayable }) =>
+              minimumPlayable === true &&
+              (detailLevel ?? 0) >= minimumDynamicTransferDetail,
+          )?.detailLevel ??
+          levels.find(
+            ({ detailLevel }) => (detailLevel ?? 0) >= minimumDynamicTransferDetail,
+          )?.detailLevel ??
           levels.find(({ minimumPlayable }) => minimumPlayable)?.detailLevel ??
           levels[0]?.detailLevel ??
-          0.25;
+          minimumDynamicTransferDetail;
         if (active) {
           setQualityLevels(levels);
           setSelectedDetail(initialDetail);

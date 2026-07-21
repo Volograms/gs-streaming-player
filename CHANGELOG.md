@@ -7,10 +7,18 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- Use a 25% dynamic-transfer floor in the comparison demos and their adaptive policy,
+  while retaining 10% preview cuts in the manual controls for diagnostic comparisons.
+- Experimental Babylon direct native-texture packing for neutral SPZ frames. Covariance
+  expansion now runs in the renderer-owned packing worker and the adapter submits the
+  resulting texture layout to Babylon's existing sort/upload path, avoiding
+  `updateDataAsync()`'s per-splat main-thread conversion. Set
+  `VITE_BABYLON_NATIVE_TEXTURE_PACKING=false` for the documented `.splat` fallback and
+  A/B measurements; transfer tier and source quality are unchanged.
 - Register Babylon.js pointer-selection, near-interaction, hand-tracking, ray, and
   instanced-mesh side effects so the default WebXR experience can initialise its
-  controller interactions; stop requesting unrelated AR-only optional features for
-  the immersive-VR demo.
+  controller interactions; stop requesting unrelated AR-only optional features for the
+  immersive-VR demo.
 - Patch Babylon.js Gaussian splat depth-sort publication so a completed streamed-frame
   ordering updates every per-camera instance buffer, preventing one XR eye from
   retaining stale or zero indices while the other eye displays the frame.

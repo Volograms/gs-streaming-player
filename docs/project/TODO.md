@@ -19,6 +19,9 @@ acceptance criteria are covered by implementation and verification.
 - [x] Stabilise Babylon frame presentation with a two-slot depth-sort-fenced handoff so
       the old frame remains drawable until its replacement is ready; start the default
       orbit camera from the front of the current fixture.
+- [ ] Measure the Babylon native-texture upload experiment at 25%, 50%, and 100% on
+      desktop and Quest 3. It moves Babylon's per-splat covariance expansion out of the
+      main-thread handoff; retain the documented `.splat` upload as an A/B fallback.
 - [ ] Compare Babylon.js and Spark using identical SPZ v4 frames, cache state, worker
       limits, desktop hardware, and diagnostics.
 - [ ] Add a PlayCanvas adapter/demo for an explicitly supported SPZ path if its runtime

@@ -365,6 +365,14 @@ export function SparkViewport({
           }
           const transferLevels = getDynamicTransferLevels(loadedDynamicSequence);
           const initialTransferDetail =
+            transferLevels.find(
+              ({ detailLevel, minimumPlayable }) =>
+                minimumPlayable === true &&
+                (detailLevel ?? 0) >= defaultDynamicTransferDetail,
+            )?.detailLevel ??
+            transferLevels.find(
+              ({ detailLevel }) => (detailLevel ?? 0) >= defaultDynamicTransferDetail,
+            )?.detailLevel ??
             transferLevels.find(({ minimumPlayable }) => minimumPlayable)
               ?.detailLevel ??
             transferLevels[0]?.detailLevel ??
@@ -376,6 +384,7 @@ export function SparkViewport({
           }
           qualityController = new BufferAwareQualityController({
             dynamicObjectId: loadedDynamicSequence.id,
+            minimumDynamicDetailLevel: defaultDynamicTransferDetail,
             minimumSplatCount: minimumDynamicSplatCount,
             targetBufferSeconds: dynamicTargetBufferSeconds,
           });
@@ -738,7 +747,5 @@ function getDynamicTransferLevels(
     .sort(
       (left, right) => left.detailLevel - right.detailLevel || left.level - right.level,
     );
-  const minimumPlayableDetail =
-    levels.find(({ minimumPlayable }) => minimumPlayable)?.detailLevel ?? 0;
-  return levels.filter(({ detailLevel }) => detailLevel >= minimumPlayableDetail);
+  return levels;
 }

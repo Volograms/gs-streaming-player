@@ -20,7 +20,11 @@ import { createDefaultBabylonFramePacker } from "./BabylonFramePackingPool.js";
 import { applyBabylonTransform } from "./transform.js";
 
 import type { BabylonFramePacker } from "./BabylonFramePackingPool.js";
-import type { BabylonPackedFramePayload } from "./babylonPackedFrame.js";
+import type {
+  BabylonNativeTexturePayload,
+  BabylonPackedFramePayload,
+  BabylonTextureSize,
+} from "./babylonPackedFrame.js";
 import type { BabylonRendererAdapterOptions, BabylonRendererContext } from "./types.js";
 import type {
   FramePresentationQuality,
@@ -44,7 +48,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { WebXRDefaultExperienceOptions } from "@babylonjs/core/XR/webXRDefaultExperience.js";
 
 interface BabylonPreparedResource {
-  payload: BabylonPackedFramePayload;
+  payload: BabylonPackedFramePayload | BabylonNativeTexturePayload;
   quality: FramePresentationQuality;
   transform?: Transform;
 }
@@ -66,6 +70,20 @@ interface MutableResourceMetric {
 }
 
 type DynamicMeshSlot = 0 | 1;
+
+interface BabylonNativeTextureMesh {
+  _needsRotationScaleTextures: boolean;
+  _shDegree: number;
+  _maxShDegree: number;
+  _splatPositions: Float32Array;
+  _updateTextures(
+    covariancesA: Uint16Array,
+    covariancesB: Uint16Array,
+    colors: Uint8Array,
+    sphericalHarmonics: Uint8Array[] | undefined,
+  ): void;
+  _vertexCount: number;
+}
 
 export class BabylonGaussianRendererAdapter
   implements GaussianRendererAdapter, BabylonRendererContext
@@ -268,6 +286,9 @@ export class BabylonGaussianRendererAdapter
     const packing = await this.requireFramePacker().pack(
       options.decodedFrame,
       options.signal,
+      this.options.useNativeTexturePacking === false
+        ? undefined
+        : this.nativeTextureSizeFor(options.decodedFrame.numSplats),
     );
     throwIfAborted(options.signal);
     const quality: FramePresentationQuality = {
@@ -564,14 +585,18 @@ export class BabylonGaussianRendererAdapter
     mesh.setEnabled(false);
     try {
       applyBabylonTransform(mesh, resource.transform);
-      await mesh.updateDataAsync(
-        resource.payload.splatBuffer,
-        resource.payload.sphericalHarmonics.length === 0
-          ? undefined
-          : resource.payload.sphericalHarmonics,
-        undefined,
-        resource.payload.shDegree,
-      );
+      if (isNativeTexturePayload(resource.payload)) {
+        this.updateMeshFromNativeTextures(mesh, resource.payload);
+      } else {
+        await mesh.updateDataAsync(
+          resource.payload.splatBuffer,
+          resource.payload.sphericalHarmonics.length === 0
+            ? undefined
+            : resource.payload.sphericalHarmonics,
+          undefined,
+          resource.payload.shDegree,
+        );
+      }
       this.assertInitialised();
 
       const textureWidth = Math.max(1, this.engine.getCaps().maxTextureSize);
@@ -617,6 +642,52 @@ export class BabylonGaussianRendererAdapter
 
   private getStagingDynamicMeshSlot(): DynamicMeshSlot {
     return this.activeDynamicMeshSlot === 0 ? 1 : 0;
+  }
+
+  private nativeTextureSizeFor(numSplats: number): BabylonTextureSize {
+    const width = this.engine.getCaps().maxTextureSize;
+    const requiresPowerOfTwoHeight = this.engine.version === 1 && !this.engine.isWebGPU;
+    let height = Math.max(1, Math.ceil(numSplats / width));
+    if (requiresPowerOfTwoHeight) {
+      height = 2 ** Math.ceil(Math.log2(height));
+    }
+    return { height, width };
+  }
+
+  /**
+   * Uses Babylon's existing texture/sort machinery, but bypasses its expensive
+   * per-splat `.splat` expansion. This experimental path is version-sensitive;
+   * callers can select the documented upload path during compatibility checks.
+   */
+  private updateMeshFromNativeTextures(
+    mesh: GaussianSplattingMesh,
+    payload: BabylonNativeTexturePayload,
+  ): void {
+    const nativeMesh = mesh as unknown as BabylonNativeTextureMesh;
+    if (nativeMesh._needsRotationScaleTextures) {
+      throw new Error(
+        "Babylon native texture layout is incompatible with the active Gaussian mesh.",
+      );
+    }
+    // Keep the true splat count. Babylon derives the same padded texture size from
+    // it, while its sort worker avoids spending time on transparent padding texels.
+    nativeMesh._vertexCount = payload.numSplats;
+    nativeMesh._splatPositions = payload.centers;
+    nativeMesh._maxShDegree = payload.shDegree;
+    nativeMesh._shDegree = payload.shDegree;
+    nativeMesh._updateTextures(
+      payload.covariancesA,
+      payload.covariancesB,
+      payload.colors,
+      payload.sphericalHarmonics.length === 0 ? undefined : payload.sphericalHarmonics,
+    );
+    mesh
+      .getBoundingInfo()
+      .reConstruct(
+        new Vector3(...payload.boundsMinimum),
+        new Vector3(...payload.boundsMaximum),
+        mesh.getWorldMatrix(),
+      );
   }
 
   private requireActiveDynamicMesh(): GaussianSplattingMesh {
@@ -717,4 +788,10 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted === true) {
     throw new DOMException("Babylon renderer operation was aborted.", "AbortError");
   }
+}
+
+function isNativeTexturePayload(
+  payload: BabylonPackedFramePayload | BabylonNativeTexturePayload,
+): payload is BabylonNativeTexturePayload {
+  return "covariancesA" in payload;
 }

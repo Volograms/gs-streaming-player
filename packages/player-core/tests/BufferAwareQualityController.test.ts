@@ -73,4 +73,23 @@ describe("BufferAwareQualityController", () => {
     expect(controller.tier).toBe("constrained");
     expect(decision.dynamicFrameDetailLevel).toBe(0.15);
   });
+
+  it("keeps an application-defined dynamic transfer floor during buffer pressure", () => {
+    const controller = new BufferAwareQualityController({
+      dynamicObjectId: "actor",
+      minimumDynamicDetailLevel: 0.25,
+    });
+    const decision = controller.update(
+      {
+        ...createInitialPlaybackState(),
+        bufferAheadSeconds: 0,
+        lifecycle: "BUFFERING",
+      },
+      network,
+      metrics,
+    );
+
+    expect(controller.tier).toBe("critical");
+    expect(decision.dynamicFrameDetailLevel).toBe(0.25);
+  });
 });

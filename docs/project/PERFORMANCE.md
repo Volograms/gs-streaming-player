@@ -523,6 +523,23 @@ follow-up adapter uses two persistent mesh slots, waits for the staging slot's d
 sort fence, and swaps visibility in `onBeforeRender`. Its continuity and doubled bounded
 GPU capacity still require browser and target-device measurement.
 
+### 13. Babylon main-thread upload attribution — 2026-07-21
+
+A short desktop DevTools capture of the Babylon demo recorded 42 draw frames over about
+868 ms. Its two SPZ decoder workers handled frames in roughly 15–22 ms and its packing
+workers in roughly 8–9 ms. In contrast, 16 long main-thread timer continuations were
+attributed directly to `GaussianSplattingMesh.updateDataAsync()` during
+`commitPreparedFrame()`: 29.0 ms p50, 36.6 ms p95, and 38.2 ms maximum. The capture also
+reported 17 dropped-frame events, so this conversion path is already marginal at 30 fps
+on desktop before target-device scaling.
+
+Quest Browser measurements with a full compressed cache and 11 decoded frames ahead
+showed the same boundary much more clearly at the 25% tier: 42.5 ms SPZ decode, 44.8 ms
+Babylon packing, and 122.6 ms native mesh update. The byte cache was not the limiting
+stage. The native-texture packing experiment moves the covariance conversion out of this
+main-thread upload path; it must now be compared against the documented `.splat` path at
+unchanged 25%, 50%, and 100% tiers.
+
 ## Current conclusions
 
 1. Player scheduling, handoff, and the reusable display allocation can sustain 30 fps

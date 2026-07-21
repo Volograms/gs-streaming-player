@@ -16,6 +16,11 @@ export interface BabylonRendererAdapterOptions {
   manageResize?: boolean;
   maximumPackingWorkers?: number;
   now?: () => number;
+  /**
+   * Pack frame data into Babylon's texture layout off the render thread and use
+   * the experimental direct-texture upload path. Defaults to true.
+   */
+  useNativeTexturePacking?: boolean;
   /** Caller-owned scene; adapter-loaded nodes are still released on disposal. */
   scene?: Scene;
 }

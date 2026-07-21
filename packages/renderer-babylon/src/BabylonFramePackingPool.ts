@@ -1,15 +1,20 @@
 import { packDecodedGaussianFrameForBabylon } from "./babylonPackedFrame.js";
+import { packDecodedGaussianFrameForBabylonNativeTextures } from "./babylonPackedFrame.js";
 
 import type {
   BabylonFramePackingRequest,
   BabylonFramePackingResponse,
 } from "./babylonFramePacking.protocol.js";
-import type { BabylonPackedFramePayload } from "./babylonPackedFrame.js";
+import type {
+  BabylonNativeTexturePayload,
+  BabylonPackedFramePayload,
+  BabylonTextureSize,
+} from "./babylonPackedFrame.js";
 import type { DecodedGaussianFrame } from "@6g-path/gaussian-codec";
 
 export interface BabylonFramePackingResult {
   execution: "main-thread" | "worker";
-  payload: BabylonPackedFramePayload;
+  payload: BabylonPackedFramePayload | BabylonNativeTexturePayload;
   queueDurationMs: number;
   resultTransferDurationMs: number;
   totalDurationMs: number;
@@ -21,6 +26,7 @@ export interface BabylonFramePacker {
   pack(
     frame: DecodedGaussianFrame,
     signal?: AbortSignal,
+    nativeTextureSize?: BabylonTextureSize,
   ): Promise<BabylonFramePackingResult>;
 }
 
@@ -39,6 +45,7 @@ interface PackingJob {
   resolve(result: BabylonFramePackingResult): void;
   signal?: AbortSignal;
   startedAt?: number;
+  nativeTextureSize?: BabylonTextureSize;
 }
 
 interface WorkerSlot {
@@ -73,6 +80,7 @@ export class BabylonFramePackingPool implements BabylonFramePacker {
   pack(
     frame: DecodedGaussianFrame,
     signal?: AbortSignal,
+    nativeTextureSize?: BabylonTextureSize,
   ): Promise<BabylonFramePackingResult> {
     if (this.disposed) {
       return Promise.reject(new Error("The Babylon frame packing pool was disposed."));
@@ -88,6 +96,7 @@ export class BabylonFramePackingPool implements BabylonFramePacker {
         reject,
         resolve,
         ...(signal === undefined ? {} : { signal }),
+        ...(nativeTextureSize === undefined ? {} : { nativeTextureSize }),
       };
       this.nextJobId += 1;
       const abort = () => this.abortJob(job);
@@ -164,7 +173,7 @@ export class BabylonFramePackingPool implements BabylonFramePacker {
         const totalDurationMs = completedAt - job.queuedAt;
         job.resolve({
           execution: "worker",
-          payload: data.payload,
+          payload: "nativePayload" in data ? data.nativePayload : data.payload,
           queueDurationMs,
           resultTransferDurationMs: Math.max(
             0,
@@ -212,7 +221,13 @@ export class BabylonFramePackingPool implements BabylonFramePacker {
       job.startedAt = this.now();
       try {
         slot.worker.postMessage(
-          { frame: job.frame, id: job.id },
+          {
+            frame: job.frame,
+            id: job.id,
+            ...(job.nativeTextureSize === undefined
+              ? {}
+              : { nativeTextureSize: job.nativeTextureSize }),
+          },
           decodedFrameTransferList(job.frame),
         );
       } catch (error) {
@@ -232,12 +247,16 @@ export class SynchronousBabylonFramePacker implements BabylonFramePacker {
   async pack(
     frame: DecodedGaussianFrame,
     signal?: AbortSignal,
+    nativeTextureSize?: BabylonTextureSize,
   ): Promise<BabylonFramePackingResult> {
     if (signal?.aborted === true) {
       throw abortError();
     }
     const startedAt = this.now();
-    const payload = packDecodedGaussianFrameForBabylon(frame);
+    const payload =
+      nativeTextureSize === undefined
+        ? packDecodedGaussianFrameForBabylon(frame)
+        : packDecodedGaussianFrameForBabylonNativeTextures(frame, nativeTextureSize);
     const workerDurationMs = this.now() - startedAt;
     return {
       execution: "main-thread",

@@ -10,6 +10,9 @@ export {
 export { BabylonGaussianRendererAdapter } from "./BabylonGaussianRendererAdapter.js";
 export {
   packDecodedGaussianFrameForBabylon,
+  packDecodedGaussianFrameForBabylonNativeTextures,
+  type BabylonNativeTexturePayload,
   type BabylonPackedFramePayload,
+  type BabylonTextureSize,
 } from "./babylonPackedFrame.js";
 export type { BabylonRendererAdapterOptions, BabylonRendererContext } from "./types.js";

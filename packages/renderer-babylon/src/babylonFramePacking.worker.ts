@@ -1,4 +1,7 @@
-import { packDecodedGaussianFrameForBabylon } from "./babylonPackedFrame.js";
+import {
+  packDecodedGaussianFrameForBabylon,
+  packDecodedGaussianFrameForBabylonNativeTextures,
+} from "./babylonPackedFrame.js";
 
 import type {
   BabylonFramePackingRequest,
@@ -13,6 +16,28 @@ const workerScope = globalThis as unknown as {
 workerScope.onmessage = ({ data }) => {
   const startedAt = performance.now();
   try {
+    if (data.nativeTextureSize !== undefined) {
+      const nativePayload = packDecodedGaussianFrameForBabylonNativeTextures(
+        data.frame,
+        data.nativeTextureSize,
+      );
+      workerScope.postMessage(
+        {
+          id: data.id,
+          nativePayload,
+          ok: true,
+          workerDurationMs: performance.now() - startedAt,
+        },
+        [
+          nativePayload.centers.buffer,
+          nativePayload.covariancesA.buffer,
+          nativePayload.covariancesB.buffer,
+          nativePayload.colors.buffer,
+          ...nativePayload.sphericalHarmonics.map(({ buffer }) => buffer),
+        ],
+      );
+      return;
+    }
     const payload = packDecodedGaussianFrameForBabylon(data.frame);
     workerScope.postMessage(
       {

@@ -10,7 +10,8 @@ The first comparison path supports renderer-neutral decoded Gaussian frames, cur
 produced by the official SPZ v4 codec. The adapter:
 
 - converts neutral positions, scales, RGBA, XYZW rotations, and SH0-SH3 data into
-  Babylon's 32-byte `.splat` memory layout in a persistent worker pool;
+  Babylon's final covariance/texture layout in a persistent worker pool, avoiding the
+  otherwise repeated main-thread `.splat` expansion in the normal dynamic path;
 - retains two front/back `GaussianSplattingMesh` slots instead of creating one Babylon
   mesh per buffered frame;
 - serialises asynchronous mesh updates, keeps the current slot visible while the other
@@ -22,10 +23,12 @@ produced by the official SPZ v4 codec. The adapter:
   `.RAD` static assets;
 - optionally creates Babylon's standard immersive-VR WebXR experience and entry UI.
 
-Babylon still derives covariances, updates Gaussian textures, and depth-sorts inside
-`GaussianSplattingMesh.updateDataAsync()`. This comparison therefore measures a real
-Babylon ingestion path; it is not a custom Babylon shader or a claim that the current
-handoff is already optimal.
+The fast path uses Babylon's existing texture upload and depth-sort machinery, but
+precomputes the covariance textures before presentation. It depends on Babylon's current
+internal texture hooks, so `VITE_BABYLON_NATIVE_TEXTURE_PACKING=false` restores the
+documented `.splat` plus `GaussianSplattingMesh.updateDataAsync()` route for an A/B
+comparison or compatibility fallback. It remains an experiment until desktop and Quest
+measurements show that the removed main-thread work materially improves handoff rate.
 
 The front/back handoff intentionally keeps two dynamic GPU allocations resident. The
 `dynamicGpuCapacity` renderer metric reports their combined capacity. Record this cost
@@ -58,6 +61,15 @@ the Spark comparison.
 Set `VITE_ENABLE_XR=false` to skip WebXR initialisation. Otherwise Babylon adds its VR
 entry control when the browser, headset, or simulator exposes `immersive-vr`. Failure to
 create an XR session does not prevent desktop playback.
+
+`VITE_BABYLON_NATIVE_TEXTURE_PACKING` defaults to enabled. Leave it enabled for the new
+worker-packed path; set it to `false` only to compare the previous Babylon-native
+`.splat` ingestion route. This toggle changes no source tier, splat count, or quality
+target.
+
+The comparison demos start at 25% and their adaptive policy never requests less. A 10%
+preview cut remains available in the manual selector for explicit diagnostic
+comparisons.
 
 ## Comparison rules
 
