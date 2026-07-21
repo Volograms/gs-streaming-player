@@ -8,4 +8,5 @@ allowBuilds:
   unrs-resolver: true
 
 patchedDependencies:
+  "@babylonjs/core@9.17.0": patches/@babylonjs__core@9.17.0.patch
   "@sparkjsdev/spark@2.1.0": patches/@sparkjsdev__spark@2.1.0.patch

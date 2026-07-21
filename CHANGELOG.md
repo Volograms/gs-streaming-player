@@ -11,6 +11,9 @@ All notable changes to this project will be documented here. The project uses
   instanced-mesh side effects so the default WebXR experience can initialise its
   controller interactions; stop requesting unrelated AR-only optional features for
   the immersive-VR demo.
+- Patch Babylon.js Gaussian splat depth-sort publication so a completed streamed-frame
+  ordering updates every per-camera instance buffer, preventing one XR eye from
+  retaining stale or zero indices while the other eye displays the frame.
 - Babylon.js renderer adapter for neutral SPZ v4 frames, with worker-based conversion to
   Babylon's native splat memory, two persistent front/back `GaussianSplattingMesh`
   slots, depth-sort-fenced asynchronous handoff, transforms, resource metrics, and

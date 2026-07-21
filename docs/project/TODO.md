@@ -29,6 +29,8 @@ acceptance criteria are covered by implementation and verification.
       clearly rather than silently selecting another path.
 - [ ] Run the chosen candidates on Meta Quest 3 and representative mobile Safari after
       desktop format/adapter comparisons have narrowed the device matrix.
+  - [ ] Validate the Babylon streamed-splat stereo-buffer compatibility patch on both
+        Quest 3 eyes during paused and continuous playback.
 
 ### Pilot network adaptation
 

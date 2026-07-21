@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@babylonjs/core@9.17.0': 0fbb9dd141c3be5b3842448541df237339181f75d5f0a6009031f909b777db77
   '@sparkjsdev/spark@2.1.0': beed064d4b2527b4ae517fc33e4295a748225a3a2fc5dd859d50ef37286e4f3c
 
 importers:
@@ -187,10 +188,10 @@ importers:
         version: link:../shared
       '@babylonjs/core':
         specifier: 9.17.0
-        version: 9.17.0
+        version: 9.17.0(patch_hash=0fbb9dd141c3be5b3842448541df237339181f75d5f0a6009031f909b777db77)
       '@babylonjs/loaders':
         specifier: 9.17.0
-        version: 9.17.0(@babylonjs/core@9.17.0)(babylonjs-gltf2interface@9.17.0)
+        version: 9.17.0(@babylonjs/core@9.17.0(patch_hash=0fbb9dd141c3be5b3842448541df237339181f75d5f0a6009031f909b777db77))(babylonjs-gltf2interface@9.17.0)
 
   packages/renderer-spark:
     dependencies:
@@ -2249,11 +2250,11 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@babylonjs/core@9.17.0': {}
+  '@babylonjs/core@9.17.0(patch_hash=0fbb9dd141c3be5b3842448541df237339181f75d5f0a6009031f909b777db77)': {}
 
-  '@babylonjs/loaders@9.17.0(@babylonjs/core@9.17.0)(babylonjs-gltf2interface@9.17.0)':
+  '@babylonjs/loaders@9.17.0(@babylonjs/core@9.17.0(patch_hash=0fbb9dd141c3be5b3842448541df237339181f75d5f0a6009031f909b777db77))(babylonjs-gltf2interface@9.17.0)':
     dependencies:
-      '@babylonjs/core': 9.17.0
+      '@babylonjs/core': 9.17.0(patch_hash=0fbb9dd141c3be5b3842448541df237339181f75d5f0a6009031f909b777db77)
       babylonjs-gltf2interface: 9.17.0
 
   '@bcoe/v8-coverage@1.0.2': {}
