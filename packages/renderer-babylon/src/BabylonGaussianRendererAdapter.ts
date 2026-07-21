@@ -72,9 +72,14 @@ interface MutableResourceMetric {
 type DynamicMeshSlot = 0 | 1;
 
 interface BabylonNativeTextureMesh {
+  _activeSplatRangeKey: string;
+  _activeSplatRanges: Uint32Array | null;
+  _activeSplatRenderCount: number;
   _needsRotationScaleTextures: boolean;
+  _postToWorker(forced?: boolean): void;
   _shDegree: number;
   _maxShDegree: number;
+  _sortIsDirty: boolean;
   _splatPositions: Float32Array;
   _updateTextures(
     covariancesA: Uint16Array,
@@ -82,6 +87,7 @@ interface BabylonNativeTextureMesh {
     colors: Uint8Array,
     sphericalHarmonics: Uint8Array[] | undefined,
   ): void;
+  _updateSplatIndexBuffer(vertexCount: number): void;
   _vertexCount: number;
 }
 
@@ -669,6 +675,17 @@ export class BabylonGaussianRendererAdapter
         "Babylon native texture layout is incompatible with the active Gaussian mesh.",
       );
     }
+    if (nativeMesh._vertexCount !== payload.numSplats) {
+      // updateDataAsync() resets any range selection and resizes both the
+      // instance-index and depth-sort buffers before posting the new positions.
+      // Without this, a reused mesh slot can submit the previous frame's depth
+      // buffer length; Babylon rejects that sort result and leaves its posting
+      // gate locked, so the presentation handoff never settles.
+      nativeMesh._activeSplatRanges = null;
+      nativeMesh._activeSplatRangeKey = "";
+      nativeMesh._activeSplatRenderCount = 0;
+      nativeMesh._updateSplatIndexBuffer(payload.numSplats);
+    }
     // Keep the true splat count. Babylon derives the same padded texture size from
     // it, while its sort worker avoids spending time on transparent padding texels.
     nativeMesh._vertexCount = payload.numSplats;
@@ -681,6 +698,11 @@ export class BabylonGaussianRendererAdapter
       payload.colors,
       payload.sphericalHarmonics.length === 0 ? undefined : payload.sphericalHarmonics,
     );
+    // updateDataAsync() performs these steps after _updateTextures(). The first
+    // texture upload only creates Babylon's sort worker; without this explicit
+    // post no sort completes and the staging mesh can never pass the handoff fence.
+    nativeMesh._sortIsDirty = true;
+    nativeMesh._postToWorker(true);
     mesh
       .getBoundingInfo()
       .reConstruct(
