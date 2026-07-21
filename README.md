@@ -41,6 +41,34 @@ pnpm test          # Run all unit tests
 pnpm test:e2e      # Run the Chromium smoke tests
 ```
 
+## HTTPS development (WebXR on a headset)
+
+`localhost` is a secure context in modern browsers, so desktop WebXR testing can use the
+normal development server. A headset or another device on the LAN needs HTTPS.
+
+Install `mkcert` and its local certificate authority, then, from the repository root,
+create a certificate that includes the computer's LAN IP address:
+
+```bash
+sudo apt install mkcert libnss3-tools
+mkcert -install
+mkdir -p .cert
+mkcert -key-file .cert/localhost-key.pem -cert-file .cert/localhost-cert.pem localhost 127.0.0.1 ::1 192.168.1.42
+```
+
+Replace `192.168.1.42` with the IP address that the headset uses to reach this computer.
+The `.cert/` directory is ignored by Git. Copy the `mkcert` root CA to the headset and
+trust it there, then create `apps/demo-babylon/.env.local` containing:
+
+```dotenv
+VITE_HTTPS=true
+VITE_HOST=0.0.0.0
+```
+
+Start the XR demo with `pnpm dev:babylon` and open `https://YOUR-LAN-IP:4175/` from the
+headset. The Spark demo supports the same `VITE_HTTPS` and `VITE_HOST` settings on
+port 4173.
+
 For browser tests, install Chromium once with:
 
 ```bash

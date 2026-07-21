@@ -10,6 +10,7 @@ target/
 .env.*
 .pnpm-store/
 !.env.example
+.cert/
 
 # Developer-provided renderer fixtures are staged here for local smoke tests only.
 apps/demo/public/assets/local-static.rad
