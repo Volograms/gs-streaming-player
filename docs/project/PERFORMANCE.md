@@ -540,6 +540,60 @@ stage. The native-texture packing experiment moves the covariance conversion out
 main-thread upload path; it must now be compared against the documented `.splat` path at
 unchanged 25%, 50%, and 100% tiers.
 
+### 14. Babylon native-texture single-sort experiment — 2026-07-21
+
+The first post-native-packing desktop samples used an RTX 3070 and the same dynamic
+sequence at unchanged transfer quality. These are individual displayed samples rather
+than a percentile distribution, so they establish the experiment baseline but should not
+be treated as a stable benchmark by themselves.
+
+| Transfer tier | Rendered splats | Render fps (paused) | SPZ decode | Babylon pack | Frame prepare | Mesh update |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| minimum (25%) | 69,703 | 60.2 fps | 14.6 ms | 21.7 ms | 36.5 ms | 10.1 ms |
+| medium (50%) | 139,138 | 59.5 fps | 27.9 ms | 36.7 ms | 384.4 ms | 23.4 ms |
+| full (100%) | 278,270 | 59.9 fps | 52.6 ms | 69.8 ms | 686.2 ms | 63.0 ms |
+
+The near-60 paused render rate at every tier shows that full-tier steady rendering is not
+GPU-raster limited on this machine. The serial presentation boundary is the immediate
+full-tier limit: a 63.0 ms mesh commit permits at most about 15.9 commits/s. With two
+packing workers, 69.8 ms of packing supplies at most about 28.7 frames/s, so packing is
+expected to become the next limit if presentation reaches the 30 fps budget.
+
+`Frame prepare` measures from the player's base-frame request through `base-ready`; it
+includes scheduler waiting, compressed-cache access, decode, packing, and transfer. Its
+384–686 ms samples therefore demonstrate accumulated queue pressure and are not direct
+single-stage CPU timings.
+
+Source inspection found two full depth sorts on reused native-texture mesh slots.
+Babylon's `_updateTextures()` already posts the replacement-frame sort, while the adapter
+also marked the sort dirty and forced a post. When the first result arrived, Babylon
+therefore posted a redundant second sort before allowing the staging-mesh handoff to
+settle. The adapter now explicitly posts one sort only for a mesh's first texture upload;
+reused slots rely on `_updateTextures()`'s existing post. Splat count, SH data, and
+transfer quality are unchanged.
+
+A same-machine rerun after the single-sort change produced the following displayed
+samples:
+
+| Transfer tier | Rendered splats | Render fps (paused) | SPZ decode | Babylon pack | Frame prepare | Mesh update | Mesh-update change |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| minimum (25%) | 69,875 | 60.6 fps | 13.4 ms | 21.9 ms | 35.7 ms | 17.9 ms | +7.8 ms (+77.2%) |
+| medium (50%) | 136,034 | 60.2 fps | 31.4 ms | 33.2 ms | 320.6 ms | 22.1 ms | -1.3 ms (-5.6%) |
+| full (100%) | 274,071 | 88.5 fps | 77.4 ms | 79.6 ms | 825.3 ms | 28.7 ms | -34.3 ms (-54.4%) |
+
+The targeted full-tier mesh update improved from 63.0 to 28.7 ms: a 54.4% latency
+reduction and 2.20x commit-throughput increase. The corresponding serial ceiling rose
+from about 15.9 to 34.8 commits/s, moving this sample just inside a 30 fps budget.
+Medium improved by 5.6%. The minimum-tier sample regressed from 10.1 to 17.9 ms; because
+these are isolated displayed values and the removed work scales with splat count, this
+small-tier result must be treated as run-to-run noise or fixed handoff overhead until a
+multi-frame percentile capture confirms it.
+
+Decode, packing, and end-to-end preparation varied materially between the two runs—most
+notably full-tier decode increased from 52.6 to 77.4 ms—so those changes are not
+attributed to the sorting patch. The next experiment may now target SPZ decode while
+keeping this single-sort renderer path and all quality settings fixed.
+
 ## Current conclusions
 
 1. Player scheduling, handoff, and the reusable display allocation can sustain 30 fps
@@ -568,9 +622,15 @@ unchanged 25%, 50%, and 100% tiers.
     resident, four concurrent sequential decode-and-pack preparations produced 19.1 fps,
     matching their measured 18.8 fps capacity estimate. Compressed delivery lowers this
     further when it overlaps the preparation workload.
+11. Babylon's native-texture single-sort change reduced the sampled full-tier mesh update
+    from 63.0 to 28.7 ms (54.4%, 2.20x commit throughput) without changing the 100% splat
+    payload. Full-tier SPZ decode and Babylon packing are now the measured desktop limits.
 
 ## Next measurements
 
+- Profile SPZ v4 full-tier decode with the single-sort Babylon path fixed, separating
+  coefficient unpacking, dequantization, allocation, and worker-result transfer before
+  selecting one decode change.
 - Run the packed-memory experiment on minimum, medium, and full SH3 tiers in the same
   production browser and hardware session.
 - Compare legacy Spark SPZ v3 with official neutral SPZ v4 using identical frames,

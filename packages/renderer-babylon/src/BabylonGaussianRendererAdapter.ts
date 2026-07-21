@@ -79,7 +79,6 @@ interface BabylonNativeTextureMesh {
   _postToWorker(forced?: boolean): void;
   _shDegree: number;
   _maxShDegree: number;
-  _sortIsDirty: boolean;
   _splatPositions: Float32Array;
   _updateTextures(
     covariancesA: Uint16Array,
@@ -675,6 +674,7 @@ export class BabylonGaussianRendererAdapter
         "Babylon native texture layout is incompatible with the active Gaussian mesh.",
       );
     }
+    const requiresInitialSort = mesh.covariancesATexture === null;
     if (nativeMesh._vertexCount !== payload.numSplats) {
       // updateDataAsync() resets any range selection and resizes both the
       // instance-index and depth-sort buffers before posting the new positions.
@@ -698,11 +698,13 @@ export class BabylonGaussianRendererAdapter
       payload.colors,
       payload.sphericalHarmonics.length === 0 ? undefined : payload.sphericalHarmonics,
     );
-    // updateDataAsync() performs these steps after _updateTextures(). The first
-    // texture upload only creates Babylon's sort worker; without this explicit
-    // post no sort completes and the staging mesh can never pass the handoff fence.
-    nativeMesh._sortIsDirty = true;
-    nativeMesh._postToWorker(true);
+    // The first texture upload creates Babylon's sort worker but does not post a
+    // sort. Subsequent _updateTextures() calls already post one internally. Do not
+    // mark the sort dirty here: that would enqueue a redundant second full sort
+    // when the first result returns.
+    if (requiresInitialSort) {
+      nativeMesh._postToWorker(true);
+    }
     mesh
       .getBoundingInfo()
       .reConstruct(
