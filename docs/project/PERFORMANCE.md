@@ -666,6 +666,49 @@ single-sort presentation algorithm. A multi-frame trace is still required to qua
 allocation, transfer, and garbage-collection changes rather than inferring them from
 these cards.
 
+#### Full-tier sampled CPU trace
+
+`Trace-20260721T170152.json` captured about 6.7 seconds of full-tier preparation with
+the two fused packing workers. Detailed profiling adds overhead, so its absolute task
+latencies are not directly interchangeable with the unprofiled timing cards above. It
+does establish worker saturation and the relative CPU distribution.
+
+The two workers completed 69 long decode-and-pack tasks in a 6.714-second active window,
+or 10.28 tasks/s in aggregate. Their task latency was 182.8 ms p50, 230.9 ms p95, and
+281.8 ms maximum. The tasks occupied 12.978 of the available 13.428 worker-seconds,
+confirming that preparation throughput, rather than the main thread or renderer loop,
+limited this capture.
+
+| Sampled fused-worker work | Share of two-worker profile time |
+| --- | ---: |
+| Babylon covariance construction | 23.5% |
+| Identified SPZ WASM decode functions | 21.6% |
+| Float32-to-half conversion and table access | 13.0% |
+| Scale exponentiation | 9.6% |
+| Rotation-loop overhead around covariance packing | 6.0% |
+| Alpha, colour, and position writers | 16.1% |
+| Garbage collection | 3.2% |
+| Idle | 3.9% |
+
+Covariance construction, its rotation loop, and half-float conversion therefore account
+for about 42.5% of sampled worker CPU. Including scale exponentiation raises the native
+scale/rotation-to-covariance path to about 52.1%, well above the identifiable WASM decode
+share. The next isolated CPU experiment should target this native packing path while
+preserving exactly the same Babylon texture bytes and splat quality. A deeper SPZ WASM
+change should follow that measurement rather than being selected from the UI's stage
+name alone.
+
+The workers performed 2,482 minor and 34 major collections, reclaiming about 2.49 GB in
+total (about 36 MB of young-generation allocation per completed task). Collection pauses
+used about 410 ms across both workers, so GC is visible allocation churn but only about
+3% of sampled worker CPU. Reusing callback and scratch state remains worthwhile for
+memory bandwidth and Quest thermals, but GC elimination alone cannot close the full-tier
+throughput gap.
+
+The renderer main thread had only three tasks longer than 16.7 ms; its one 102 ms task
+was CPU-profiler startup. The sampled Babylon upload calls and GPU-process tasks did not
+form the sustained bottleneck, consistent with the near-60 fps paused render loop.
+
 ## Current conclusions
 
 1. Player scheduling, handoff, and the reusable display allocation can sustain 30 fps
@@ -702,12 +745,19 @@ these cards.
     medium, and 20.6% at full quality. This optimisation is Babylon-specific above the
     shared streaming decoder; other renderers need their own native output writer to
     obtain the same copy/allocation reduction.
+13. The full-tier fused CPU trace places about 52% of worker time in Babylon's scale,
+    covariance, and half-float packing path versus about 22% in identifiable SPZ WASM
+    decode functions. Both packing workers were saturated, while the main thread and
+    renderer loop retained headroom.
 
 ## Next measurements
 
 - Capture fused and neutral multi-frame traces at all three tiers to compare p50/p95,
   allocation, worker-result transfer, and garbage collection; use combined decode-plus-
   pack time for the cross-path throughput comparison.
+- Benchmark one byte-identical optimisation of Babylon covariance and float-to-half
+  packing against the full-tier trace before changing the SPZ WASM decoder. Record worker
+  task p50/p95, aggregate preparation throughput, and allocation/GC rate.
 - Run the packed-memory experiment on minimum, medium, and full SH3 tiers in the same
   production browser and hardware session.
 - Compare legacy Spark SPZ v3 with official neutral SPZ v4 using identical frames,
