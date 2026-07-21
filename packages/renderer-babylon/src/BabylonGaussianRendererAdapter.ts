@@ -1,5 +1,10 @@
 import "@babylonjs/loaders/SPLAT/index.js";
 import "@babylonjs/loaders/glTF/index.js";
+import "@babylonjs/core/Culling/ray.js";
+import "@babylonjs/core/Meshes/instancedMesh.js";
+import "@babylonjs/core/XR/features/WebXRControllerPointerSelection.js";
+import "@babylonjs/core/XR/features/WebXRHandTracking.js";
+import "@babylonjs/core/XR/features/WebXRNearInteraction.js";
 
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera.js";
 import { Engine } from "@babylonjs/core/Engines/engine.js";

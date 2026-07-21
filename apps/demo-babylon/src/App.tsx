@@ -212,7 +212,7 @@ export function App() {
           try {
             xrExperience = await adapter.createDefaultXrExperience({
               disableTeleportation: true,
-              optionalFeatures: true,
+              optionalFeatures: false,
               uiOptions: { sessionMode: "immersive-vr" },
             });
             if (active) {

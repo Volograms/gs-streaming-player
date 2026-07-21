@@ -7,6 +7,10 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- Register Babylon.js pointer-selection, near-interaction, hand-tracking, ray, and
+  instanced-mesh side effects so the default WebXR experience can initialise its
+  controller interactions; stop requesting unrelated AR-only optional features for
+  the immersive-VR demo.
 - Babylon.js renderer adapter for neutral SPZ v4 frames, with worker-based conversion to
   Babylon's native splat memory, two persistent front/back `GaussianSplattingMesh`
   slots, depth-sort-fenced asynchronous handoff, transforms, resource metrics, and
