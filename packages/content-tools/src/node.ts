@@ -13,6 +13,15 @@ export type {
   RadQualityCutsRequest,
   RadQualityCutsRunner,
 } from "./rad-cuts/runRadQualityCuts.js";
+export { convertQualityCutsToSog } from "./sog/convertQualityCutsToSog.js";
+export type {
+  ConvertQualityCutsToSogDependencies,
+  ConvertQualityCutsToSogIo,
+  ConvertQualityCutsToSogRequest,
+  ConvertQualityCutsToSogRunner,
+  SogAssetConversionRequest,
+  SogAssetConversionRunner,
+} from "./sog/convertQualityCutsToSog.js";
 export { repackSpzV4 } from "./spz-v4/repackSpzV4.js";
 export type {
   RepackSpzV4Io,

@@ -11,7 +11,7 @@ const DEFAULT_END_FRAME = 50;
 
 type Environment = Record<string, string | undefined>;
 
-export type LocalDynamicFrameCodec = "spark-spz-v3" | "spz-v4";
+export type LocalDynamicFrameCodec = "spark-spz-v3" | "spz-v4" | "sog-v2";
 
 interface QualityCutFrame {
   qualityLevels: GaussianQualityLevel[];
@@ -58,8 +58,10 @@ export function readLocalDynamicFrameCodec(
   environment: Environment,
 ): LocalDynamicFrameCodec {
   const value = environment.VITE_DYNAMIC_FRAME_CODEC ?? "spark-spz-v3";
-  if (value !== "spark-spz-v3" && value !== "spz-v4") {
-    throw new Error("VITE_DYNAMIC_FRAME_CODEC must be 'spark-spz-v3' or 'spz-v4'.");
+  if (value !== "spark-spz-v3" && value !== "spz-v4" && value !== "sog-v2") {
+    throw new Error(
+      "VITE_DYNAMIC_FRAME_CODEC must be 'spark-spz-v3', 'spz-v4', or 'sog-v2'.",
+    );
   }
   return value;
 }
@@ -91,6 +93,11 @@ export function createLocalDynamicSequence(
 
   const frameRate = readFrameRate(environment);
   const codec = readLocalDynamicFrameCodec(environment);
+  if (codec === "sog-v2") {
+    throw new Error(
+      "SOG v2 playback requires VITE_DYNAMIC_QUALITY_INDEX_URL; the RAD base URL pattern cannot describe SOG assets.",
+    );
+  }
   const sourceFrameIndices = Array.from(
     { length: endFrame - startFrame + 1 },
     (_, index) => startFrame + index,
@@ -100,7 +107,7 @@ export function createLocalDynamicSequence(
     frameCount: sourceFrameIndices.length,
     frameRate,
     frames: sourceFrameIndices.map((sourceFrameIndex, frameIndex) => ({
-      ...(codec === "spz-v4" ? { codec } : {}),
+      ...(codec === "spark-spz-v3" ? {} : { codec }),
       frameIndex,
       metadata: { sourceFrameIndex },
       timestampSeconds: frameIndex / frameRate,
@@ -162,6 +169,14 @@ export async function loadLocalDynamicSequence(
   }
   const frameRate = readFrameRate(environment);
   const codec = readLocalDynamicFrameCodec(environment);
+  if (
+    (codec === "sog-v2" && index.format !== "flat-sog-quality-cuts") ||
+    (codec !== "sog-v2" && index.format === "flat-sog-quality-cuts")
+  ) {
+    throw new Error(
+      `Dynamic quality index format '${index.format}' does not match codec '${codec}'.`,
+    );
+  }
   const radBaseUrl = environment.VITE_DYNAMIC_RAD_BASE_URL?.replace(/\/+$/, "");
   const sourceFrameIndices = Array.from(
     { length: endFrame - startFrame + 1 },
@@ -192,7 +207,7 @@ export async function loadLocalDynamicSequence(
         );
       }
       return {
-        ...(codec === "spz-v4" ? { codec } : {}),
+        ...(codec === "spark-spz-v3" ? {} : { codec }),
         frameIndex,
         metadata: { sourceFrameIndex },
         qualityLevels,
@@ -230,7 +245,8 @@ function validateQualityCutIndex(value: unknown): QualityCutIndex {
     !("version" in value) ||
     value.version !== 1 ||
     !("format" in value) ||
-    value.format !== "flat-spz-quality-cuts" ||
+    (value.format !== "flat-spz-quality-cuts" &&
+      value.format !== "flat-sog-quality-cuts") ||
     !("frames" in value) ||
     !Array.isArray(value.frames)
   ) {
@@ -278,7 +294,7 @@ function normaliseQualityLevel(
     readQualityRatio(quality, "actualLeafRatio");
   return {
     ...quality,
-    ...(codec === "spz-v4" ? { codec } : {}),
+    ...(codec === "spark-spz-v3" ? {} : { codec }),
     ...(quality.detailLevel === undefined && inferredDetailLevel !== undefined
       ? { detailLevel: inferredDetailLevel }
       : {}),

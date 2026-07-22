@@ -1,4 +1,5 @@
 import { runRadQualityCuts } from "../rad-cuts/runRadQualityCuts.js";
+import { convertQualityCutsToSog } from "../sog/convertQualityCutsToSog.js";
 import { repackSpzV4 } from "../spz-v4/repackSpzV4.js";
 import {
   countManifestFrames,
@@ -9,6 +10,10 @@ import type {
   RadQualityCutsRequest,
   RadQualityCutsRunner,
 } from "../rad-cuts/runRadQualityCuts.js";
+import type {
+  ConvertQualityCutsToSogRequest,
+  ConvertQualityCutsToSogRunner,
+} from "../sog/convertQualityCutsToSog.js";
 import type { RepackSpzV4Request, RepackSpzV4Runner } from "../spz-v4/repackSpzV4.js";
 
 export interface CliIo {
@@ -19,6 +24,7 @@ export interface CliIo {
 const USAGE = `Usage:
   pnpm gs-manifest validate <manifest.json> [--check-assets]
   pnpm gs-content extract-rad-cuts <frame.rad> [more.rad ...] --output-dir <dir> [options]
+  pnpm gs-content convert-sog <quality-cuts.json> --output-dir <dir> [options]
   pnpm gs-content repack-spz-v4 <quality-cuts.json> --output-dir <dir> --spz-tools-dir <dir> [--force]
 
 Options:
@@ -29,10 +35,15 @@ Options:
                   Tier marked as minimum playable. Default: minimum.
   --max-sh <0..3> Limit output spherical harmonics degree.
   --index <name>  Output metadata filename. Default: quality-cuts.json
+  --sh-iterations <n>
+                  SOG spherical-harmonic compression iterations. Default: 10.
+  --max-workers <n>
+                  SOG encoding worker threads; 0 runs inline. Default: 4.
   --force         Replace existing generated files.
   --help          Show this help.`;
 
 export interface CliDependencies {
+  convertQualityCutsToSog?: ConvertQualityCutsToSogRunner;
   repackSpzV4?: RepackSpzV4Runner;
   runRadQualityCuts?: RadQualityCutsRunner;
 }
@@ -61,6 +72,16 @@ export async function runCli(
       return 2;
     }
     return (dependencies.repackSpzV4 ?? repackSpzV4)(request, io);
+  }
+  if (command === "convert-sog") {
+    const request = parseConvertQualityCutsToSogRequest(args.slice(1), io);
+    if (request === undefined) {
+      return 2;
+    }
+    return (dependencies.convertQualityCutsToSog ?? convertQualityCutsToSog)(
+      request,
+      io,
+    );
   }
 
   const positional = args.slice(1).filter((argument) => !argument.startsWith("--"));
@@ -98,6 +119,80 @@ export async function runCli(
     `  ${result.manifest.dynamicSequences.length} sequence(s), ${countManifestFrames(result.manifest)} frame(s)`,
   );
   return 0;
+}
+
+function parseConvertQualityCutsToSogRequest(
+  args: readonly string[],
+  io: CliIo,
+): ConvertQualityCutsToSogRequest | undefined {
+  const request: ConvertQualityCutsToSogRequest = {
+    force: false,
+    indexPath: "",
+    maxWorkers: 4,
+    outputDir: "",
+    shIterations: 10,
+  };
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === undefined) {
+      continue;
+    }
+    if (!argument.startsWith("--")) {
+      if (request.indexPath !== "") {
+        io.stderr("convert-sog accepts exactly one quality-cuts index.");
+        io.stderr(USAGE);
+        return undefined;
+      }
+      request.indexPath = argument;
+      continue;
+    }
+    if (argument === "--force") {
+      request.force = true;
+      continue;
+    }
+    const value = args[index + 1];
+    if (value === undefined || value.startsWith("--")) {
+      io.stderr(`Option ${argument} requires a value.`);
+      io.stderr(USAGE);
+      return undefined;
+    }
+    index += 1;
+    switch (argument) {
+      case "--output-dir":
+        request.outputDir = value;
+        break;
+      case "--sh-iterations": {
+        const iterations = Number(value);
+        if (!Number.isInteger(iterations) || iterations < 0) {
+          io.stderr("--sh-iterations must be a non-negative integer.");
+          io.stderr(USAGE);
+          return undefined;
+        }
+        request.shIterations = iterations;
+        break;
+      }
+      case "--max-workers": {
+        const maxWorkers = Number(value);
+        if (!Number.isInteger(maxWorkers) || maxWorkers < 0) {
+          io.stderr("--max-workers must be a non-negative integer.");
+          io.stderr(USAGE);
+          return undefined;
+        }
+        request.maxWorkers = maxWorkers;
+        break;
+      }
+      default:
+        io.stderr(`Unknown option: ${argument}`);
+        io.stderr(USAGE);
+        return undefined;
+    }
+  }
+  if (request.indexPath === "" || request.outputDir === "") {
+    io.stderr("A quality-cuts index and --output-dir are required.");
+    io.stderr(USAGE);
+    return undefined;
+  }
+  return request;
 }
 
 function parseRepackSpzV4Request(

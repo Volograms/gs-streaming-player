@@ -141,6 +141,10 @@ files: codec choice is explicit and there is no silent cross-version fallback. T
 compressed cache and playback scheduler are identical in both runs; only decode and
 renderer preparation differ.
 
+To convert an existing flat quality-cut index to PlayCanvas's native SOG v2
+representation and run its dedicated comparison demo, see the
+[PlayCanvas SOG renderer integration guide](playcanvas-renderer-integration.md).
+
 Expose the generated directory to the local demo:
 
 ```bash

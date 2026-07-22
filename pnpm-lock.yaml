@@ -137,6 +137,24 @@ importers:
         specifier: ^19.2.7
         version: 19.2.7(react@19.2.7)
 
+  apps/demo-playcanvas:
+    dependencies:
+      '@6g-path/gaussian-demo-support':
+        specifier: workspace:*
+        version: link:../../packages/demo-support
+      '@6g-path/gaussian-player':
+        specifier: workspace:*
+        version: link:../../packages/player-core
+      '@6g-path/gaussian-renderer-playcanvas':
+        specifier: workspace:*
+        version: link:../../packages/renderer-playcanvas
+      react:
+        specifier: ^19.2.7
+        version: 19.2.7
+      react-dom:
+        specifier: ^19.2.7
+        version: 19.2.7(react@19.2.7)
+
   packages/codec-core: {}
 
   packages/codec-spz:
@@ -150,6 +168,9 @@ importers:
       '@6g-path/gaussian-player':
         specifier: workspace:*
         version: link:../player-core
+      '@playcanvas/splat-transform':
+        specifier: 3.0.0
+        version: 3.0.0(playcanvas@2.21.0)
 
   packages/demo-support:
     dependencies:
@@ -196,6 +217,18 @@ importers:
         specifier: 9.17.0
         version: 9.17.0(@babylonjs/core@9.17.0(patch_hash=0fbb9dd141c3be5b3842448541df237339181f75d5f0a6009031f909b777db77))(babylonjs-gltf2interface@9.17.0)
 
+  packages/renderer-playcanvas:
+    dependencies:
+      '@6g-path/gaussian-player':
+        specifier: workspace:*
+        version: link:../player-core
+      '@6g-path/shared':
+        specifier: workspace:*
+        version: link:../shared
+      playcanvas:
+        specifier: 2.21.0
+        version: 2.21.0
+
   packages/renderer-spark:
     dependencies:
       '@6g-path/gaussian-codec':
@@ -227,6 +260,9 @@ importers:
         version: link:../player-core
 
 packages:
+
+  '@adobe/spz@0.2.2':
+    resolution: {integrity: sha512-KUCw5R52rCBnfyvOOIa9nUQGfR6TEcHjYzuWDYRGb1fpkpnkci6VXFqCx/xFJ1yEN7V5gc9YxU2zIY6sEjIbhw==}
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -724,6 +760,13 @@ packages:
 
   '@oxc-project/types@0.139.0':
     resolution: {integrity: sha512-r9gHphtCs+1M7J0pw6Sn/hh/Wpa/iQrOOkrNAlVLF/gHq+/CJmHIWKKUUhdWjcD6CIa8idarspCsASiXCXvFUw==}
+
+  '@playcanvas/splat-transform@3.0.0':
+    resolution: {integrity: sha512-z2vMqlaiSxdRK0iA9snmNxjvw0tMBrF56bVRzUkGLz1n1nF8pdEprjK+F5mH6bpV37EYIyJ5c4bV7IC66beeCg==}
+    engines: {node: '>=22.0.0'}
+    hasBin: true
+    peerDependencies:
+      playcanvas: ^2.0.0
 
   '@playwright/test@1.61.1':
     resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
@@ -1803,6 +1846,10 @@ packages:
   pkg-types@1.3.1:
     resolution: {integrity: sha512-/Jm5M4RvtBFVkKWRu2BLUTNP8/M2a+UwuAX+ae4770q1qVGtfjG+WTCupoZixokjmHiry8uI+dlY8KXYV5HVVQ==}
 
+  playcanvas@2.21.0:
+    resolution: {integrity: sha512-9O94i5WHPkhXbPhhzWixBpXij1gsI+LvEUrUyl1hZ4/9w57892BNvWeXXM1DTe7vqAFtX0WaptOdtVy4AOvCZA==}
+    engines: {node: '>=18.3.0'}
+
   playwright-core@1.61.1:
     resolution: {integrity: sha512-h7Qlt6m4REp25qvIdvbDtVmD4LqVXfpRxhORv9L0jzETM05p4fuPJ3dKyuSXQxDSbXnmS79HAgi9589lGSpLkg==}
     engines: {node: '>=18'}
@@ -2121,6 +2168,9 @@ packages:
       jsdom:
         optional: true
 
+  webgpu@0.4.0:
+    resolution: {integrity: sha512-F5pimn3Aoi0zWjuRdiVs5TnrUwSzD2lESBohsIUsqyitWkGRQlXU2fhV6ycXlQTa1bvAf3sjqiUpBEpmSQ5ptA==}
+
   which@2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
     engines: {node: '>= 8'}
@@ -2152,6 +2202,8 @@ packages:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
 snapshots:
+
+  '@adobe/spz@0.2.2': {}
 
   '@babel/code-frame@7.29.7':
     dependencies:
@@ -2536,6 +2588,14 @@ snapshots:
     optional: true
 
   '@oxc-project/types@0.139.0': {}
+
+  '@playcanvas/splat-transform@3.0.0(playcanvas@2.21.0)':
+    dependencies:
+      '@adobe/spz': 0.2.2
+      playcanvas: 2.21.0
+      webgpu: 0.4.0
+    transitivePeerDependencies:
+      - supports-color
 
   '@playwright/test@1.61.1':
     dependencies:
@@ -3474,6 +3534,11 @@ snapshots:
       mlly: 1.8.2
       pathe: 2.0.3
 
+  playcanvas@2.21.0:
+    dependencies:
+      '@types/webxr': 0.5.24
+      '@webgpu/types': 0.1.71
+
   playwright-core@1.61.1: {}
 
   playwright@1.61.1:
@@ -3774,6 +3839,13 @@ snapshots:
       '@vitest/coverage-v8': 4.1.10(vitest@4.1.10)
     transitivePeerDependencies:
       - msw
+
+  webgpu@0.4.0:
+    dependencies:
+      '@webgpu/types': 0.1.71
+      debug: 4.4.3
+    transitivePeerDependencies:
+      - supports-color
 
   which@2.0.2:
     dependencies:

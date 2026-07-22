@@ -7,6 +7,13 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- Native PlayCanvas SOG v2 playback through a dedicated renderer adapter and demo. The
+  adapter consumes compressed SOG bytes from the player-owned cache, creates
+  PlayCanvas-native assets without an expanded neutral Gaussian frame, reuses one
+  persistent dynamic entity, and exposes optional immersive-VR entry for Quest testing.
+- Offline conversion of existing flat SPZ quality-cut indexes into explicitly tagged SOG
+  v2 frame tiers for the PlayCanvas comparison path. The selected tier detail and
+  splat-count metadata are preserved; runtime fallback or transcoding is not used.
 - Feature-detected native `Float16Array` covariance encoding in Babylon's native-texture
   packers, with the existing Babylon truncating converter retained for older runtimes.
   The native path writes through a shared view of the final `Uint16Array` texture bytes
@@ -169,6 +176,10 @@ All notable changes to this project will be documented here. The project uses
 
 ### Fixed
 
+- PlayCanvas playback no longer remains indefinitely in `initialising` after its first
+  SOG frame becomes visible. Normal frame swaps no longer depend on the diagnostic
+  `frame:ready` capture fence; the opt-in fence now matches the emitted camera component
+  correctly and has a finite timeout.
 - Babylon frame changes no longer overwrite the visible Gaussian mesh while its
   replacement textures and first valid depth ordering are pending. The adapter swaps two
   persistent mesh slots atomically at a render boundary, and its default orbit camera

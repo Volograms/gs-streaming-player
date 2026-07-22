@@ -17,6 +17,7 @@ apps/demo/public/assets/local-static.rad
 apps/demo/public/assets/local-dynamic
 apps/demo/public/assets/local-dynamic-cuts
 apps/demo/public/assets/local-dynamic-cuts-v4
+apps/demo/public/assets/local-dynamic-cuts*/
 test-data/*.rad
 test-data/dynamic
 

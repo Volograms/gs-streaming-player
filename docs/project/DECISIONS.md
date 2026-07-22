@@ -19,6 +19,7 @@ used during day-to-day implementation.
 | 0011 | Separate Gaussian codecs from renderer adapters     | Accepted |
 | 0012 | Support multiple renderer adapters and demos        | Accepted |
 | 0013 | Use client-measured network state for the pilot     | Accepted |
+| 0014 | Use native PlayCanvas SOG ingestion                 | Accepted |
 
 ## Working conventions
 
@@ -144,6 +145,11 @@ used during day-to-day implementation.
   remains codec-owned, while final texture/buffer packing remains renderer-specific.
   Babylon is the first implementation. Spark and future renderers keep the neutral path
   until their own measured native sink justifies equivalent work.
+- The first SOG v2 path uses PlayCanvas's native WebP-backed asset ingestion. The
+  adapter explicitly accepts `sog-v2` compressed frames from the player-owned byte cache
+  and avoids a renderer-neutral expanded frame. Existing SPZ tiers are converted offline
+  without changing their declared detail target; unsupported renderer/codec combinations
+  fail instead of transcoding or falling back at runtime.
 - Demo and pilot playback use a 25% dynamic transfer floor. A 10% preview asset remains
   available through the manual demo controls for diagnostics, but is not selected by the
   initial or buffer-aware policy.

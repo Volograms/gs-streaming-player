@@ -765,6 +765,20 @@ isolated tasks above 16.7 ms, so neither formed the sustained throughput limit.
 This desktop trace validates the native half-float experiment. Quest 3 still needs the
 same full-tier measurement and a visual check for the nearest-even covariance encoding.
 
+## PlayCanvas native SOG baseline
+
+The PlayCanvas adapter and offline SOG conversion path were implemented on 2026-07-22 to
+test whether a native WebP-backed representation removes the CPU expansion and repacking
+seen in the Babylon/SPZ trace. Device performance is not yet measured, so no speedup is
+attributed to this change.
+
+The first production PlayCanvas run must report SOG asset preparation, presentation
+handoff, PlayCanvas sorting, renderer FPS, achieved presentation cadence, compressed
+cache state, and memory at minimum, medium, and full quality. Inspect a Quest trace for
+center generation/readback, CPU sort, browser WebP decode, and texture upload before
+changing PlayCanvas's renderer or shaders. This is a pipeline comparison rather than an
+isolated codec benchmark because SPZ and SOG are different compressed representations.
+
 ## Current conclusions
 
 1. Player scheduling, handoff, and the reusable display allocation can sustain 30 fps
@@ -853,6 +867,10 @@ same full-tier measurement and a visual check for the nearest-even covariance en
 - Verify Babylon front/back handoff continuity at preview, minimum, medium, and full
   tiers, then record both mesh-slot GPU capacity and handoff latency on desktop and
   Quest.
+- Run the PlayCanvas/SOG production demo at minimum, medium, and full quality on desktop
+  and Quest 3. Record SOG preparation, presentation handoff, PlayCanvas sort, renderer
+  FPS/cadence, compressed bytes, resident native assets, and memory; verify both eyes
+  before recording continuous playback.
 - Use the resulting decode breakdown to compare SPZ with a temporary renderer-native
   payload and one lightweight-compressed packed payload before designing a container.
 
@@ -869,6 +887,7 @@ OS / browser:
 Production or development build:
 DevTools profiler open: yes/no
 Content and frame range:
+Renderer adapter / codec:
 Tier / splats / SH / bytes per frame:
 Target FPS:
 Compressed cache and residency at start:
@@ -879,6 +898,7 @@ Static scene enabled: yes/no
 Fetch or cache result:
 Decode queue p50/p95:
 SPZ decode p50/p95:
+SOG asset preparation p50/p95:
 Packed snapshot / clone / bind:
 Flat copy p50/p95:
 Sort total / readback / worker / upload p50/p95:

@@ -29,6 +29,9 @@
       "@6g-path/gaussian-renderer-babylon": [
         "./packages/renderer-babylon/src/index.ts"
       ],
+      "@6g-path/gaussian-renderer-playcanvas": [
+        "./packages/renderer-playcanvas/src/index.ts"
+      ],
       "@6g-path/gaussian-renderer-spark": ["./packages/renderer-spark/src/index.ts"],
       "@6g-path/gaussian-telemetry-6g": ["./packages/telemetry-6g/src/index.ts"],
       "@6g-path/shared": ["./packages/shared/src/index.ts"]

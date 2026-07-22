@@ -1,0 +1,19 @@
+{
+  "name": "@6g-path/demo-playcanvas",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --project tsconfig.json && vite build",
+    "dev": "vite",
+    "preview": "vite preview",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@6g-path/gaussian-demo-support": "workspace:*",
+    "@6g-path/gaussian-player": "workspace:*",
+    "@6g-path/gaussian-renderer-playcanvas": "workspace:*",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  }
+}

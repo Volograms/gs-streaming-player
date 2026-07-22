@@ -32,12 +32,15 @@ acceptance criteria are covered by implementation and verification.
       update, and presented cadence on desktop and Quest 3.
 - [ ] Compare Babylon.js and Spark using identical SPZ v4 frames, cache state, worker
       limits, desktop hardware, and diagnostics.
-- [ ] Add a PlayCanvas adapter/demo for an explicitly supported SPZ path if its runtime
-      ingestion boundary permits a meaningful comparison.
-- [ ] Add SOG v2 as a second codec/runtime representation and start with a dedicated
-      PlayCanvas SOG demo; keep Babylon SOG support as a lower-priority follow-on.
-- [ ] Validate renderer/codec capability reporting so unsupported combinations fail
-      clearly rather than silently selecting another path.
+- [x] Add a PlayCanvas adapter and dedicated demo using the engine's native SOG
+      ingestion boundary. Keep SPZ out of this first comparison rather than silently
+      expanding or transcoding it at runtime.
+- [x] Add SOG v2 as a second runtime representation, including offline conversion of the
+      existing quality-cut index and explicit `sog-v2` tier metadata; keep Babylon SOG
+      support as a lower-priority follow-on.
+- [x] Validate renderer/codec capability reporting so unsupported combinations fail
+      clearly rather than silently selecting another path. Browser performance and
+      stereo validation remain part of the device task below.
 - [ ] Run the chosen candidates on Meta Quest 3 and representative mobile Safari after
       desktop format/adapter comparisons have narrowed the device matrix.
   - [ ] Validate the Babylon streamed-splat stereo-buffer compatibility patch on both
@@ -80,8 +83,9 @@ acceptance criteria are covered by implementation and verification.
       official SPZ v4 native tools and marks every output tier with `codec: "spz-v4"`.
 - [ ] Measure v3 versus v4 throughput, worker utilisation, intermediate memory, and
       end-to-end 30 fps stability on the same hardware and tier set.
-- [ ] Add a second codec (candidate: SOG v2) and a second renderer adapter (candidate:
-      PlayCanvas) to validate that neither change affects byte buffering or playback.
+- [x] Add SOG v2 and a PlayCanvas renderer adapter through the existing compressed-byte
+      and playback boundaries. Quest validation and comparative measurements remain in
+      the active implementation slice above.
 
 - [x] Integrate flat SPZ dynamic frames through Spark `PackedSplats` with LoD disabled,
       while retaining the existing paged RAD path for static scenes.

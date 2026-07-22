@@ -23,16 +23,20 @@ Byte cache  Codec       Renderer    Quality / telemetry
 owns the compressed-byte reservoir but does not interpret encoded Gaussian payloads.
 Codec packages decode those bytes into renderer-neutral Gaussian attribute arrays.
 `player-core` then describes rendering work through `GaussianRendererAdapter`; the Spark
-package packs the neutral attributes into `PackedSplats` without leaking Spark types
-into core.
+package packs neutral attributes into `PackedSplats` without leaking Spark types into
+core. An adapter may also explicitly advertise a compressed codec that its engine can
+ingest more efficiently. The first such independent format path is PlayCanvas SOG v2:
+the byte cache hands the selected SOG bundle directly to the PlayCanvas adapter, while
+the same renderer-neutral scheduling and presentation contracts remain in force.
 
 Codec identity is explicit content metadata. The first external codec is official
 Niantic SPZ v4. The old Spark-owned SPZ v3 loader remains a deliberately separate
 compatibility path for A/B measurements and can be removed without changing the byte
 cache, scheduler, playback clock, or renderer interface. Spark remains a supported
-adapter while Babylon.js and PlayCanvas validate the same decoded frames through
-different renderer-native representations. SOG v2 is added independently of those
-renderer choices.
+adapter while Babylon.js validates the neutral decoded path. PlayCanvas initially uses
+its native SOG v2 representation so its WebP-backed attribute decoding and shader data
+path can be measured without an expanded neutral-frame intermediate. Codec support is
+explicit per adapter; there is no silent SPZ-to-SOG or renderer fallback at runtime.
 
 Quality controllers receive normalised playback, network, and metric snapshots. They
 produce decisions rather than performing requests or renderer mutations. The pilot uses
@@ -51,7 +55,7 @@ shared <--- codec-core <--- codec-spz
                   ^
                   +--- player-core <--- renderer-spark
                                   ^ <--- renderer-babylon
-                                  ^ <--- renderer-playcanvas (planned)
+                                  ^ <--- renderer-playcanvas
                                   ^ <--- telemetry-6g (extension point)
 
 player packages <--- renderer-specific demos
@@ -67,4 +71,6 @@ The accepted foundation decisions are indexed in
 [`architecture/decisions`](architecture/decisions).
 
 See the [Spark renderer integration guide](renderer-integration.md) for the concrete
-renderer lifecycle and ownership rules.
+renderer lifecycle and ownership rules. The
+[PlayCanvas SOG integration guide](playcanvas-renderer-integration.md) documents the
+native compressed path and its current validation boundary.

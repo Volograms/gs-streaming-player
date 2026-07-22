@@ -24,6 +24,15 @@ describe("local dynamic sequence support", () => {
     expect(sequence?.transform).toBe(CAPTURE_TO_WORLD_TRANSFORM);
   });
 
+  it("requires a quality index for SOG v2 sequences", () => {
+    expect(() =>
+      createLocalDynamicSequence({
+        VITE_DYNAMIC_FRAME_CODEC: "sog-v2",
+        VITE_DYNAMIC_RAD_BASE_URL: "/frames",
+      }),
+    ).toThrow(/requires VITE_DYNAMIC_QUALITY_INDEX_URL/);
+  });
+
   it("binds the default browser fetch receiver", async () => {
     const fetchImplementation = vi.fn(async function (this: typeof globalThis) {
       if (this !== globalThis) {
@@ -65,5 +74,51 @@ describe("local dynamic sequence support", () => {
     } finally {
       globalThis.fetch = previousFetch;
     }
+  });
+
+  it("loads SOG v2 tiers from a flat SOG quality-cuts index", async () => {
+    const sequence = await loadLocalDynamicSequence(
+      {
+        VITE_DYNAMIC_FRAME_CODEC: "sog-v2",
+        VITE_DYNAMIC_QUALITY_INDEX_URL: "/sog/quality-cuts.json",
+        VITE_DYNAMIC_RAD_END_FRAME: "40",
+        VITE_DYNAMIC_RAD_START_FRAME: "40",
+      },
+      {
+        baseUrl: "https://example.test/demo/",
+        fetch: vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                format: "flat-sog-quality-cuts",
+                frames: [
+                  {
+                    qualityLevels: [
+                      {
+                        detailLevel: 0.5,
+                        minimumPlayable: true,
+                        url: "frame0040-medium.sog",
+                      },
+                    ],
+                    sourceFile: "frame0040-lod.rad",
+                  },
+                ],
+                version: 1,
+              }),
+              { status: 200 },
+            ),
+        ),
+      },
+    );
+
+    expect(sequence?.frames[0]).toMatchObject({
+      codec: "sog-v2",
+      url: "https://example.test/sog/frame0040-medium.sog",
+    });
+    expect(sequence?.frames[0]?.qualityLevels?.[0]).toMatchObject({
+      codec: "sog-v2",
+      detailLevel: 0.5,
+      url: "https://example.test/sog/frame0040-medium.sog",
+    });
   });
 });

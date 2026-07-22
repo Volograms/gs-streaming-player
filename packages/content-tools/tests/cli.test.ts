@@ -147,4 +147,81 @@ describe("gs-manifest CLI", () => {
     expect(exitCode).toBe(2);
     expect(output.stderr.join("\n")).toContain("--spz-tools-dir");
   });
+
+  it("forwards SOG conversion options", async () => {
+    const output = createIo();
+    const requests: unknown[] = [];
+    const exitCode = await runCli(
+      [
+        "convert-sog",
+        "cuts/quality-cuts.json",
+        "--output-dir",
+        "cuts-sog",
+        "--sh-iterations",
+        "6",
+        "--max-workers",
+        "2",
+        "--force",
+      ],
+      output.io,
+      {
+        convertQualityCutsToSog: async (request) => {
+          requests.push(request);
+          return 0;
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(requests).toEqual([
+      {
+        force: true,
+        indexPath: "cuts/quality-cuts.json",
+        maxWorkers: 2,
+        outputDir: "cuts-sog",
+        shIterations: 6,
+      },
+    ]);
+  });
+
+  it("uses documented SOG defaults and validates numeric options", async () => {
+    const output = createIo();
+    const requests: unknown[] = [];
+    const exitCode = await runCli(
+      ["convert-sog", "cuts/quality-cuts.json", "--output-dir", "cuts-sog"],
+      output.io,
+      {
+        convertQualityCutsToSog: async (request) => {
+          requests.push(request);
+          return 0;
+        },
+      },
+    );
+    expect(exitCode).toBe(0);
+    expect(requests).toEqual([
+      {
+        force: false,
+        indexPath: "cuts/quality-cuts.json",
+        maxWorkers: 4,
+        outputDir: "cuts-sog",
+        shIterations: 10,
+      },
+    ]);
+
+    const invalidOutput = createIo();
+    expect(
+      await runCli(
+        [
+          "convert-sog",
+          "cuts/quality-cuts.json",
+          "--output-dir",
+          "cuts-sog",
+          "--max-workers",
+          "-1",
+        ],
+        invalidOutput.io,
+      ),
+    ).toBe(2);
+    expect(invalidOutput.stderr.join("\n")).toContain("non-negative integer");
+  });
 });
