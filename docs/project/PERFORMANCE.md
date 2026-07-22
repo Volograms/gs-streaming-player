@@ -694,9 +694,9 @@ Covariance construction, its rotation loop, and half-float conversion therefore 
 for about 42.5% of sampled worker CPU. Including scale exponentiation raises the native
 scale/rotation-to-covariance path to about 52.1%, well above the identifiable WASM decode
 share. The next isolated CPU experiment should target this native packing path while
-preserving exactly the same Babylon texture bytes and splat quality. A deeper SPZ WASM
-change should follow that measurement rather than being selected from the UI's stage
-name alone.
+preserving the same covariance calculation, splat count, and visual quality. A deeper
+SPZ WASM change should follow that measurement rather than being selected from the UI's
+stage name alone.
 
 The workers performed 2,482 minor and 34 major collections, reclaiming about 2.49 GB in
 total (about 36 MB of young-generation allocation per completed task). Collection pauses
@@ -708,6 +708,30 @@ throughput gap.
 The renderer main thread had only three tasks longer than 16.7 ms; its one 102 ms task
 was CPU-profiler startup. The sampled Babylon upload calls and GPU-process tasks did not
 form the sustained bottleneck, consistent with the near-60 fps paused render loop.
+
+### 17. Native half-float covariance encoding — 2026-07-22, awaiting browser A/B
+
+Babylon 9.17's `ToHalfFloat` implementation performs six JavaScript table-based
+conversions per splat and truncates discarded mantissa bits. Modern runtimes expose
+`Float16Array`, which converts in native code using IEEE nearest-even rounding. Trying
+to adjust the native result back to Babylon's truncation was about 1.9x slower than the
+existing converter in a local conversion-only benchmark, so it is not a useful fast
+path.
+
+The implemented Babylon-specific path feature-detects `Float16Array` and creates a
+native float view over the final covariance `Uint16Array` buffers. It therefore adds no
+payload allocation or copy. Runtimes without `Float16Array` retain Babylon's exact
+truncating converter. Nearest-even can change the least-significant half-float bit—about
+half of random normalised test inputs differed from truncation—but remains within one
+encoded ULP and is the more accurate representation of the same covariance value.
+
+A synthetic Node 24 benchmark packed a 274,140-splat SH0 frame ten times through each
+path after warm-up. Native conversion reduced median complete native packing from 48.9
+ms to 37.6 ms, a 23.1% latency reduction and 1.30x throughput increase. Its p95 was 54.5
+ms versus 80.0 ms for the fallback. This is an implementation smoke benchmark, not the
+project result: the next desktop and Quest runs must measure the fused worker's
+`Babylon pack`, combined decode-plus-pack throughput, presented cadence, and visual
+equivalence on real SPZ frames.
 
 ## Current conclusions
 
@@ -749,15 +773,19 @@ form the sustained bottleneck, consistent with the near-60 fps paused render loo
     covariance, and half-float packing path versus about 22% in identifiable SPZ WASM
     decode functions. Both packing workers were saturated, while the main thread and
     renderer loop retained headroom.
+14. Feature-detected native half-float writes reduced a synthetic 274k-splat Babylon
+    native pack by 23.1% at the median. Hardware/browser A/B measurements are still
+    required before attributing a production playback speedup.
 
 ## Next measurements
 
 - Capture fused and neutral multi-frame traces at all three tiers to compare p50/p95,
   allocation, worker-result transfer, and garbage collection; use combined decode-plus-
   pack time for the cross-path throughput comparison.
-- Benchmark one byte-identical optimisation of Babylon covariance and float-to-half
-  packing against the full-tier trace before changing the SPZ WASM decoder. Record worker
-  task p50/p95, aggregate preparation throughput, and allocation/GC rate.
+- Benchmark native and fallback Babylon covariance packing against the full-tier trace
+  before changing the SPZ WASM decoder. Record worker task p50/p95, aggregate
+  preparation throughput, allocation/GC rate, and visual equivalence despite the one-ULP
+  rounding difference.
 - Run the packed-memory experiment on minimum, medium, and full SH3 tiers in the same
   production browser and hardware session.
 - Compare legacy Spark SPZ v3 with official neutral SPZ v4 using identical frames,

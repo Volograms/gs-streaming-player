@@ -7,6 +7,10 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- Feature-detected native `Float16Array` covariance encoding in Babylon's native-texture
+  packers, with the existing Babylon truncating converter retained for older runtimes.
+  The native path writes through a shared view of the final `Uint16Array` texture bytes
+  and avoids six JavaScript table conversions per splat.
 - Fused Babylon SPZ v4 preparation: player-core can now route supported compressed
   frames directly to an adapter, and Babylon's packing worker streams decoded chunks
   into final center, covariance, RGBA, and SH texture arrays. The neutral Float32 frame

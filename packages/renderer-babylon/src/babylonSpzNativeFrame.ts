@@ -1,6 +1,7 @@
 import { decodeSpzV4Streaming } from "@6g-path/gaussian-codec-spz";
 
 import {
+  createHalfFloatTextureStorage,
   createSphericalHarmonics,
   packCovariance,
   quantiseSigned,
@@ -8,6 +9,7 @@ import {
 } from "./babylonPackedFrame.js";
 
 import type {
+  BabylonHalfFloatTextureStorage,
   BabylonNativeTexturePayload,
   BabylonTextureSize,
 } from "./babylonPackedFrame.js";
@@ -71,6 +73,8 @@ export class BabylonSpzNativeTextureWriter {
   private readonly centers: Float32Array;
   private readonly coefficientCount: number;
   private readonly colors: Uint8Array;
+  private readonly covarianceStorageA: BabylonHalfFloatTextureStorage;
+  private readonly covarianceStorageB: BabylonHalfFloatTextureStorage;
   private readonly covariancesA: Uint16Array;
   private readonly covariancesB: Uint16Array;
   private readonly scales: Float32Array;
@@ -90,8 +94,10 @@ export class BabylonSpzNativeTextureWriter {
     this.textureSize = textureSizeFor(header.numPoints, constraints);
     const textureLength = this.textureSize.width * this.textureSize.height;
     this.centers = new Float32Array(textureLength * 4);
-    this.covariancesA = new Uint16Array(textureLength * 4);
-    this.covariancesB = new Uint16Array(textureLength * 2);
+    this.covarianceStorageA = createHalfFloatTextureStorage(textureLength * 4);
+    this.covarianceStorageB = createHalfFloatTextureStorage(textureLength * 2);
+    this.covariancesA = this.covarianceStorageA.bits;
+    this.covariancesB = this.covarianceStorageB.bits;
     this.colors = new Uint8Array(textureLength * 4);
     this.scales = new Float32Array(header.numPoints * 3);
     this.coefficientCount = (((header.shDegree + 1) ** 2 - 1) * 3) | 0;
@@ -203,6 +209,8 @@ export class BabylonSpzNativeTextureWriter {
         this.covariancesA,
         this.covariancesB,
         point,
+        this.covarianceStorageA.nativeValues,
+        this.covarianceStorageB.nativeValues,
       );
     }
   }

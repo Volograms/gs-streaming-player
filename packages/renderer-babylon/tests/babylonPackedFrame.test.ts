@@ -2,6 +2,10 @@ import { Matrix, Quaternion } from "@babylonjs/core/Maths/math.vector.js";
 import { FromHalfFloat, ToHalfFloat } from "@babylonjs/core/Misc/halfFloat.js";
 import { describe, expect, it } from "vitest";
 
+import {
+  createHalfFloatTextureStorage,
+  packCovariance,
+} from "../src/babylonPackedFrame.js";
 import { BabylonSpzNativeTextureWriter } from "../src/babylonSpzNativeFrame.js";
 import {
   packDecodedGaussianFrameForBabylon,
@@ -94,6 +98,49 @@ describe("packDecodedGaussianFrameForBabylon", () => {
     expect([...packed.covariancesB]).toEqual(expected.covariancesB);
   });
 
+  it("retains Babylon's truncating half-float conversion as the compatibility fallback", () => {
+    const centers = new Float32Array(4);
+    const covarianceStorageA = createHalfFloatTextureStorage(4, null);
+    const covarianceStorageB = createHalfFloatTextureStorage(2, null);
+
+    packCovariance(
+      0,
+      0,
+      0,
+      1,
+      0.1,
+      0.2,
+      0.3,
+      centers,
+      covarianceStorageA.bits,
+      covarianceStorageB.bits,
+      0,
+      covarianceStorageA.nativeValues,
+      covarianceStorageB.nativeValues,
+    );
+
+    expect(covarianceStorageA.nativeValues).toBeUndefined();
+    expect(covarianceStorageA.bits[0]).toBe(ToHalfFloat(1 / 9));
+    expect(covarianceStorageA.bits[3]).toBe(ToHalfFloat(4 / 9));
+    expect(covarianceStorageB.bits[1]).toBe(ToHalfFloat(1));
+  });
+
+  it("keeps native half-float covariance values within one encoded ULP", () => {
+    const values = [-1, -0.9, -1 / 9, -0, 0, 1 / 9, 0.9, 1];
+    const storage = createHalfFloatTextureStorage(values.length);
+    if (storage.nativeValues === undefined) {
+      return;
+    }
+
+    for (let index = 0; index < values.length; index += 1) {
+      const value = values[index] ?? 0;
+      storage.nativeValues[index] = value;
+      expect(
+        Math.abs((storage.bits[index] ?? 0) - ToHalfFloat(value)),
+      ).toBeLessThanOrEqual(1);
+    }
+  });
+
   it("writes streamed SPZ chunks directly into the same native texture layout", () => {
     const positions = new Float32Array([1, 2, 3]);
     const alphaLogits = new Float32Array([0]);
@@ -180,8 +227,21 @@ function covarianceFromBabylonMatrices(frame: DecodedGaussianFrame): {
   ];
   const factor = Math.max(...covariances.map(Math.abs));
   return {
-    covariancesA: covariances.slice(0, 4).map((value) => ToHalfFloat(value / factor)),
-    covariancesB: covariances.slice(4).map((value) => ToHalfFloat(value / factor)),
+    covariancesA: covariances
+      .slice(0, 4)
+      .map((value) => encodeHalfFloatForRuntime(value / factor)),
+    covariancesB: covariances
+      .slice(4)
+      .map((value) => encodeHalfFloatForRuntime(value / factor)),
     factor,
   };
+}
+
+function encodeHalfFloatForRuntime(value: number): number {
+  const storage = createHalfFloatTextureStorage(1);
+  if (storage.nativeValues === undefined) {
+    return ToHalfFloat(value);
+  }
+  storage.nativeValues[0] = value;
+  return storage.bits[0] ?? 0;
 }

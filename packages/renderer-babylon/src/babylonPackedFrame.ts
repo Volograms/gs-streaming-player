@@ -5,6 +5,21 @@ import type { DecodedGaussianFrame } from "@6g-path/gaussian-codec";
 const BYTES_PER_SPLAT = 32;
 const SH_VALUES_PER_TEXTURE = 16;
 
+interface Float16ArrayLike {
+  readonly buffer: ArrayBuffer;
+  readonly length: number;
+  [index: number]: number;
+}
+
+interface Float16ArrayConstructorLike {
+  new (buffer: ArrayBuffer, byteOffset?: number, length?: number): Float16ArrayLike;
+}
+
+export interface BabylonHalfFloatTextureStorage {
+  bits: Uint16Array;
+  nativeValues?: Float16ArrayLike;
+}
+
 export interface BabylonPackedFramePayload {
   numSplats: number;
   shDegree: number;
@@ -110,8 +125,10 @@ export function packDecodedGaussianFrameForBabylonNativeTextures(
   validateTextureSize(textureSize, frame.numSplats);
   const textureLength = textureSize.width * textureSize.height;
   const centers = new Float32Array(textureLength * 4);
-  const covariancesA = new Uint16Array(textureLength * 4);
-  const covariancesB = new Uint16Array(textureLength * 2);
+  const covarianceStorageA = createHalfFloatTextureStorage(textureLength * 4);
+  const covarianceStorageB = createHalfFloatTextureStorage(textureLength * 2);
+  const covariancesA = covarianceStorageA.bits;
+  const covariancesB = covarianceStorageB.bits;
   const colors = new Uint8Array(textureLength * 4);
   const coefficientCount = (((frame.shDegree + 1) ** 2 - 1) * 3) | 0;
   const sphericalHarmonics = createSphericalHarmonics(
@@ -148,6 +165,8 @@ export function packDecodedGaussianFrameForBabylonNativeTextures(
       covariancesA,
       covariancesB,
       index,
+      covarianceStorageA.nativeValues,
+      covarianceStorageB.nativeValues,
     );
     colors[centerOffset] = quantiseUnit(frame.colors[xyz] ?? 0);
     colors[centerOffset + 1] = quantiseUnit(frame.colors[xyz + 1] ?? 0);
@@ -193,6 +212,29 @@ export function createSphericalHarmonics(
   );
 }
 
+/**
+ * Allocates the Uint16 texture payload and, when available, a native Float16
+ * view over the same bytes. Native writes use IEEE nearest-even rounding;
+ * Babylon's fallback converter truncates the mantissa instead.
+ */
+export function createHalfFloatTextureStorage(
+  length: number,
+  constructor: Float16ArrayConstructorLike | null = resolveFloat16ArrayConstructor(),
+): BabylonHalfFloatTextureStorage {
+  const bits = new Uint16Array(length);
+  if (constructor === null || !(bits.buffer instanceof ArrayBuffer)) {
+    return { bits };
+  }
+  try {
+    return {
+      bits,
+      nativeValues: new constructor(bits.buffer, bits.byteOffset, bits.length),
+    };
+  } catch {
+    return { bits };
+  }
+}
+
 function packSphericalHarmonics(
   frame: Readonly<DecodedGaussianFrame>,
   sphericalHarmonics: readonly Uint8Array[],
@@ -221,6 +263,8 @@ export function packCovariance(
   covariancesA: Uint16Array,
   covariancesB: Uint16Array,
   index: number,
+  covariancesAFloat16?: Float16ArrayLike,
+  covariancesBFloat16?: Float16ArrayLike,
 ): void {
   const length = Math.hypot(initialX, initialY, initialZ, initialW) || 1;
   const x = initialX / length;
@@ -260,12 +304,30 @@ export function packCovariance(
   const covAOffset = index * 4;
   const covBOffset = index * 2;
   centers[covAOffset + 3] = factor;
-  covariancesA[covAOffset] = ToHalfFloat(c0 / factor);
-  covariancesA[covAOffset + 1] = ToHalfFloat(c1 / factor);
-  covariancesA[covAOffset + 2] = ToHalfFloat(c2 / factor);
-  covariancesA[covAOffset + 3] = ToHalfFloat(c3 / factor);
-  covariancesB[covBOffset] = ToHalfFloat(c4 / factor);
-  covariancesB[covBOffset + 1] = ToHalfFloat(c5 / factor);
+  if (covariancesAFloat16 !== undefined && covariancesBFloat16 !== undefined) {
+    covariancesAFloat16[covAOffset] = c0 / factor;
+    covariancesAFloat16[covAOffset + 1] = c1 / factor;
+    covariancesAFloat16[covAOffset + 2] = c2 / factor;
+    covariancesAFloat16[covAOffset + 3] = c3 / factor;
+    covariancesBFloat16[covBOffset] = c4 / factor;
+    covariancesBFloat16[covBOffset + 1] = c5 / factor;
+  } else {
+    covariancesA[covAOffset] = ToHalfFloat(c0 / factor);
+    covariancesA[covAOffset + 1] = ToHalfFloat(c1 / factor);
+    covariancesA[covAOffset + 2] = ToHalfFloat(c2 / factor);
+    covariancesA[covAOffset + 3] = ToHalfFloat(c3 / factor);
+    covariancesB[covBOffset] = ToHalfFloat(c4 / factor);
+    covariancesB[covBOffset + 1] = ToHalfFloat(c5 / factor);
+  }
+}
+
+function resolveFloat16ArrayConstructor(): Float16ArrayConstructorLike | null {
+  const constructor = (
+    globalThis as typeof globalThis & {
+      Float16Array?: Float16ArrayConstructorLike;
+    }
+  ).Float16Array;
+  return typeof constructor === "function" ? constructor : null;
 }
 
 function validateTextureSize(

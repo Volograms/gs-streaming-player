@@ -25,6 +25,8 @@ acceptance criteria are covered by implementation and verification.
 - [x] Add a renderer capability for direct compressed-frame preparation and fuse SPZ v4
       streaming decode with Babylon native-texture packing. Keep the neutral decoder as
       the fallback for Spark, other renderers, and Babylon compatibility tests.
+- [x] Add feature-detected native half-float covariance writes to both Babylon native
+      packing paths, retaining Babylon's JavaScript converter on older browsers.
 - [ ] Measure fused versus neutral Babylon SPZ preparation at 25%, 50%, and 100%,
       including per-stage timing, peak memory/GC, prepared-frame throughput, mesh
       update, and presented cadence on desktop and Quest 3.
