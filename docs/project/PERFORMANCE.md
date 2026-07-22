@@ -548,16 +548,16 @@ than a percentile distribution, so they establish the experiment baseline but sh
 be treated as a stable benchmark by themselves.
 
 | Transfer tier | Rendered splats | Render fps (paused) | SPZ decode | Babylon pack | Frame prepare | Mesh update |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| minimum (25%) | 69,703 | 60.2 fps | 14.6 ms | 21.7 ms | 36.5 ms | 10.1 ms |
-| medium (50%) | 139,138 | 59.5 fps | 27.9 ms | 36.7 ms | 384.4 ms | 23.4 ms |
-| full (100%) | 278,270 | 59.9 fps | 52.6 ms | 69.8 ms | 686.2 ms | 63.0 ms |
+| ------------- | --------------: | ------------------: | ---------: | -----------: | ------------: | ----------: |
+| minimum (25%) |          69,703 |            60.2 fps |    14.6 ms |      21.7 ms |       36.5 ms |     10.1 ms |
+| medium (50%)  |         139,138 |            59.5 fps |    27.9 ms |      36.7 ms |      384.4 ms |     23.4 ms |
+| full (100%)   |         278,270 |            59.9 fps |    52.6 ms |      69.8 ms |      686.2 ms |     63.0 ms |
 
-The near-60 paused render rate at every tier shows that full-tier steady rendering is not
-GPU-raster limited on this machine. The serial presentation boundary is the immediate
-full-tier limit: a 63.0 ms mesh commit permits at most about 15.9 commits/s. With two
-packing workers, 69.8 ms of packing supplies at most about 28.7 frames/s, so packing is
-expected to become the next limit if presentation reaches the 30 fps budget.
+The near-60 paused render rate at every tier shows that full-tier steady rendering is
+not GPU-raster limited on this machine. The serial presentation boundary is the
+immediate full-tier limit: a 63.0 ms mesh commit permits at most about 15.9 commits/s.
+With two packing workers, 69.8 ms of packing supplies at most about 28.7 frames/s, so
+packing is expected to become the next limit if presentation reaches the 30 fps budget.
 
 `Frame prepare` measures from the player's base-frame request through `base-ready`; it
 includes scheduler waiting, compressed-cache access, decode, packing, and transfer. Its
@@ -565,21 +565,21 @@ includes scheduler waiting, compressed-cache access, decode, packing, and transf
 single-stage CPU timings.
 
 Source inspection found two full depth sorts on reused native-texture mesh slots.
-Babylon's `_updateTextures()` already posts the replacement-frame sort, while the adapter
-also marked the sort dirty and forced a post. When the first result arrived, Babylon
-therefore posted a redundant second sort before allowing the staging-mesh handoff to
-settle. The adapter now explicitly posts one sort only for a mesh's first texture upload;
-reused slots rely on `_updateTextures()`'s existing post. Splat count, SH data, and
-transfer quality are unchanged.
+Babylon's `_updateTextures()` already posts the replacement-frame sort, while the
+adapter also marked the sort dirty and forced a post. When the first result arrived,
+Babylon therefore posted a redundant second sort before allowing the staging-mesh
+handoff to settle. The adapter now explicitly posts one sort only for a mesh's first
+texture upload; reused slots rely on `_updateTextures()`'s existing post. Splat count,
+SH data, and transfer quality are unchanged.
 
 A same-machine rerun after the single-sort change produced the following displayed
 samples:
 
 | Transfer tier | Rendered splats | Render fps (paused) | SPZ decode | Babylon pack | Frame prepare | Mesh update | Mesh-update change |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| minimum (25%) | 69,875 | 60.6 fps | 13.4 ms | 21.9 ms | 35.7 ms | 17.9 ms | +7.8 ms (+77.2%) |
-| medium (50%) | 136,034 | 60.2 fps | 31.4 ms | 33.2 ms | 320.6 ms | 22.1 ms | -1.3 ms (-5.6%) |
-| full (100%) | 274,071 | 88.5 fps | 77.4 ms | 79.6 ms | 825.3 ms | 28.7 ms | -34.3 ms (-54.4%) |
+| ------------- | --------------: | ------------------: | ---------: | -----------: | ------------: | ----------: | -----------------: |
+| minimum (25%) |          69,875 |            60.6 fps |    13.4 ms |      21.9 ms |       35.7 ms |     17.9 ms |   +7.8 ms (+77.2%) |
+| medium (50%)  |         136,034 |            60.2 fps |    31.4 ms |      33.2 ms |      320.6 ms |     22.1 ms |    -1.3 ms (-5.6%) |
+| full (100%)   |         274,071 |            88.5 fps |    77.4 ms |      79.6 ms |      825.3 ms |     28.7 ms |  -34.3 ms (-54.4%) |
 
 The targeted full-tier mesh update improved from 63.0 to 28.7 ms: a 54.4% latency
 reduction and 2.20x commit-throughput increase. The corresponding serial ceiling rose
@@ -597,16 +597,17 @@ keeping this single-sort renderer path and all quality settings fixed.
 ### 15. SPZ v4 decode baseline and hotspot attribution — 2026-07-21
 
 The post-single-sort full-tier sample establishes a 77.4 ms SPZ decode baseline at
-274,071 rendered splats. This displayed value includes decoder scheduling, the compressed
-input copy, worker execution, and delivery of the transferred neutral attribute buffers.
+274,071 rendered splats. This displayed value includes decoder scheduling, the
+compressed input copy, worker execution, and delivery of the transferred neutral
+attribute buffers.
 
 Sampling the previously supplied desktop CPU trace and excluding idle samples attributed
 about 68.9% of active SPZ-worker time to the official WASM decode plus its JS/WASM call
 bridge, and about 18.9% to the repository's `copyAttribute` conversion/copy function.
 The remaining samples were spread across worker dispatch, allocation/runtime support,
 garbage collection, and profiling noise. A synthetic 274k-splat JavaScript run also made
-the typed-array bounds fallback removal effectively neutral, so that edit is not a useful
-performance experiment.
+the typed-array bounds fallback removal effectively neutral, so that edit is not a
+useful performance experiment.
 
 The first SPZ change should therefore target the WASM decode boundary or remove a whole
 neutral-attribute materialization pass. Queue tuning, input-buffer allocation reuse, and
@@ -631,30 +632,31 @@ when ownership transfers to the worker.
 
 New trace phases split SPZ input allocation, input copy, exclusive WASM decode, native
 output allocation, attribute writing/packing, and worker-result transfer. In fused mode,
-the `SPZ decode` card sums only input and WASM time; `Babylon pack` sums native allocation
-and attribute writes, avoiding double-counting the combined worker invocation.
+the `SPZ decode` card sums only input and WASM time; `Babylon pack` sums native
+allocation and attribute writes, avoiding double-counting the combined worker
+invocation.
 
 A same-machine desktop rerun produced the following displayed samples. As in the
 single-sort experiment, these are individual paused observations rather than percentile
 distributions. The neutral comparison is the post-single-sort run in section 14.
 
 | Transfer tier | Rendered splats | Render fps (paused) | SPZ decode | Babylon pack | Decode + pack | Frame prepare | Mesh update |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| minimum (25%) | 68,518 | 59.9 fps | 7.2 ms | 21.9 ms | 29.1 ms | 29.8 ms | 6.4 ms |
-| medium (50%) | 139,333 | 59.5 fps | 16.5 ms | 45.2 ms | 61.7 ms | 63.7 ms | 14.3 ms |
-| full (100%) | 279,486 | 60.2 fps | 38.6 ms | 86.1 ms | 124.7 ms | 663.9 ms | 38.3 ms |
+| ------------- | --------------: | ------------------: | ---------: | -----------: | ------------: | ------------: | ----------: |
+| minimum (25%) |          68,518 |            59.9 fps |     7.2 ms |      21.9 ms |       29.1 ms |       29.8 ms |      6.4 ms |
+| medium (50%)  |         139,333 |            59.5 fps |    16.5 ms |      45.2 ms |       61.7 ms |       63.7 ms |     14.3 ms |
+| full (100%)   |         279,486 |            60.2 fps |    38.6 ms |      86.1 ms |      124.7 ms |      663.9 ms |     38.3 ms |
 
 The fused path reduced the displayed SPZ decode stage by 46.3%, 47.5%, and 50.1% at
 minimum, medium, and full respectively. That is not the complete speedup because native
-attribute writing is now charged to `Babylon pack`; pack was unchanged at minimum,
-36.1% slower at medium, and 8.2% slower at full. The cross-path `decode + pack` total is
-the fairer comparison:
+attribute writing is now charged to `Babylon pack`; pack was unchanged at minimum, 36.1%
+slower at medium, and 8.2% slower at full. The cross-path `decode + pack` total is the
+fairer comparison:
 
-| Transfer tier | Neutral decode + pack | Fused decode + pack | Change | Throughput gain |
-| --- | ---: | ---: | ---: | ---: |
-| minimum (25%) | 35.3 ms | 29.1 ms | -6.2 ms (-17.6%) | 1.21x |
-| medium (50%) | 64.6 ms | 61.7 ms | -2.9 ms (-4.5%) | 1.05x |
-| full (100%) | 157.0 ms | 124.7 ms | -32.3 ms (-20.6%) | 1.26x |
+| Transfer tier | Neutral decode + pack | Fused decode + pack |            Change | Throughput gain |
+| ------------- | --------------------: | ------------------: | ----------------: | --------------: |
+| minimum (25%) |               35.3 ms |             29.1 ms |  -6.2 ms (-17.6%) |           1.21x |
+| medium (50%)  |               64.6 ms |             61.7 ms |   -2.9 ms (-4.5%) |           1.05x |
+| full (100%)   |              157.0 ms |            124.7 ms | -32.3 ms (-20.6%) |           1.26x |
 
 This validates removal of the renderer-neutral materialisation pass, with the clearest
 absolute gain at full quality. It does not yet make full-quality 30 fps preparation
@@ -679,24 +681,24 @@ or 10.28 tasks/s in aggregate. Their task latency was 182.8 ms p50, 230.9 ms p95
 confirming that preparation throughput, rather than the main thread or renderer loop,
 limited this capture.
 
-| Sampled fused-worker work | Share of two-worker profile time |
-| --- | ---: |
-| Babylon covariance construction | 23.5% |
-| Identified SPZ WASM decode functions | 21.6% |
-| Float32-to-half conversion and table access | 13.0% |
-| Scale exponentiation | 9.6% |
-| Rotation-loop overhead around covariance packing | 6.0% |
-| Alpha, colour, and position writers | 16.1% |
-| Garbage collection | 3.2% |
-| Idle | 3.9% |
+| Sampled fused-worker work                        | Share of two-worker profile time |
+| ------------------------------------------------ | -------------------------------: |
+| Babylon covariance construction                  |                            23.5% |
+| Identified SPZ WASM decode functions             |                            21.6% |
+| Float32-to-half conversion and table access      |                            13.0% |
+| Scale exponentiation                             |                             9.6% |
+| Rotation-loop overhead around covariance packing |                             6.0% |
+| Alpha, colour, and position writers              |                            16.1% |
+| Garbage collection                               |                             3.2% |
+| Idle                                             |                             3.9% |
 
 Covariance construction, its rotation loop, and half-float conversion therefore account
 for about 42.5% of sampled worker CPU. Including scale exponentiation raises the native
-scale/rotation-to-covariance path to about 52.1%, well above the identifiable WASM decode
-share. The next isolated CPU experiment should target this native packing path while
-preserving the same covariance calculation, splat count, and visual quality. A deeper
-SPZ WASM change should follow that measurement rather than being selected from the UI's
-stage name alone.
+scale/rotation-to-covariance path to about 52.1%, well above the identifiable WASM
+decode share. The next isolated CPU experiment should target this native packing path
+while preserving the same covariance calculation, splat count, and visual quality. A
+deeper SPZ WASM change should follow that measurement rather than being selected from
+the UI's stage name alone.
 
 The workers performed 2,482 minor and 34 major collections, reclaiming about 2.49 GB in
 total (about 36 MB of young-generation allocation per completed task). Collection pauses
@@ -709,7 +711,7 @@ The renderer main thread had only three tasks longer than 16.7 ms; its one 102 m
 was CPU-profiler startup. The sampled Babylon upload calls and GPU-process tasks did not
 form the sustained bottleneck, consistent with the near-60 fps paused render loop.
 
-### 17. Native half-float covariance encoding — 2026-07-22, awaiting browser A/B
+### 17. Native half-float covariance encoding — 2026-07-22
 
 Babylon 9.17's `ToHalfFloat` implementation performs six JavaScript table-based
 conversions per splat and truncates discarded mantissa bits. Modern runtimes expose
@@ -728,10 +730,40 @@ encoded ULP and is the more accurate representation of the same covariance value
 A synthetic Node 24 benchmark packed a 274,140-splat SH0 frame ten times through each
 path after warm-up. Native conversion reduced median complete native packing from 48.9
 ms to 37.6 ms, a 23.1% latency reduction and 1.30x throughput increase. Its p95 was 54.5
-ms versus 80.0 ms for the fallback. This is an implementation smoke benchmark, not the
-project result: the next desktop and Quest runs must measure the fused worker's
-`Babylon pack`, combined decode-plus-pack throughput, presented cadence, and visual
-equivalence on real SPZ frames.
+ms versus 80.0 ms for the fallback.
+
+`Trace-20260722T110451.json` then captured the native path with the same full-tier fused
+worker pipeline used by the previous trace. These are separate profiled sessions rather
+than an interleaved benchmark, but the old `ToHalfFloat` conversion and table-access
+samples disappear from both workers, confirming that `Float16Array` was active.
+
+| Full-tier worker measurement | Babylon truncation trace | Native Float16 trace |         Change |
+| ---------------------------- | -----------------------: | -------------------: | -------------: |
+| Long decode-and-pack tasks   |                       69 |                   71 |              — |
+| Active capture window        |                  6.714 s |              6.037 s |              — |
+| Aggregate worker throughput  |            10.28 tasks/s |        11.76 tasks/s | +14.4% (1.14x) |
+| Task latency p50             |                 182.8 ms |             163.3 ms |         -10.7% |
+| Task latency p95             |                 230.9 ms |             193.1 ms |         -16.4% |
+| Task latency maximum         |                 281.8 ms |             205.5 ms |         -27.1% |
+| Two-worker occupancy         |                    96.6% |                97.1% |    +0.5 points |
+
+The native trace spent about 26.0% of sampled worker time in the remaining covariance
+calculation and 27.7% across sampled SPZ WASM functions. Removing the old 13.0%
+half-conversion/table category therefore translated into a 14.4% aggregate throughput
+gain rather than merely moving that cost elsewhere. Full-tier preparation is still
+worker-bound and, at about 2.55x below 30 freshly prepared frames/s, now makes SPZ WASM
+decode the next appropriate isolated experiment.
+
+Allocation churn did not improve: the workers reclaimed about 2.65 GB across 1,946 minor
+and 37 major collections, approximately 37 MB per completed task. GC pause time fell
+from about 410 ms to 351 ms and represented about 2.9% of sampled worker time, but the
+reclaimed-byte evidence does not support claiming an allocation reduction from this
+change. The renderer main thread had no application task over 16.7 ms; its only long
+task was 145 ms of CPU-profiler startup. GPU-main tasks remained 1.27 ms p95 with three
+isolated tasks above 16.7 ms, so neither formed the sustained throughput limit.
+
+This desktop trace validates the native half-float experiment. Quest 3 still needs the
+same full-tier measurement and a visual check for the nearest-even covariance encoding.
 
 ## Current conclusions
 
@@ -761,31 +793,34 @@ equivalence on real SPZ frames.
     resident, four concurrent sequential decode-and-pack preparations produced 19.1 fps,
     matching their measured 18.8 fps capacity estimate. Compressed delivery lowers this
     further when it overlaps the preparation workload.
-11. Babylon's native-texture single-sort change reduced the sampled full-tier mesh update
-    from 63.0 to 28.7 ms (54.4%, 2.20x commit throughput) without changing the 100% splat
-    payload. Full-tier SPZ decode and Babylon packing are now the measured desktop limits.
-12. Babylon's fused SPZ-to-native worker path removed the renderer-neutral materialisation
-    and reduced the sampled combined decode-plus-pack time by 17.6% at minimum, 4.5% at
-    medium, and 20.6% at full quality. This optimisation is Babylon-specific above the
-    shared streaming decoder; other renderers need their own native output writer to
-    obtain the same copy/allocation reduction.
+11. Babylon's native-texture single-sort change reduced the sampled full-tier mesh
+    update from 63.0 to 28.7 ms (54.4%, 2.20x commit throughput) without changing the
+    100% splat payload. Full-tier SPZ decode and Babylon packing are now the measured
+    desktop limits.
+12. Babylon's fused SPZ-to-native worker path removed the renderer-neutral
+    materialisation and reduced the sampled combined decode-plus-pack time by 17.6% at
+    minimum, 4.5% at medium, and 20.6% at full quality. This optimisation is
+    Babylon-specific above the shared streaming decoder; other renderers need their own
+    native output writer to obtain the same copy/allocation reduction.
 13. The full-tier fused CPU trace places about 52% of worker time in Babylon's scale,
     covariance, and half-float packing path versus about 22% in identifiable SPZ WASM
     decode functions. Both packing workers were saturated, while the main thread and
     renderer loop retained headroom.
-14. Feature-detected native half-float writes reduced a synthetic 274k-splat Babylon
-    native pack by 23.1% at the median. Hardware/browser A/B measurements are still
-    required before attributing a production playback speedup.
+14. Feature-detected native half-float writes increased sampled full-tier browser worker
+    throughput from 10.28 to 11.76 tasks/s (14.4%). Worker p50 fell by 10.7% and p95 by
+    16.4%; Quest measurement and visual validation remain outstanding.
 
 ## Next measurements
 
 - Capture fused and neutral multi-frame traces at all three tiers to compare p50/p95,
   allocation, worker-result transfer, and garbage collection; use combined decode-plus-
   pack time for the cross-path throughput comparison.
-- Benchmark native and fallback Babylon covariance packing against the full-tier trace
-  before changing the SPZ WASM decoder. Record worker task p50/p95, aggregate
-  preparation throughput, allocation/GC rate, and visual equivalence despite the one-ULP
-  rounding difference.
+- Repeat native versus fallback Babylon covariance packing on Quest 3 and visually
+  validate the nearest-even result; the desktop full-tier trace measured a 14.4%
+  aggregate preparation-throughput gain.
+- Profile and optimise one SPZ WASM decode operation without changing the native
+  covariance path, tier, splat count, or output quality; record worker p50/p95 and
+  aggregate prepared frames/s against the native-half baseline.
 - Run the packed-memory experiment on minimum, medium, and full SH3 tiers in the same
   production browser and hardware session.
 - Compare legacy Spark SPZ v3 with official neutral SPZ v4 using identical frames,
