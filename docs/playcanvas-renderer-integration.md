@@ -22,7 +22,8 @@ player compressed-byte cache
         |
         v
 PlayCanvas adapter -> native SOG asset -> persistent dynamic entity
-                                      -> PlayCanvas WebGL/WebXR render path
+                                      -> PlayCanvas WebGL2 CPU sort
+                                      -> PlayCanvas WebGPU GPU sort / WebXR
 ```
 
 The adapter advertises only the explicit `sog-v2` compressed-frame capability. It hands
@@ -102,6 +103,7 @@ VITE_DYNAMIC_COMPRESSED_BUFFER_MB=200
 VITE_DYNAMIC_FETCH_CONCURRENCY=6
 VITE_DYNAMIC_PREPARE_CONCURRENCY=2
 VITE_DYNAMIC_FUTURE_FRAMES=10
+VITE_PLAYCANVAS_GRAPHICS_BACKEND=webgl2
 VITE_ENABLE_XR=true
 ```
 
@@ -122,6 +124,42 @@ comparing PlayCanvas/SOG with another adapter/codec path. Record content convers
 runtime versions with the result; SOG and SPZ byte sizes and decode stages are not
 directly interchangeable.
 
+## WebGPU GPU-sort experiment
+
+The demo retains WebGL2 as its default comparison baseline. Select PlayCanvas's WebGPU
+device and stable GPU-sort Gaussian renderer explicitly with:
+
+```dotenv
+VITE_PLAYCANVAS_GRAPHICS_BACKEND=webgpu
+```
+
+WebGPU initialisation is strict for this experiment. PlayCanvas normally appends WebGL2
+as a device fallback, but the adapter rejects that fallback when `webgpu` was requested
+so a WebGL CPU-sort run cannot be mistaken for a GPU-sort result. The diagnostics must
+show:
+
+```text
+Graphics    webgpu
+Sort path  gpu (no CPU centers)
+```
+
+The adapter disables `scene.gsplatCentersEnabled` before loading any SOG asset on this
+path. That prevents PlayCanvas from generating centers, reading them back from the GPU,
+cloning the center array, and feeding its WebGL CPU-sort worker. Attribute
+reconstruction, GPU upload, GPU sorting/culling, and rasterisation remain
+PlayCanvas-owned work.
+
+Run a controlled WebGL2/WebGPU pair in the same production session:
+
+1. Set `VITE_PLAYCANVAS_GRAPHICS_BACKEND=webgl2`, build, warm the selected tier, and
+   record SOG prepare, sort, FPS/cadence, memory, and a trace.
+2. Set `VITE_PLAYCANVAS_GRAPHICS_BACKEND=webgpu`, rebuild, verify the two diagnostics
+   above, then repeat with the same frame range, tier, cache state, camera motion, and
+   browser window size.
+3. Test minimum, medium, and full without reducing the source tier to make a slow case
+   pass. Record flat playback and immersive WebXR separately because their frame budgets
+   and browser capabilities differ.
+
 ## HTTPS and Quest 3
 
 WebXR on a headset requires a secure context. Generate the repository's ignored
@@ -133,12 +171,21 @@ the certificate, and trust the `mkcert` root CA on the headset. Then add:
 VITE_HTTPS=true
 VITE_HOST=0.0.0.0
 VITE_ENABLE_XR=true
+VITE_PLAYCANVAS_GRAPHICS_BACKEND=webgl2
 ```
 
 Run `pnpm dev:playcanvas` and open `https://YOUR-LAN-IP:4177/` in the Quest browser. The
 Windows connection profile and firewall must allow private-network access to that port.
 Enter immersive VR from the demo control; session creation must remain in the user's
-click gesture. An unavailable XR runtime does not prevent normal desktop playback.
+click gesture. Meta Quest Browser 146.0 announced experimental WebGPU support on April
+21, 2026. PlayCanvas 2.20 and newer also support stereo XR in its WebGPU GPU-sort
+renderer, but PlayCanvas still requires the browser to expose `XRGPUBinding` before a
+WebGPU graphics device can host immersive XR. If that binding is missing, WebGPU page
+rendering can still work while the demo reports WebXR as unavailable. Use WebGL2 for XR
+validation on those browser builds, or enable
+`VITE_PLAYCANVAS_XR_BACKEND_FALLBACK=true` so the demo can select WebGL2 when a requested
+WebGPU backend cannot host immersive VR. The fallback is off by default so strict WebGPU
+performance measurements keep the requested backend.
 
 For a useful Quest comparison:
 
@@ -155,12 +202,12 @@ Native SOG removes the application's neutral Float32 frame, CPU scale exponentia
 CPU quaternion-to-covariance expansion, and a second renderer-specific repack from this
 path. SOG attribute reconstruction is performed by PlayCanvas's native shader path.
 
-It does not prove that all per-frame work is GPU-only. On WebGL, PlayCanvas may still
+It does not prove that all per-frame work is GPU-only. On WebGL2, PlayCanvas may still
 generate and read back centers for its sort data, perform depth sorting on the CPU, ask
 the browser to decode WebP planes, and upload or retain textures for buffered assets.
-Those stages are the next measurement boundary. Replace or patch PlayCanvas sorting and
-shaders only after a production trace shows which remaining stage misses the Quest frame
-budget.
+The WebGPU experiment removes the center readback and CPU-sort-worker path but retains
+browser WebP decode, texture/resource upload, GPU sorting/culling, and rendering. Those
+remaining stages must be measured independently before attributing a speedup.
 
 The PlayCanvas adapter is renderer-specific by design. Babylon, Spark, or another
 renderer needs its own explicit SOG ingestion implementation to use this representation;

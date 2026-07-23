@@ -2,6 +2,8 @@ import {
   Application,
   Asset,
   Color,
+  createGraphicsDevice,
+  DEVICETYPE_WEBGPU,
   Entity,
   FILLMODE_NONE,
   RESOLUTION_AUTO,
@@ -9,11 +11,19 @@ import {
   XRTYPE_VR,
 } from "playcanvas";
 
+import {
+  configurePlayCanvasGraphicsBackend,
+  queryPlayCanvasImmersiveVrSupport,
+  readPlayCanvasRendererRuntimeInfo,
+} from "./graphicsBackend.js";
 import { applyPlayCanvasTransform } from "./transform.js";
 
 import type {
+  PlayCanvasGraphicsBackend,
   PlayCanvasRendererAdapterOptions,
   PlayCanvasRendererContext,
+  PlayCanvasRendererRuntimeInfo,
+  PlayCanvasXrSupportInfo,
   PlayCanvasXrStartOptions,
 } from "./types.js";
 import type {
@@ -76,6 +86,7 @@ export class PlayCanvasGaussianRendererAdapter
   private failedResourceLoadCount = 0;
   private frameCommitTimeMs: number | undefined;
   private initialised = false;
+  private initialisation: Promise<void> | undefined;
   private readonly loadedObjects = new Map<string, LoadedObjectRecord>();
   private readonly now: () => number;
   private readonly options: PlayCanvasRendererAdapterOptions;
@@ -106,11 +117,35 @@ export class PlayCanvasGaussianRendererAdapter
     return this.requireInitialised(this.dynamicEntityValue, "dynamic entity");
   }
 
-  async initialise(): Promise<void> {
+  getRuntimeInfo(): PlayCanvasRendererRuntimeInfo {
+    return readPlayCanvasRendererRuntimeInfo(this.application);
+  }
+
+  getXrSupportInfo(): Promise<PlayCanvasXrSupportInfo> {
+    return queryPlayCanvasImmersiveVrSupport(
+      readPlayCanvasRendererRuntimeInfo(this.application).graphicsBackend,
+    );
+  }
+
+  initialise(): Promise<void> {
     this.assertNotDisposed();
     if (this.initialised) {
-      return;
+      return Promise.resolve();
     }
+    if (this.initialisation !== undefined) {
+      return this.initialisation;
+    }
+
+    const initialisation = this.initialiseOnce();
+    this.initialisation = initialisation;
+    void initialisation.then(
+      () => this.clearInitialisation(initialisation),
+      () => this.clearInitialisation(initialisation),
+    );
+    return initialisation;
+  }
+
+  private async initialiseOnce(): Promise<void> {
     if (this.options.application === undefined && this.options.canvas === undefined) {
       throw new Error(
         "A canvas is required when the PlayCanvas adapter creates its application.",
@@ -118,12 +153,20 @@ export class PlayCanvasGaussianRendererAdapter
     }
 
     const ownsApplication = this.options.application === undefined;
+    const ownedGraphicsBackend = this.options.graphicsBackend ?? "webgl2";
     const application =
       this.options.application ??
-      new Application(this.options.canvas!, {
-        graphicsDeviceOptions: { antialias: false },
-      });
+      (await createOwnedApplication(this.options.canvas!, ownedGraphicsBackend));
     try {
+      if (this.disposed) {
+        throw new Error("The PlayCanvas renderer adapter was disposed.");
+      }
+      const requiredGraphicsBackend =
+        this.options.graphicsBackend ??
+        (ownsApplication ? ownedGraphicsBackend : undefined);
+      if (requiredGraphicsBackend !== undefined) {
+        configurePlayCanvasGraphicsBackend(application, requiredGraphicsBackend);
+      }
       const clearColor = new Color(0.07, 0.07, 0.1, 1);
       if (
         (this.options.manageResize ?? ownsApplication) &&
@@ -182,6 +225,12 @@ export class PlayCanvasGaussianRendererAdapter
     }
   }
 
+  private clearInitialisation(initialisation: Promise<void>): void {
+    if (this.initialisation === initialisation) {
+      this.initialisation = undefined;
+    }
+  }
+
   canPrepareCompressedFrame(codecId: string): boolean {
     return codecId === PLAYCANVAS_SOG_CODEC_ID;
   }
@@ -201,8 +250,9 @@ export class PlayCanvasGaussianRendererAdapter
     if (this.isXrActive()) {
       return;
     }
-    if (!this.isXrAvailable()) {
-      throw new Error("Immersive VR is not available in this browser.");
+    if (!(await this.waitForXrAvailability())) {
+      const support = await this.getXrSupportInfo();
+      throw new Error(xrUnavailableMessage(support));
     }
     await new Promise<void>((resolve, reject) => {
       this.cameraEntity.camera!.startXr(XRTYPE_VR, XRSPACE_LOCALFLOOR, {
@@ -215,6 +265,43 @@ export class PlayCanvasGaussianRendererAdapter
           }
         },
       });
+    });
+  }
+
+  private async waitForXrAvailability(timeoutMs = 1000): Promise<boolean> {
+    if (this.isXrAvailable()) {
+      return true;
+    }
+    const support = await this.getXrSupportInfo();
+    if (!support.available) {
+      return false;
+    }
+    const xr = this.applicationValue?.xr as
+      | {
+          _sessionSupportCheck?: (type: string) => void;
+          once?: (name: string, callback: (available: boolean) => void) => {
+            off?: () => void;
+          };
+        }
+      | undefined;
+    xr?._sessionSupportCheck?.(XRTYPE_VR);
+    if (this.isXrAvailable()) {
+      return true;
+    }
+
+    return await new Promise<boolean>((resolve) => {
+      let settled = false;
+      function settle(available: boolean) {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        window.clearTimeout(timer);
+        event?.off?.();
+        resolve(available);
+      }
+      const timer = window.setTimeout(() => settle(this.isXrAvailable()), timeoutMs);
+      const event = xr?.once?.(`available:${XRTYPE_VR}`, settle);
     });
   }
 
@@ -930,12 +1017,51 @@ function clearGsplatAsset(component: { asset: Asset | number }): void {
   (component as unknown as { asset: Asset | number | null }).asset = null;
 }
 
+function xrUnavailableMessage(support: PlayCanvasXrSupportInfo): string {
+  switch (support.reason) {
+    case "navigator-unavailable":
+      return "Immersive VR is not available because navigator.xr is missing.";
+    case "session-unsupported":
+      return "Immersive VR is not supported by this browser session.";
+    case "webgpu-binding-unavailable":
+      return "Immersive VR is available, but this browser does not expose XRGPUBinding for PlayCanvas WebGPU XR. Use WebGL2 for XR on this device.";
+    case "probe-failed":
+      return "Immersive VR support could not be probed by this browser.";
+    case "available":
+      return "Immersive VR is not available in PlayCanvas yet.";
+  }
+}
+
 function releaseSourceContents(asset: Asset): void {
   // Reassigning Asset.file makes PlayCanvas reload the asset. Clear only the
   // parser input retained by AssetFile after its WebP textures are resident.
   const file = asset.file as { contents?: ArrayBuffer | null } | null;
   if (file !== null) {
     file.contents = null;
+  }
+}
+
+async function createOwnedApplication(
+  canvas: HTMLCanvasElement,
+  graphicsBackend: PlayCanvasGraphicsBackend,
+): Promise<Application> {
+  if (graphicsBackend === "webgl2") {
+    return new Application(canvas, {
+      graphicsDeviceOptions: { antialias: false },
+    });
+  }
+
+  const graphicsDevice = await createGraphicsDevice(canvas, {
+    antialias: false,
+    deviceTypes: [DEVICETYPE_WEBGPU],
+    powerPreference: "high-performance",
+    xrCompatible: true,
+  });
+  try {
+    return new Application(canvas, { graphicsDevice });
+  } catch (error) {
+    graphicsDevice.destroy();
+    throw error;
   }
 }
 

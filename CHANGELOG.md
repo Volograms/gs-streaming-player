@@ -7,6 +7,13 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- Strict, opt-in PlayCanvas WebGPU initialisation for GPU-sort SOG measurements. The
+  adapter rejects silent WebGL2 fallback, selects PlayCanvas's GPU Gaussian sorter,
+  disables CPU-center generation before asset loading, and exposes the actual graphics
+  backend and sort path in the PlayCanvas demo diagnostics.
+- PlayCanvas XR diagnostics now distinguish browser/session failures from missing
+  WebGPU `XRGPUBinding`, and the demo can explicitly fall back to WebGL2 for XR with
+  `VITE_PLAYCANVAS_XR_BACKEND_FALLBACK=true`.
 - Native PlayCanvas SOG v2 playback through a dedicated renderer adapter and demo. The
   adapter consumes compressed SOG bytes from the player-owned cache, creates
   PlayCanvas-native assets without an expanded neutral Gaussian frame, reuses one

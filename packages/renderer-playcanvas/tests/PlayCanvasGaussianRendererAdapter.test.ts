@@ -52,6 +52,28 @@ describe("PlayCanvasGaussianRendererAdapter", () => {
     await expect(adapter.initialise()).rejects.toThrow(/canvas is required/i);
   });
 
+  it("shares one in-flight asynchronous initialisation", async () => {
+    const adapter = new PlayCanvasGaussianRendererAdapter({});
+    let finish: (() => void) | undefined;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const initialiseOnce = vi.fn(() => pending);
+    Object.assign(adapter as unknown as Record<string, unknown>, {
+      initialiseOnce,
+    });
+
+    const first = adapter.initialise();
+    const second = adapter.initialise();
+
+    expect(first).toBe(pending);
+    expect(second).toBe(pending);
+    expect(initialiseOnce).toHaveBeenCalledOnce();
+
+    finish?.();
+    await expect(first).resolves.toBeUndefined();
+  });
+
   it("rejects prepare calls before initialization", async () => {
     const adapter = new PlayCanvasGaussianRendererAdapter({});
 

@@ -3,6 +3,7 @@ import { FrameRingBuffer, SequencePlaybackController } from "@6g-path/gaussian-p
 import {
   PLAYCANVAS_SOG_CODEC_ID,
   PlayCanvasGaussianRendererAdapter,
+  queryPlayCanvasImmersiveVrSupport,
 } from "@6g-path/gaussian-renderer-playcanvas";
 import { useEffect, useRef, useState } from "react";
 
@@ -13,9 +14,22 @@ import type {
   PlayerLifecycleState,
   RendererMetrics,
 } from "@6g-path/gaussian-player";
+import type {
+  PlayCanvasGraphicsBackend,
+  PlayCanvasRendererRuntimeInfo,
+} from "@6g-path/gaussian-renderer-playcanvas";
 
 type RuntimeStatus = "initialising" | "ready" | "unavailable";
-type XrStatus = "disabled" | "initialising" | "ready" | "active" | "unavailable";
+type XrStatus =
+  | "disabled"
+  | "initialising"
+  | "ready"
+  | "active"
+  | "browser unavailable"
+  | "session unsupported"
+  | "webgpu binding missing"
+  | "probe failed"
+  | "unavailable";
 
 interface LatestTimings {
   compressedFetchMs: number | undefined;
@@ -44,6 +58,8 @@ const futureFrameCount = positiveInteger(
   import.meta.env.VITE_DYNAMIC_FUTURE_FRAMES,
   10,
 );
+const xrBackendFallbackEnabled =
+  import.meta.env.VITE_PLAYCANVAS_XR_BACKEND_FALLBACK === "true";
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -58,6 +74,8 @@ export function App() {
   const [qualityLevels, setQualityLevels] = useState<readonly GaussianQualityLevel[]>(
     [],
   );
+  const [rendererRuntime, setRendererRuntime] =
+    useState<PlayCanvasRendererRuntimeInfo>();
   const [selectedDetail, setSelectedDetail] = useState(0.25);
   const [status, setStatus] = useState<RuntimeStatus>("initialising");
   const [timings, setTimings] = useState<LatestTimings>({
@@ -74,8 +92,10 @@ export function App() {
     if (canvas === null) {
       return;
     }
+    const targetCanvas = canvas;
 
     let active = true;
+    let adapter: PlayCanvasGaussianRendererAdapter | undefined;
     let buffer: FrameRingBuffer | undefined;
     let playback: SequencePlaybackController | undefined;
     let unsubscribeBuffer: (() => void) | undefined;
@@ -85,8 +105,6 @@ export function App() {
       compressedFetchMs: undefined,
       framePreparationMs: undefined,
     };
-    const adapter = new PlayCanvasGaussianRendererAdapter({ canvas });
-    adapterRef.current = adapter;
     const environment: Record<string, string | undefined> = {
       VITE_DYNAMIC_FRAME_CODEC: import.meta.env.VITE_DYNAMIC_FRAME_CODEC,
       VITE_DYNAMIC_QUALITY_INDEX_URL: import.meta.env.VITE_DYNAMIC_QUALITY_INDEX_URL,
@@ -107,6 +125,18 @@ export function App() {
 
     async function initialise() {
       try {
+        const requestedGraphicsBackend = parseGraphicsBackend(
+          import.meta.env.VITE_PLAYCANVAS_GRAPHICS_BACKEND,
+        );
+        const graphicsBackend = await selectGraphicsBackendForXr(
+          requestedGraphicsBackend,
+          xrEnabled,
+        );
+        if (graphicsBackend !== requestedGraphicsBackend) {
+          console.info(
+            `PlayCanvas selected ${graphicsBackend} because ${requestedGraphicsBackend} cannot host immersive-vr on this browser.`,
+          );
+        }
         if (
           environment.VITE_DYNAMIC_QUALITY_INDEX_URL === undefined ||
           environment.VITE_DYNAMIC_QUALITY_INDEX_URL.trim() === ""
@@ -121,7 +151,16 @@ export function App() {
           );
         }
 
-        await adapter.initialise();
+        const initialisedAdapter = new PlayCanvasGaussianRendererAdapter({
+          canvas: targetCanvas,
+          graphicsBackend,
+        });
+        adapter = initialisedAdapter;
+        adapterRef.current = initialisedAdapter;
+        await initialisedAdapter.initialise();
+        if (active) {
+          setRendererRuntime(initialisedAdapter.getRuntimeInfo());
+        }
         const sequence = await loadLocalDynamicSequence(environment, {
           signal: abortController.signal,
         });
@@ -159,7 +198,7 @@ export function App() {
             detailLevel: initialDetail,
             minimumSplatCount: minimumDynamicSplatCount,
           },
-          renderer: adapter,
+          renderer: initialisedAdapter,
           sequence,
         });
         bufferRef.current = buffer;
@@ -191,25 +230,26 @@ export function App() {
           if (!active) {
             return;
           }
-          setMetrics(adapter.getMetrics());
+          setMetrics(initialisedAdapter.getMetrics());
           setTimings({ ...latestTimings });
           if (xrEnabled) {
-            setXrStatus(
-              adapter.isXrActive()
-                ? "active"
-                : adapter.isXrAvailable()
-                  ? "ready"
-                  : "unavailable",
-            );
+            void readXrStatus(initialisedAdapter)
+              .then((nextStatus) => {
+                if (active) {
+                  setXrStatus(nextStatus);
+                }
+              })
+              .catch((caught: unknown) => {
+                if (active) {
+                  setError(errorMessage(caught));
+                  setXrStatus("unavailable");
+                }
+              });
           }
         }, 500);
         if (active) {
           setXrStatus(
-            xrEnabled
-              ? adapter.isXrAvailable()
-                ? "ready"
-                : "unavailable"
-              : "disabled",
+            xrEnabled ? await readXrStatus(initialisedAdapter) : "disabled",
           );
           setStatus("ready");
         }
@@ -238,8 +278,10 @@ export function App() {
       unsubscribeBuffer?.();
       buffer?.dispose();
       bufferRef.current = undefined;
-      adapter.dispose();
-      adapterRef.current = undefined;
+      adapter?.dispose();
+      if (adapterRef.current === adapter) {
+        adapterRef.current = undefined;
+      }
     };
   }, [xrEnabled]);
 
@@ -385,6 +427,20 @@ export function App() {
             presentedFrame === undefined ? "waiting" : `${presentedFrame.qualityLevel}`
           }
         />
+        <Metric
+          label="Graphics"
+          value={rendererRuntime?.graphicsBackend ?? "initialising"}
+        />
+        <Metric
+          label="Sort path"
+          value={
+            rendererRuntime === undefined
+              ? "initialising"
+              : `${rendererRuntime.gaussianSort} (${
+                  rendererRuntime.splatCentersEnabled ? "CPU centers" : "no CPU centers"
+                })`
+          }
+        />
         <Metric label="WebXR" value={xrStatus} />
       </section>
 
@@ -448,4 +504,63 @@ function formatRate(value: number | undefined): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function selectGraphicsBackendForXr(
+  requestedGraphicsBackend: PlayCanvasGraphicsBackend,
+  xrEnabled: boolean,
+): Promise<PlayCanvasGraphicsBackend> {
+  if (
+    !xrEnabled ||
+    !xrBackendFallbackEnabled ||
+    requestedGraphicsBackend !== "webgpu"
+  ) {
+    return requestedGraphicsBackend;
+  }
+  const requestedSupport =
+    await queryPlayCanvasImmersiveVrSupport(requestedGraphicsBackend);
+  if (requestedSupport.available) {
+    return requestedGraphicsBackend;
+  }
+  const webglSupport = await queryPlayCanvasImmersiveVrSupport("webgl2");
+  return webglSupport.available ? "webgl2" : requestedGraphicsBackend;
+}
+
+async function readXrStatus(
+  adapter: PlayCanvasGaussianRendererAdapter,
+): Promise<XrStatus> {
+  if (adapter.isXrActive()) {
+    return "active";
+  }
+  if (adapter.isXrAvailable()) {
+    return "ready";
+  }
+  const support = await adapter.getXrSupportInfo();
+  if (support.available) {
+    return "ready";
+  }
+  switch (support.reason) {
+    case "navigator-unavailable":
+      return "browser unavailable";
+    case "session-unsupported":
+      return "session unsupported";
+    case "webgpu-binding-unavailable":
+      return "webgpu binding missing";
+    case "probe-failed":
+      return "probe failed";
+    case "available":
+      return "unavailable";
+  }
+}
+
+function parseGraphicsBackend(value: string | undefined): PlayCanvasGraphicsBackend {
+  if (value === undefined || value.trim() === "" || value === "webgl2") {
+    return "webgl2";
+  }
+  if (value === "webgpu") {
+    return value;
+  }
+  throw new Error(
+    "VITE_PLAYCANVAS_GRAPHICS_BACKEND must be either 'webgl2' or 'webgpu'.",
+  );
 }

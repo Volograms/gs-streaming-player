@@ -41,6 +41,21 @@ acceptance criteria are covered by implementation and verification.
 - [x] Validate renderer/codec capability reporting so unsupported combinations fail
       clearly rather than silently selecting another path. Browser performance and
       stereo validation remain part of the device task below.
+- [x] Add a strict PlayCanvas WebGPU experiment that verifies the selected backend,
+      selects GPU sort, disables WebGL CPU-center generation before SOG loading, and
+      reports the actual backend/sort path in the demo.
+- [ ] Compare PlayCanvas WebGL2 CPU sort with WebGPU GPU sort at 25%, 50%, and 100% on
+      the same desktop and Quest 3 sessions. Record SOG preparation, sort, cadence,
+      memory, and traces without reducing source quality.
+  - [x] Record the first desktop WebGPU full-tier screenshot: `webgpu`,
+        `gpu (no CPU centers)`, `Sort 0.0 ms`, `Presented tier 1`, and smooth ~59 fps
+        playback.
+  - [x] Record the first Quest 3 WebGPU medium-tier screenshot: `webgpu`,
+        `gpu (no CPU centers)`, `Sort 0.0 ms`, `Presented tier 0.5`, and acceptable
+        but slower playback.
+  - [x] Validate PlayCanvas XR on Quest 3 with the WebGL2 backend.
+  - [ ] Capture repeated desktop and Quest 3 p50/p95 samples, including full-tier Quest
+        traces and any WebGPU XR run that reports `XRGPUBinding`.
 - [ ] Run the chosen candidates on Meta Quest 3 and representative mobile Safari after
       desktop format/adapter comparisons have narrowed the device matrix.
   - [ ] Validate the Babylon streamed-splat stereo-buffer compatibility patch on both

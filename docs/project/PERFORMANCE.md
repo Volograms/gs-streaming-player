@@ -779,6 +779,59 @@ center generation/readback, CPU sort, browser WebP decode, and texture upload be
 changing PlayCanvas's renderer or shaders. This is a pipeline comparison rather than an
 isolated codec benchmark because SPZ and SOG are different compressed representations.
 
+### WebGPU GPU-sort experiment
+
+An opt-in PlayCanvas WebGPU path was added on 2026-07-23. It creates the graphics device
+asynchronously, requires the browser to return an actual WebGPU device, selects
+PlayCanvas's raster GPU-sort renderer, and disables SOG center preparation before any
+asset load. This targets the traced `generateCenters`, GPU readback, center-array clone,
+worker transfer, and CPU sort path without changing the selected frame tier or SOG
+payload.
+
+Compare production builds with `VITE_PLAYCANVAS_GRAPHICS_BACKEND=webgl2` and `webgpu`,
+and reject the WebGPU sample unless diagnostics report `webgpu` and
+`gpu (no CPU centers)`. For each 25%, 50%, and 100% tier, record SOG preparation p50/p95,
+sort p50/p95, renderer FPS, actual presentation cadence, long tasks, GPU work, peak
+memory, and visual correctness with the same frame range, cache state, camera motion,
+viewport, and browser version. Record non-immersive and immersive-WebXR results
+separately.
+
+#### First desktop WebGPU full-tier result - 2026-07-23
+
+The first laptop production run confirms that the intended PlayCanvas WebGPU path is
+active at full quality. The diagnostics reported `Graphics webgpu`, `Sort path gpu (no
+CPU centers)`, `Sort 0.0 ms`, and `Presented tier 1`; playback felt smooth at about
+59 fps with the full 100% tier selected.
+
+| State   | Rendered splats | Render FPS | SOG fetch | SOG prepare | Frame commit | Sort |
+| ------- | --------------: | ---------: | --------: | ----------: | -----------: | ---: |
+| paused  |         278,592 |   59.0 fps |   83.4 ms |     22.7 ms |       1.5 ms | 0.0 ms |
+| playing |         278,847 |   59.0 fps |  157.4 ms |     50.3 ms |      10.4 ms | 0.0 ms |
+
+This is not yet a controlled p50/p95 benchmark, but it is the first hardware evidence
+that moving PlayCanvas SOG sorting to WebGPU and disabling CPU center preparation removes
+the full-resolution stall observed on the earlier PlayCanvas path. The next useful
+measurement is the same full-tier WebGPU run on Quest 3, followed by a same-session
+desktop WebGL2/WebGPU comparison if we still need exact attribution.
+
+#### First Quest 3 WebGPU result - 2026-07-23
+
+Quest 3 also initialised the PlayCanvas WebGPU path. Minimum quality was reported as
+fine, medium quality was slower but acceptable, and full quality was too slow. A medium
+quality screenshot showed `Graphics webgpu`, `Sort path gpu (no CPU centers)`,
+`Sort 0.0 ms`, and `Presented tier 0.5`, so the GPU-sort path is active on the headset.
+
+| Tier          | State   | Rendered splats | Render FPS | Prepared ahead | Byte cache | SOG fetch | SOG prepare | Frame commit | Sort |
+| ------------- | ------- | --------------: | ---------: | -------------: | ---------: | --------: | ----------: | -----------: | ---: |
+| medium (50%)  | playing |         137,581 |   52.0 fps |              2 | 198 / 200 MB |  208.5 ms |    407.3 ms |       3.1 ms | 0.0 ms |
+
+This moves the Quest bottleneck away from application-side sorting and frame commit.
+The remaining headset limit is SOG fetch/asset preparation and resource upload. WebXR
+worked in the PlayCanvas WebGL2 configuration but not in the WebGPU configuration, which
+matches PlayCanvas's requirement for a browser-exposed `XRGPUBinding` when WebGPU hosts
+an immersive session. Treat WebGPU non-immersive performance and WebGL2 immersive-XR
+validation as separate modes until Quest exposes that binding reliably.
+
 ## Current conclusions
 
 1. Player scheduling, handoff, and the reusable display allocation can sustain 30 fps
@@ -823,6 +876,14 @@ isolated codec benchmark because SPZ and SOG are different compressed representa
 14. Feature-detected native half-float writes increased sampled full-tier browser worker
     throughput from 10.28 to 11.76 tasks/s (14.4%). Worker p50 fell by 10.7% and p95 by
     16.4%; Quest measurement and visual validation remain outstanding.
+15. The first PlayCanvas WebGPU SOG run reached smooth full-tier desktop playback at
+    about 59 fps with the demo reporting `webgpu`, `gpu (no CPU centers)`, `Sort 0.0 ms`,
+    and `Presented tier 1`. This is a preliminary hardware result, not a controlled
+    p50/p95 benchmark.
+16. Quest 3 can run the PlayCanvas WebGPU SOG path with GPU sort active. Medium quality
+    was acceptable at about 52 fps, but SOG preparation was still about 407 ms in the
+    screenshot and full quality remained too slow. WebGL2 remains the working PlayCanvas
+    XR path on that device.
 
 ## Next measurements
 
@@ -868,9 +929,11 @@ isolated codec benchmark because SPZ and SOG are different compressed representa
   tiers, then record both mesh-slot GPU capacity and handoff latency on desktop and
   Quest.
 - Run the PlayCanvas/SOG production demo at minimum, medium, and full quality on desktop
-  and Quest 3. Record SOG preparation, presentation handoff, PlayCanvas sort, renderer
-  FPS/cadence, compressed bytes, resident native assets, and memory; verify both eyes
-  before recording continuous playback.
+  and Quest 3 using both the WebGL2 CPU-sort and WebGPU GPU-sort configurations. The
+  first desktop WebGPU full-tier screenshot confirms the path and smooth playback, and
+  the first Quest WebGPU screenshot confirms GPU sort at medium quality. Still record
+  repeated p50/p95 samples, memory, and traces. Verify both Quest 3 eyes in the WebGL2
+  XR path unless WebGPU XR reports an available `XRGPUBinding`.
 - Use the resulting decode breakdown to compare SPZ with a temporary renderer-native
   payload and one lightweight-compressed packed payload before designing a container.
 

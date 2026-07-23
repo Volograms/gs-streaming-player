@@ -270,7 +270,7 @@ Recent versions include:
 
 Its SOG format stores attributes in WebP images and uses Morton ordering partly to avoid runtime reordering work. Streamed SOG also supports spatial chunks and LOD. ([GitHub][9])
 
-The important caveat is Quest WebXR. Current Quest developer discussions still report the WebGPU–WebXR binding as unavailable in the native Quest Browser, so PlayCanvas’s strongest compute-based renderer may not be usable in immersive mode there. This must be tested against the exact Horizon OS and Browser versions, but it is presently a major compatibility risk. ([communityforums.atmeta.com][10])
+Quest support changed after the original analysis. Meta Quest Browser 146.0 announced experimental WebGPU support on April 21, 2026, and PlayCanvas 2.20 added stereo XR support to its WebGPU GPU-sort renderer. The exact Browser/Horizon OS combination must still be runtime-verified because WebGPU device creation can fall back and PlayCanvas requires the WebGPU-WebXR binding for immersive sessions. This is now a testable path rather than a presumed incompatibility. ([Meta][11]) ([GitHub][12])
 
 Its WebGL2 renderer and SOG loader are nevertheless worth benchmarking.
 
@@ -628,9 +628,9 @@ Run the same dataset through:
 2. SOG/WebP loading;
 3. SPZ v4 loading;
 4. stereo XR;
-5. flat WebGPU compute renderer as a non-XR comparison.
+5. WebGPU GPU-sort rendering in both flat and immersive-XR modes.
 
-PlayCanvas’s recent tiled renderer, GPU radix sort and GS benchmarks make it a valuable performance reference even if its WebGPU path cannot yet run inside Quest WebXR. ([GitHub][8])
+PlayCanvas’s recent GPU radix sort, stereo XR support and GS benchmarks make it a valuable performance reference. Each run must report the actual graphics backend and resolved GS renderer so a WebGL fallback is not mislabeled as WebGPU. ([GitHub][12])
 
 ## Native Quest control implementation
 
@@ -762,3 +762,5 @@ That change is likely to yield more than switching from SPZ to another static fi
 [8]: https://github.com/playcanvas/engine/releases?utm_source=chatgpt.com "Releases · playcanvas/engine · GitHub"
 [9]: https://github.com/playcanvas/splat-transform/issues/38?utm_source=chatgpt.com "Gsplat SOG v2 file format proposal · Issue #38 · playcanvas/splat-transform"
 [10]: https://communityforums.atmeta.com/discussions/Questions_Discussions/webgpu-compute-into-webxr-on-quest/1360706/?utm_source=chatgpt.com "WebGPU Compute into WebXR on Quest | Meta Community Forums - 1360706"
+[11]: https://developers.meta.com/horizon/release-notes/?search_key=browser "Meta Horizon release notes — Browser 146.0"
+[12]: https://github.com/playcanvas/engine/releases/tag/v2.20.0 "PlayCanvas Engine v2.20.0"
