@@ -7,6 +7,9 @@ import {
 } from "@6g-path/gaussian-renderer-playcanvas";
 import { useEffect, useRef, useState } from "react";
 
+import { WebglXrMirrorPresenter } from "./webglXrMirror.js";
+
+import type { WebglXrMirrorStats } from "./webglXrMirror.js";
 import type {
   FrameRingBufferSnapshot,
   FrameRingBufferTraceEvent,
@@ -20,6 +23,7 @@ import type {
 } from "@6g-path/gaussian-renderer-playcanvas";
 
 type RuntimeStatus = "initialising" | "ready" | "unavailable";
+type StaticAssetStatus = "failed" | "loading" | "not configured" | "ready";
 type XrStatus =
   | "disabled"
   | "initialising"
@@ -38,10 +42,16 @@ interface LatestTimings {
 
 const minimumDynamicSplatCount = 100;
 const minimumDynamicTransferDetail = 0.25;
+const staticGsUrl = import.meta.env.VITE_STATIC_GS_URL?.trim();
 
 function positiveInteger(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function positiveNumber(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 const compressedBufferMaximumBytes =
@@ -60,16 +70,21 @@ const futureFrameCount = positiveInteger(
 );
 const xrBackendFallbackEnabled =
   import.meta.env.VITE_PLAYCANVAS_XR_BACKEND_FALLBACK === "true";
+const xrMirrorEnabled = import.meta.env.VITE_PLAYCANVAS_XR_MIRROR === "true";
+const staticGsScale = positiveNumber(import.meta.env.VITE_STATIC_GS_SCALE, 1);
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const adapterRef = useRef<PlayCanvasGaussianRendererAdapter | undefined>(undefined);
   const bufferRef = useRef<FrameRingBuffer | undefined>(undefined);
   const playbackRef = useRef<SequencePlaybackController | undefined>(undefined);
+  const xrMirrorRef = useRef<WebglXrMirrorPresenter | undefined>(undefined);
   const [bufferSnapshot, setBufferSnapshot] = useState<FrameRingBufferSnapshot>();
   const [error, setError] = useState<string>();
   const [frameIndex, setFrameIndex] = useState(0);
   const [lifecycle, setLifecycle] = useState<PlayerLifecycleState>("IDLE");
+  const [mirrorActive, setMirrorActive] = useState(false);
+  const [mirrorStats, setMirrorStats] = useState<WebglXrMirrorStats>();
   const [metrics, setMetrics] = useState<RendererMetrics>();
   const [qualityLevels, setQualityLevels] = useState<readonly GaussianQualityLevel[]>(
     [],
@@ -77,6 +92,11 @@ export function App() {
   const [rendererRuntime, setRendererRuntime] =
     useState<PlayCanvasRendererRuntimeInfo>();
   const [selectedDetail, setSelectedDetail] = useState(0.25);
+  const [staticAssetStatus, setStaticAssetStatus] = useState<StaticAssetStatus>(
+    staticGsUrl === undefined || staticGsUrl.length === 0
+      ? "not configured"
+      : "loading",
+  );
   const [status, setStatus] = useState<RuntimeStatus>("initialising");
   const [timings, setTimings] = useState<LatestTimings>({
     compressedFetchMs: undefined,
@@ -160,6 +180,36 @@ export function App() {
         await initialisedAdapter.initialise();
         if (active) {
           setRendererRuntime(initialisedAdapter.getRuntimeInfo());
+        }
+        if (staticGsUrl !== undefined && staticGsUrl.length > 0) {
+          try {
+            await initialisedAdapter.loadStaticObject(
+              {
+                id: "demo-static-sog",
+                ...(staticGsScale === 1
+                  ? {}
+                  : {
+                      transform: {
+                        scale: {
+                          x: staticGsScale,
+                          y: staticGsScale,
+                          z: staticGsScale,
+                        },
+                      },
+                    }),
+                url: staticGsUrl,
+              },
+              { signal: abortController.signal },
+            );
+            if (active) {
+              setStaticAssetStatus("ready");
+            }
+          } catch (caught) {
+            if (active && !abortController.signal.aborted) {
+              console.error("Unable to load the configured static SOG asset.", caught);
+              setStaticAssetStatus("failed");
+            }
+          }
         }
         const sequence = await loadLocalDynamicSequence(environment, {
           signal: abortController.signal,
@@ -282,6 +332,8 @@ export function App() {
       if (adapterRef.current === adapter) {
         adapterRef.current = undefined;
       }
+      xrMirrorRef.current?.dispose();
+      xrMirrorRef.current = undefined;
     };
   }, [xrEnabled]);
 
@@ -327,6 +379,42 @@ export function App() {
       .catch((caught: unknown) => {
         setError(errorMessage(caught));
         setXrStatus("unavailable");
+      });
+  }
+
+  function toggleXrMirror() {
+    const sourceCanvas = canvasRef.current;
+    if (sourceCanvas === null) {
+      return;
+    }
+    const activeMirror = xrMirrorRef.current;
+    if (activeMirror !== undefined && activeMirror.active) {
+      void activeMirror.end().then(() => {
+        setMirrorActive(false);
+      });
+      return;
+    }
+
+    const nextMirror = new WebglXrMirrorPresenter(sourceCanvas, {
+      onError: (caught) => {
+        setError(errorMessage(caught));
+        setMirrorActive(false);
+      },
+      onStats: setMirrorStats,
+    });
+    xrMirrorRef.current = nextMirror;
+    void nextMirror
+      .start()
+      .then(() => {
+        setMirrorActive(true);
+      })
+      .catch((caught: unknown) => {
+        nextMirror.dispose();
+        if (xrMirrorRef.current === nextMirror) {
+          xrMirrorRef.current = undefined;
+        }
+        setError(errorMessage(caught));
+        setMirrorActive(false);
       });
   }
 
@@ -395,11 +483,24 @@ export function App() {
               {xrStatus === "active" ? "Exit VR" : "Enter VR"}
             </button>
           ) : null}
+          {xrEnabled && xrMirrorEnabled ? (
+            <button
+              className="xr-button"
+              disabled={
+                status !== "ready" ||
+                rendererRuntime?.graphicsBackend !== "webgpu"
+              }
+              onClick={toggleXrMirror}
+            >
+              {mirrorActive ? "Exit mirror" : "XR mirror"}
+            </button>
+          ) : null}
         </div>
       </section>
 
       <section className="status-grid">
         <Metric label="Lifecycle" value={lifecycle} />
+        <Metric label="Static SOG" value={staticAssetStatus} />
         <Metric label="Frame" value={`${frameIndex + 1}`} />
         <Metric label="Prepared ahead" value={`${readyAhead ?? 0}`} />
         <Metric
@@ -442,6 +543,27 @@ export function App() {
           }
         />
         <Metric label="WebXR" value={xrStatus} />
+        {xrMirrorEnabled ? (
+          <>
+            <Metric label="XR mirror" value={mirrorActive ? "active" : "ready"} />
+            <Metric
+              label="Mirror FPS"
+              value={formatRate(mirrorStats?.xrFramesPerSecond)}
+            />
+            <Metric
+              label="Mirror copy"
+              value={formatDuration(mirrorStats?.uploadAndDrawMs)}
+            />
+            <Metric
+              label="Mirror source"
+              value={
+                mirrorStats === undefined
+                  ? "waiting"
+                  : `${mirrorStats.sourceWidth} x ${mirrorStats.sourceHeight}`
+              }
+            />
+          </>
+        ) : null}
       </section>
 
       {error === undefined ? null : <p className="error">{error}</p>}

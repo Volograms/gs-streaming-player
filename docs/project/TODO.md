@@ -56,6 +56,9 @@ acceptance criteria are covered by implementation and verification.
   - [x] Validate PlayCanvas XR on Quest 3 with the WebGL2 backend.
   - [ ] Capture repeated desktop and Quest 3 p50/p95 samples, including full-tier Quest
         traces and any WebGPU XR run that reports `XRGPUBinding`.
+  - [ ] Test the opt-in WebGPU-to-WebGL XR mirror spike on Quest 3. Record mirror
+        copy/draw cost, XR frame rate, visual latency, and whether mono mirroring is
+        stable enough to justify a real stereo bridge.
 - [ ] Run the chosen candidates on Meta Quest 3 and representative mobile Safari after
       desktop format/adapter comparisons have narrowed the device matrix.
   - [ ] Validate the Babylon streamed-splat stereo-buffer compatibility patch on both

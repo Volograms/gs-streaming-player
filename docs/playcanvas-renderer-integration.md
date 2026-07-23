@@ -196,6 +196,27 @@ For a useful Quest comparison:
   occupancy, and GPU/JS memory where the browser exposes it;
 - use the production profile build after functional validation.
 
+### WebGPU-to-WebGL XR mirror experiment
+
+The PlayCanvas demo includes an opt-in bridge spike for browsers where WebGPU rendering
+works but WebGPU-backed WebXR is blocked by a missing `XRGPUBinding`:
+
+```dotenv
+VITE_PLAYCANVAS_GRAPHICS_BACKEND=webgpu
+VITE_PLAYCANVAS_XR_BACKEND_FALLBACK=false
+VITE_PLAYCANVAS_XR_MIRROR=true
+VITE_STATIC_GS_URL=/assets/YOUR_STATIC_ENVIRONMENT.sog
+VITE_STATIC_GS_SCALE=1
+```
+
+This adds an `XR mirror` button. It starts a separate WebGL2 WebXR session and uploads
+the visible PlayCanvas WebGPU canvas into a WebGL texture each XR frame, drawing that
+texture to both eyes. The experiment is intentionally mono-to-both-eyes; it measures the
+WebGPU-canvas to WebGL-XR handoff before any larger stereo camera integration. Record
+`Static SOG`, `Mirror copy`, `Mirror FPS`, visual stability, and headset comfort at
+minimum, medium, and full dynamic tiers. If the copy/draw timing or visible latency is
+already too high, do not proceed to the more complex stereo bridge.
+
 ## Current capability boundary
 
 Native SOG removes the application's neutral Float32 frame, CPU scale exponentiation,

@@ -14,6 +14,9 @@ All notable changes to this project will be documented here. The project uses
 - PlayCanvas XR diagnostics now distinguish browser/session failures from missing
   WebGPU `XRGPUBinding`, and the demo can explicitly fall back to WebGL2 for XR with
   `VITE_PLAYCANVAS_XR_BACKEND_FALLBACK=true`.
+- An opt-in PlayCanvas demo `XR mirror` spike can run WebGPU rendering while presenting
+  the visible WebGPU canvas through a separate WebGL2 WebXR session for Quest handoff
+  measurements.
 - Native PlayCanvas SOG v2 playback through a dedicated renderer adapter and demo. The
   adapter consumes compressed SOG bytes from the player-owned cache, creates
   PlayCanvas-native assets without an expanded neutral Gaussian frame, reuses one
