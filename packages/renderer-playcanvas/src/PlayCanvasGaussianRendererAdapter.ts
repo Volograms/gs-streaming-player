@@ -103,6 +103,10 @@ export class PlayCanvasGaussianRendererAdapter
   constructor(options: PlayCanvasRendererAdapterOptions) {
     validateOptionalNonNegativeInteger(options.splatBudget, "splatBudget");
     validateOptionalNonNegativeInteger(options.staticLodLevel, "staticLodLevel");
+    validateOptionalNonNegativeNumber(options.minPixelSize, "minPixelSize");
+    validateOptionalNonNegativeNumber(options.minContribution, "minContribution");
+    validateOptionalNonNegativeNumber(options.foveationStrength, "foveationStrength");
+    validateOptionalUnitNumber(options.foveationCenter, "foveationCenter");
     this.options = options;
     this.now = options.now ?? (() => performance.now());
   }
@@ -171,6 +175,18 @@ export class PlayCanvasGaussianRendererAdapter
       }
       if (this.options.splatBudget !== undefined) {
         application.scene.gsplat.splatBudget = this.options.splatBudget;
+      }
+      if (this.options.minPixelSize !== undefined) {
+        application.scene.gsplat.minPixelSize = this.options.minPixelSize;
+      }
+      if (this.options.minContribution !== undefined) {
+        application.scene.gsplat.minContribution = this.options.minContribution;
+      }
+      if (this.options.foveationStrength !== undefined) {
+        application.scene.gsplat.foveationStrength = this.options.foveationStrength;
+      }
+      if (this.options.foveationCenter !== undefined) {
+        application.scene.gsplat.foveationCenter = this.options.foveationCenter;
       }
       const clearColor = new Color(0.07, 0.07, 0.1, 1);
       if (
@@ -447,6 +463,13 @@ export class PlayCanvasGaussianRendererAdapter
   async presentFrame(frame: PreparedFrame): Promise<void> {
     this.assertInitialised();
     const resource = this.requirePreparedFrame(frame);
+    if (
+      this.activeFrame === frame &&
+      this.boundFrame === frame &&
+      this.dynamicEntity.gsplat!.enabled
+    ) {
+      return;
+    }
     resource.presentationUseCount += 1;
     const presentation = this.presentationQueue.then(() =>
       this.commitPreparedFrame(frame, resource),
@@ -593,6 +616,9 @@ export class PlayCanvasGaussianRendererAdapter
       ...(stats === undefined || stats.gsplatSort < 0
         ? {}
         : { sortTimeMs: stats.gsplatSort }),
+      ...(stats === undefined || typeof stats.gsplatBufferCopy !== "number"
+        ? {}
+        : { workBufferCopyPercent: stats.gsplatBufferCopy }),
     };
   }
 
@@ -1093,6 +1119,21 @@ function validateOptionalNonNegativeInteger(
 ): void {
   if (value !== undefined && (!Number.isInteger(value) || value < 0)) {
     throw new Error(`${name} must be a non-negative integer.`);
+  }
+}
+
+function validateOptionalNonNegativeNumber(
+  value: number | undefined,
+  name: string,
+): void {
+  if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
+    throw new Error(`${name} must be a finite non-negative number.`);
+  }
+}
+
+function validateOptionalUnitNumber(value: number | undefined, name: string): void {
+  if (value !== undefined && (!Number.isFinite(value) || value < 0 || value > 1)) {
+    throw new Error(`${name} must be a finite number from 0 to 1.`);
   }
 }
 

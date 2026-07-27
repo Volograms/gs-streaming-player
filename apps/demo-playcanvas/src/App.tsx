@@ -8,6 +8,7 @@ import {
 } from "@6g-path/gaussian-renderer-playcanvas";
 import { useEffect, useRef, useState } from "react";
 
+import { parseGsplatRenderConfiguration } from "./gsplatRenderConfiguration.js";
 import { resolvePlayCanvasDemoSceneMode } from "./sceneConfiguration.js";
 import { parseScenePosition, withScenePosition } from "./scenePosition.js";
 import { readStaticLoadDiagnostics } from "./staticLoadDiagnostics.js";
@@ -237,10 +238,17 @@ export function App() {
           lodLevel: import.meta.env.VITE_STATIC_GS_LOD_LEVEL,
           splatBudget: import.meta.env.VITE_PLAYCANVAS_SPLAT_BUDGET,
         });
+        const gsplatRenderConfiguration = parseGsplatRenderConfiguration({
+          foveationCenter: import.meta.env.VITE_PLAYCANVAS_GSPLAT_FOVEATION_CENTER,
+          foveationStrength: import.meta.env.VITE_PLAYCANVAS_GSPLAT_FOVEATION_STRENGTH,
+          minContribution: import.meta.env.VITE_PLAYCANVAS_GSPLAT_MIN_CONTRIBUTION,
+          minPixelSize: import.meta.env.VITE_PLAYCANVAS_GSPLAT_MIN_PIXEL_SIZE,
+        });
 
         const initialisedAdapter = new PlayCanvasGaussianRendererAdapter({
           canvas: targetCanvas,
           graphicsBackend,
+          ...gsplatRenderConfiguration,
           ...(staticLodConfiguration.splatBudget === undefined
             ? {}
             : { splatBudget: staticLodConfiguration.splatBudget }),
@@ -886,9 +894,12 @@ export function App() {
           value={formatCount(metrics?.renderedSplatCount)}
         />
         <Metric label="Render FPS" value={formatRate(metrics?.renderFramesPerSecond)} />
-        <Metric label="SOG fetch" value={formatDuration(timings.compressedFetchMs)} />
         <Metric
-          label="SOG prepare"
+          label="Latest SOG fetch"
+          value={formatDuration(timings.compressedFetchMs)}
+        />
+        <Metric
+          label="Latest SOG prepare"
           value={formatDuration(timings.framePreparationMs)}
         />
         <Metric
@@ -896,6 +907,10 @@ export function App() {
           value={formatDuration(metrics?.frameCommitTimeMs)}
         />
         <Metric label="Sort" value={formatDuration(metrics?.sortTimeMs)} />
+        <Metric
+          label="GS buffer copy"
+          value={formatPercent(metrics?.workBufferCopyPercent)}
+        />
         <Metric
           label="Presented tier"
           value={
@@ -1231,6 +1246,10 @@ function formatMbps(value: number | undefined): string {
 
 function formatRatio(value: number | undefined): string {
   return value === undefined ? "waiting" : `${value.toFixed(2)} x`;
+}
+
+function formatPercent(value: number | undefined): string {
+  return value === undefined ? "waiting" : `${value.toFixed(1)}%`;
 }
 
 function formatSlots(active: number | undefined, maximum: number | undefined): string {

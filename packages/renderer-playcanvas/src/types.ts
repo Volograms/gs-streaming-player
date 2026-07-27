@@ -43,6 +43,14 @@ export interface PlayCanvasRendererAdapterOptions {
   graphicsBackend?: PlayCanvasGraphicsBackend;
   /** Configure automatic canvas resolution. Defaults to true for adapter-owned applications. */
   manageResize?: boolean;
+  /** Reject projected splats smaller than this screen-space radius. PlayCanvas defaults to 2. */
+  minPixelSize?: number;
+  /** Reject projected splats below this opacity/area contribution. PlayCanvas defaults to 3. */
+  minContribution?: number;
+  /** Increase contribution rejection toward the view periphery. PlayCanvas defaults to 0. */
+  foveationStrength?: number;
+  /** Normalized radius at which peripheral rejection starts. PlayCanvas defaults to 0.3. */
+  foveationCenter?: number;
   now?: () => number;
   /**
    * Global unified-renderer splat budget. Zero disables budget balancing. Streamed

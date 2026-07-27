@@ -60,6 +60,12 @@ describe("PlayCanvasGaussianRendererAdapter", () => {
           staticLodLevel: 0,
         }),
     ).not.toThrow();
+    expect(() => new PlayCanvasGaussianRendererAdapter({ minPixelSize: -1 })).toThrow(
+      /minPixelSize must be a finite non-negative number/i,
+    );
+    expect(
+      () => new PlayCanvasGaussianRendererAdapter({ foveationCenter: 1.1 }),
+    ).toThrow(/foveationCenter must be a finite number from 0 to 1/i);
   });
 
   it("requires a canvas when it owns the application", async () => {
@@ -194,6 +200,9 @@ describe("PlayCanvasGaussianRendererAdapter", () => {
     expect(gsplat.enabled).toBe(true);
     expect(application.renderNextFrame).toBe(true);
     expect(adapter.getMetrics().activeFrameIndex).toBe(FRAME.frameIndex);
+
+    await expect(adapter.presentFrame(prepared)).resolves.toBeUndefined();
+    expect(application.once).toHaveBeenCalledTimes(1);
   });
 
   it("reports PlayCanvas's unified splat count when static content is present", () => {
@@ -201,13 +210,21 @@ describe("PlayCanvasGaussianRendererAdapter", () => {
     Object.assign(adapter as unknown as Record<string, unknown>, {
       applicationValue: {
         stats: {
-          frame: { fps: 72, gsplats: 345_678, gsplatSort: 1, ms: 13, renderTime: 8 },
+          frame: {
+            fps: 72,
+            gsplatBufferCopy: 37.5,
+            gsplats: 345_678,
+            gsplatSort: 1,
+            ms: 13,
+            renderTime: 8,
+          },
         },
       },
       initialised: true,
     });
 
     expect(adapter.getMetrics().renderedSplatCount).toBe(345_678);
+    expect(adapter.getMetrics().workBufferCopyPercent).toBe(37.5);
   });
 
   it("resolves the presentation fence for PlayCanvas's camera component", async () => {

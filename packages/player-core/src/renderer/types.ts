@@ -184,6 +184,8 @@ export interface RendererMetrics {
   resources: readonly RendererResourceMetrics[];
   sortTimeMs?: number;
   sparkUpdateTimeMs?: number;
+  /** Percentage of the unified GSplat work buffer uploaded during the latest frame. */
+  workBufferCopyPercent?: number;
 }
 
 export interface GaussianRendererAdapter {
