@@ -7,22 +7,28 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- Quest-oriented PlayCanvas streaming diagnostics separating response latency,
+  response-body/`ArrayBuffer` time, overlapping aggregate throughput, preparation queue
+  delay, native SOG asset loading, presentation cadence, buffering episodes, and
+  main-thread event-loop pressure with bounded rolling samples.
 - Standalone static SPZ-to-SOG conversion through `gs-content convert-sog`, alongside
   the existing dynamic quality-cut index conversion.
 - Strict, opt-in PlayCanvas WebGPU initialisation for GPU-sort SOG measurements. The
   adapter rejects silent WebGL2 fallback, selects PlayCanvas's GPU Gaussian sorter,
   disables CPU-center generation before asset loading, and exposes the actual graphics
   backend and sort path in the PlayCanvas demo diagnostics.
-- PlayCanvas XR diagnostics now distinguish browser/session failures from missing
-  WebGPU `XRGPUBinding`, and the demo can explicitly fall back to WebGL2 for XR with
+- PlayCanvas XR diagnostics now distinguish browser/session failures from missing WebGPU
+  `XRGPUBinding`, and the demo can explicitly fall back to WebGL2 for XR with
   `VITE_PLAYCANVAS_XR_BACKEND_FALLBACK=true`.
 - An opt-in PlayCanvas demo `XR mirror` spike can run WebGPU rendering while presenting
   the visible WebGPU canvas through a separate WebGL2 WebXR session for Quest handoff
   measurements. Mirror frames now render the WebGPU source synchronously before upload
   so the browser cannot return an already-presented transparent-black canvas, and WebGL
-  upload, framebuffer, draw, and context failures are reported explicitly. Browsers
-  that reject direct WebGPU-canvas texture uploads now fall back to a measured
-  accelerated Canvas2D staging path.
+  upload, framebuffer, draw, and context failures are reported explicitly. Browsers that
+  reject direct WebGPU-canvas texture uploads now fall back to a measured accelerated
+  Canvas2D staging path. The bridge now feeds the ordered left/right WebXR view and
+  projection matrices into PlayCanvas's native stereo path, renders a packed
+  side-by-side WebGPU frame, and routes the matching half to each WebGL XR eye.
 - Native PlayCanvas SOG v2 playback through a dedicated renderer adapter and demo. The
   adapter consumes compressed SOG bytes from the player-owned cache, creates
   PlayCanvas-native assets without an expanded neutral Gaussian frame, reuses one

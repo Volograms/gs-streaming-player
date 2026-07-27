@@ -820,10 +820,14 @@ export class FrameRingBuffer {
             ? "compressed-cache-hit"
             : "compressed-fetch-failed";
     this.trace({
+      ...(event.bodyReadMs === undefined ? {} : { bodyReadMs: event.bodyReadMs }),
       ...(event.durationMs === undefined ? {} : { durationMs: event.durationMs }),
       ...(event.errorMessage === undefined ? {} : { errorMessage: event.errorMessage }),
       frameIndex: event.frameIndex,
       ...(event.loadedBytes === undefined ? {} : { loadedBytes: event.loadedBytes }),
+      ...(event.responseLatencyMs === undefined
+        ? {}
+        : { responseLatencyMs: event.responseLatencyMs }),
       ...(event.totalBytes === undefined ? {} : { totalBytes: event.totalBytes }),
       type,
     });

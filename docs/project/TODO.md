@@ -51,14 +51,21 @@ acceptance criteria are covered by implementation and verification.
         `gpu (no CPU centers)`, `Sort 0.0 ms`, `Presented tier 1`, and smooth ~59 fps
         playback.
   - [x] Record the first Quest 3 WebGPU medium-tier screenshot: `webgpu`,
-        `gpu (no CPU centers)`, `Sort 0.0 ms`, `Presented tier 0.5`, and acceptable
-        but slower playback.
+        `gpu (no CPU centers)`, `Sort 0.0 ms`, `Presented tier 0.5`, and acceptable but
+        slower playback.
   - [x] Validate PlayCanvas XR on Quest 3 with the WebGL2 backend.
   - [ ] Capture repeated desktop and Quest 3 p50/p95 samples, including full-tier Quest
         traces and any WebGPU XR run that reports `XRGPUBinding`.
   - [ ] Test the opt-in WebGPU-to-WebGL XR mirror spike on Quest 3. Record mirror
         copy/draw cost, XR frame rate, visual latency, and whether mono mirroring is
         stable enough to justify a real stereo bridge.
+    - [x] Capture the first successful Quest 3 mono handoff: the Canvas2D fallback
+          displayed the dynamic 25% tier in both eyes at 1178 x 620, with a sampled 9.4
+          ms copy/draw, 1.4 ms source render, and 24.5 mirror fps. The fixed mono view
+          was expected; the configured static SOG failed to load in this run.
+    - [x] Replace the incorrect per-eye camera conversion with PlayCanvas-native ordered
+          XR views, a packed side-by-side WebGPU stereo render, one upload, and explicit
+          left/right WebGL viewport routing. Quest validation remains open.
 - [ ] Run the chosen candidates on Meta Quest 3 and representative mobile Safari after
       desktop format/adapter comparisons have narrowed the device matrix.
   - [ ] Validate the Babylon streamed-splat stereo-buffer compatibility patch on both

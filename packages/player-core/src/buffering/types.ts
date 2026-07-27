@@ -86,6 +86,8 @@ export interface FrameRingBufferTraceFrame {
 export interface FrameRingBufferTraceEvent {
   /** Monotonic timestamp supplied by FrameRingBufferOptions.now. */
   atMs: number;
+  /** Time spent reading the response body into the owned ArrayBuffer. */
+  bodyReadMs?: number;
   /** Duration of the operation represented by this event, when applicable. */
   durationMs?: number;
   displayCommitIntervalsMs?: readonly number[];
@@ -99,6 +101,8 @@ export interface FrameRingBufferTraceEvent {
   pageIndex?: number;
   phase?: RendererFramePreparationPhase;
   quality?: Readonly<FramePresentationQuality>;
+  /** Time from fetch start until response headers became available. */
+  responseLatencyMs?: number;
   reusedPage?: boolean;
   renderCallSamplesMs?: readonly number[];
   renderIntervalSamplesMs?: readonly number[];

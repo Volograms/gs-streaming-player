@@ -18,13 +18,21 @@ export type CompressedFrameCacheTraceEventType =
 
 export interface CompressedFrameCacheTraceEvent {
   atMs: number;
+  bodyReadMs?: number;
   durationMs?: number;
   errorMessage?: string;
   frameIndex: number;
   loadedBytes?: number;
+  responseLatencyMs?: number;
   totalBytes?: number;
   type: CompressedFrameCacheTraceEventType;
   url: string;
+}
+
+interface FetchedBytes {
+  bodyReadMs: number;
+  bytes: ArrayBuffer;
+  responseLatencyMs: number;
 }
 
 export interface CompressedFrameCacheOptions {
@@ -284,8 +292,8 @@ export class CompressedFrameCache {
       type: "fetch-started",
       url: entry.request.url,
     });
-    const fetchPromise = this.fetchBytes(entry.request, controller.signal)
-      .then((bytes) => {
+    const fetchPromise = this.fetchBytes(entry.request, controller.signal, startedAt)
+      .then(({ bodyReadMs, bytes, responseLatencyMs }) => {
         if (controller.signal.aborted) {
           throw abortError();
         }
@@ -294,9 +302,11 @@ export class CompressedFrameCache {
         entry.lastUsed = this.sequence++;
         this.onTrace?.({
           atMs: this.now(),
+          bodyReadMs,
           durationMs: this.now() - startedAt,
           frameIndex: entry.request.frameIndex,
           loadedBytes: bytes.byteLength,
+          responseLatencyMs,
           totalBytes: entry.request.byteSize ?? bytes.byteLength,
           type: "fetch-ready",
           url: entry.request.url,
@@ -335,14 +345,22 @@ export class CompressedFrameCache {
   private async fetchBytes(
     request: CompressedFrameRequest,
     signal: AbortSignal,
-  ): Promise<ArrayBuffer> {
+    startedAt: number,
+  ): Promise<FetchedBytes> {
     const response = await this.fetchImplementation(request.url, { signal });
+    const responseAt = this.now();
     if (!response.ok) {
       throw new Error(
         `Unable to fetch compressed frame ${request.frameIndex}: ${response.status} ${response.statusText}.`,
       );
     }
-    return response.arrayBuffer();
+    const bytes = await response.arrayBuffer();
+    const completedAt = this.now();
+    return {
+      bodyReadMs: completedAt - responseAt,
+      bytes,
+      responseLatencyMs: responseAt - startedAt,
+    };
   }
 
   private evictToBudget(): void {

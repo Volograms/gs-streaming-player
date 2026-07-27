@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { CompressedFrameCache } from "../src/index.js";
 
+import type { CompressedFrameCacheTraceEvent } from "../src/index.js";
+
 interface Deferred<T> {
   promise: Promise<T>;
   resolve(value: T): void;
@@ -20,6 +22,37 @@ function response(byteLength: number): Response {
 }
 
 describe("CompressedFrameCache", () => {
+  it("separates response latency from response body processing", async () => {
+    let now = 0;
+    const trace: CompressedFrameCacheTraceEvent[] = [];
+    const fetchImplementation = vi.fn(async () => {
+      now = 12;
+      return {
+        ok: true,
+        arrayBuffer: async () => {
+          now = 32;
+          return new ArrayBuffer(8);
+        },
+      } as Response;
+    });
+    const cache = new CompressedFrameCache({
+      fetch: fetchImplementation,
+      maximumBytes: 8,
+      maximumFetchConcurrency: 1,
+      now: () => now,
+      onTrace: (event) => trace.push({ ...event }),
+    });
+
+    await cache.get({ byteSize: 8, frameIndex: 0, url: "/frame-0.spz" });
+
+    expect(trace.find(({ type }) => type === "fetch-ready")).toMatchObject({
+      bodyReadMs: 20,
+      durationMs: 32,
+      responseLatencyMs: 12,
+    });
+    cache.dispose();
+  });
+
   it("invokes fetch with the browser global receiver", async () => {
     const fetchImplementation = vi.fn(function (this: unknown) {
       expect(this).toBe(globalThis);

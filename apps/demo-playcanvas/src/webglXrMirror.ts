@@ -6,6 +6,7 @@ export interface WebglXrMirrorStats {
   readonly sourceWidth: number;
   readonly uploadPath: "canvas-2d" | "direct";
   readonly uploadAndDrawMs: number;
+  readonly viewMode: "mono" | "stereo";
   readonly views: number;
   readonly xrFramesPerSecond: number;
 }
@@ -14,11 +15,27 @@ export interface WebglXrMirrorOptions {
   onEnd?: () => void;
   onError?: (error: unknown) => void;
   onStats?: (stats: WebglXrMirrorStats) => void;
-  renderSourceFrame?: () => void;
+  renderSourceFrame?: (pose: WebglXrViewerPose) => void;
+}
+
+export interface WebglXrMirrorView {
+  readonly eye: "left" | "none" | "right";
+  readonly projectionMatrix: Float32Array;
+  readonly transform: WebglXrRigidTransform;
+}
+
+export interface WebglXrViewerPose {
+  readonly transform: WebglXrRigidTransform;
+  readonly views: readonly WebglXrMirrorView[];
+}
+
+interface WebglXrRigidTransform {
+  readonly inverse: { readonly matrix: Float32Array };
+  readonly matrix: Float32Array;
 }
 
 type XrFrameLike = {
-  getViewerPose(referenceSpace: XrReferenceSpaceLike): XrViewerPoseLike | null;
+  getViewerPose(referenceSpace: XrReferenceSpaceLike): WebglXrViewerPose | null;
 };
 
 type XrReferenceSpaceLike = object;
@@ -33,15 +50,9 @@ type XrSessionLike = {
   updateRenderState(state: { baseLayer: XrWebGLLayerLike }): void;
 };
 
-type XrViewLike = object;
-
-type XrViewerPoseLike = {
-  views: readonly XrViewLike[];
-};
-
 type XrWebGLLayerLike = {
   framebuffer: WebGLFramebuffer | null;
-  getViewport(view: XrViewLike): XrViewportLike | null;
+  getViewport(view: WebglXrMirrorView): XrViewportLike | null;
 };
 
 type WebGL2XrCompatibleContext = WebGL2RenderingContext & {
@@ -74,6 +85,10 @@ export class WebglXrMirrorPresenter {
   private stagingCanvas: HTMLCanvasElement | undefined;
   private stagingContext: CanvasRenderingContext2D | undefined;
   private texture: WebGLTexture | undefined;
+  private textureHeight = 0;
+  private textureWidth = 0;
+  private uvOffsetUniform: WebGLUniformLocation | undefined;
+  private uvScaleUniform: WebGLUniformLocation | undefined;
   private uploadPath: "canvas-2d" | "direct" = "direct";
   private vertexArray: WebGLVertexArrayObject | null | undefined;
 
@@ -186,19 +201,12 @@ export class WebglXrMirrorPresenter {
       return;
     }
 
-    let uploadStartedAt: number;
     let sourceRenderMs: number;
+    let uploadAndDrawMs = 0;
     try {
       if (gl.isContextLost()) {
         throw new Error("The WebGL mirror context was lost.");
       }
-
-      const sourceRenderStartedAt = performance.now();
-      this.options.renderSourceFrame?.();
-      sourceRenderMs = performance.now() - sourceRenderStartedAt;
-
-      uploadStartedAt = performance.now();
-      this.updateSourceTexture(gl);
       if (layer.framebuffer === null) {
         throw new Error("The WebXR layer did not provide a framebuffer.");
       }
@@ -215,14 +223,30 @@ export class WebglXrMirrorPresenter {
       gl.useProgram(this.program!);
       gl.bindVertexArray(this.vertexArray ?? null);
       gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, this.texture!);
+
+      const sourceRenderStartedAt = performance.now();
+      this.options.renderSourceFrame?.(pose);
+      sourceRenderMs = performance.now() - sourceRenderStartedAt;
+
+      const uploadStartedAt = performance.now();
+      const texture = this.updateSourceTexture(gl);
+      uploadAndDrawMs += performance.now() - uploadStartedAt;
+
       for (const view of pose.views) {
         const viewport = layer.getViewport(view);
         if (viewport === null) {
           continue;
         }
+
+        const uploadAndDrawStartedAt = performance.now();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        const stereoEye = view.eye === "left" || view.eye === "right";
+        gl.uniform2f(this.uvScaleUniform!, stereoEye ? 0.5 : 1, 1);
+        gl.uniform2f(this.uvOffsetUniform!, view.eye === "right" ? 0.5 : 0, 0);
         gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        uploadAndDrawMs += performance.now() - uploadAndDrawStartedAt;
       }
       gl.flush();
       throwOnGlError(gl, "drawing the WebGL mirror frame");
@@ -244,7 +268,12 @@ export class WebglXrMirrorPresenter {
         sourceHeight: this.sourceHeight,
         sourceWidth: this.sourceWidth,
         uploadPath: this.uploadPath,
-        uploadAndDrawMs: frameEndedAt - uploadStartedAt,
+        uploadAndDrawMs,
+        viewMode:
+          pose.views.some(({ eye }) => eye === "left") &&
+          pose.views.some(({ eye }) => eye === "right")
+            ? "stereo"
+            : "mono",
         views: pose.views.length,
         xrFramesPerSecond: frameMs > 0 ? 1000 / frameMs : 0,
       });
@@ -260,31 +289,29 @@ export class WebglXrMirrorPresenter {
       throw new Error("Could not create the WebGL mirror vertex array.");
     }
     this.vertexArray = vertexArray;
-    const texture = gl.createTexture();
-    if (texture === null) {
-      throw new Error("Could not create the WebGL mirror texture.");
-    }
-    this.texture = texture;
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.useProgram(this.program);
     const sourceUniform = gl.getUniformLocation(this.program, "uSource");
     if (sourceUniform === null) {
       throw new Error("Could not find the WebGL mirror source sampler.");
     }
     gl.uniform1i(sourceUniform, 0);
+    const uvScaleUniform = gl.getUniformLocation(this.program, "uUvScale");
+    const uvOffsetUniform = gl.getUniformLocation(this.program, "uUvOffset");
+    if (uvScaleUniform === null || uvOffsetUniform === null) {
+      throw new Error("Could not find the WebGL mirror UV uniforms.");
+    }
+    this.uvScaleUniform = uvScaleUniform;
+    this.uvOffsetUniform = uvOffsetUniform;
   }
 
-  private updateSourceTexture(gl: WebGL2RenderingContext): void {
+  private updateSourceTexture(gl: WebGL2RenderingContext): WebGLTexture {
     const width = this.sourceCanvas.width;
     const height = this.sourceCanvas.height;
     if (width <= 0 || height <= 0) {
       throw new Error("The WebGPU source canvas has no drawable size.");
     }
-    gl.bindTexture(gl.TEXTURE_2D, this.texture!);
+    const texture = this.ensureTexture(gl);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
     // Quest's Chromium WebGPU/WebGL interop currently rejects the direct source with
     // INVALID_OPERATION. Avoid pixel-store transforms on the direct path and fall back
     // to Chromium's accelerated Canvas2D readback path when that specific failure occurs.
@@ -293,9 +320,11 @@ export class WebglXrMirrorPresenter {
       this.uploadTexture(gl, this.sourceCanvas, width, height);
       const directErrors = readGlErrors(gl);
       if (directErrors.length === 0) {
+        this.textureWidth = width;
+        this.textureHeight = height;
         this.sourceWidth = width;
         this.sourceHeight = height;
-        return;
+        return texture;
       }
       if (!directErrors.every((error) => error === gl.INVALID_OPERATION)) {
         throwGlErrors("uploading the WebGPU canvas directly", directErrors, gl);
@@ -306,8 +335,29 @@ export class WebglXrMirrorPresenter {
     const stagingCanvas = this.updateStagingCanvas(width, height);
     this.uploadTexture(gl, stagingCanvas, width, height);
     throwOnGlError(gl, "uploading the Canvas2D-staged WebGPU frame");
+    this.textureWidth = width;
+    this.textureHeight = height;
     this.sourceWidth = width;
     this.sourceHeight = height;
+    return texture;
+  }
+
+  private ensureTexture(gl: WebGL2RenderingContext): WebGLTexture {
+    const existing = this.texture;
+    if (existing !== undefined) {
+      return existing;
+    }
+    const texture = gl.createTexture();
+    if (texture === null) {
+      throw new Error("Could not create the WebGL mirror texture.");
+    }
+    this.texture = texture;
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return texture;
   }
 
   private updateStagingCanvas(width: number, height: number): HTMLCanvasElement {
@@ -336,7 +386,7 @@ export class WebglXrMirrorPresenter {
     width: number,
     height: number,
   ): void {
-    if (width !== this.sourceWidth || height !== this.sourceHeight) {
+    if (width !== this.textureWidth || height !== this.textureHeight) {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
     } else {
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, source);
@@ -346,9 +396,7 @@ export class WebglXrMirrorPresenter {
   private disposeGlResources(): void {
     const gl = this.gl;
     if (gl !== undefined) {
-      if (this.texture !== undefined) {
-        gl.deleteTexture(this.texture);
-      }
+      gl.deleteTexture(this.texture ?? null);
       if (this.program !== undefined) {
         gl.deleteProgram(this.program);
       }
@@ -366,6 +414,8 @@ export class WebglXrMirrorPresenter {
     this.stagingCanvas = undefined;
     this.stagingContext = undefined;
     this.texture = undefined;
+    this.textureHeight = 0;
+    this.textureWidth = 0;
     this.uploadPath = "direct";
     this.vertexArray = undefined;
   }
@@ -432,10 +482,12 @@ function createProgram(gl: WebGL2RenderingContext): WebGLProgram {
     `#version 300 es
     precision highp float;
     uniform sampler2D uSource;
+    uniform vec2 uUvOffset;
+    uniform vec2 uUvScale;
     in vec2 vUv;
     out vec4 color;
     void main() {
-      color = texture(uSource, vUv);
+      color = texture(uSource, uUvOffset + vUv * uUvScale);
     }`,
   );
   const program = gl.createProgram();

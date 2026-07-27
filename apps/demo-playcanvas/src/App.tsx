@@ -3,13 +3,19 @@ import { FrameRingBuffer, SequencePlaybackController } from "@6g-path/gaussian-p
 import {
   PLAYCANVAS_SOG_CODEC_ID,
   PlayCanvasGaussianRendererAdapter,
+  RenderView,
   queryPlayCanvasImmersiveVrSupport,
 } from "@6g-path/gaussian-renderer-playcanvas";
 import { useEffect, useRef, useState } from "react";
 
+import { StreamingDiagnostics } from "./streamingDiagnostics.js";
 import { WebglXrMirrorPresenter } from "./webglXrMirror.js";
 
-import type { WebglXrMirrorStats } from "./webglXrMirror.js";
+import type {
+  DiagnosticDistribution,
+  StreamingDiagnosticsSnapshot,
+} from "./streamingDiagnostics.js";
+import type { WebglXrMirrorStats, WebglXrViewerPose } from "./webglXrMirror.js";
 import type {
   FrameRingBufferSnapshot,
   FrameRingBufferTraceEvent,
@@ -77,6 +83,7 @@ export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const adapterRef = useRef<PlayCanvasGaussianRendererAdapter | undefined>(undefined);
   const bufferRef = useRef<FrameRingBuffer | undefined>(undefined);
+  const diagnosticsRef = useRef<StreamingDiagnostics | undefined>(undefined);
   const playbackRef = useRef<SequencePlaybackController | undefined>(undefined);
   const xrMirrorRef = useRef<WebglXrMirrorPresenter | undefined>(undefined);
   const [bufferSnapshot, setBufferSnapshot] = useState<FrameRingBufferSnapshot>();
@@ -98,6 +105,9 @@ export function App() {
       : "loading",
   );
   const [status, setStatus] = useState<RuntimeStatus>("initialising");
+  const [targetFramesPerSecond, setTargetFramesPerSecond] = useState<number>();
+  const [streamingDiagnostics, setStreamingDiagnostics] =
+    useState<StreamingDiagnosticsSnapshot>();
   const [timings, setTimings] = useState<LatestTimings>({
     compressedFetchMs: undefined,
     framePreparationMs: undefined,
@@ -121,6 +131,12 @@ export function App() {
     let unsubscribeBuffer: (() => void) | undefined;
     let unsubscribePlayback: (() => void) | undefined;
     const abortController = new AbortController();
+    const diagnosticCollector = new StreamingDiagnostics(
+      fetchConcurrency,
+      preparationConcurrency,
+    );
+    diagnosticsRef.current = diagnosticCollector;
+    diagnosticCollector.start();
     const latestTimings: LatestTimings = {
       compressedFetchMs: undefined,
       framePreparationMs: undefined,
@@ -136,6 +152,7 @@ export function App() {
     let metricsTimer: number | undefined;
 
     function observeTrace(event: Readonly<FrameRingBufferTraceEvent>) {
+      diagnosticCollector.observeTrace(event);
       if (event.type === "compressed-fetch-ready") {
         latestTimings.compressedFetchMs = event.durationMs;
       } else if (event.type === "base-ready") {
@@ -266,11 +283,13 @@ export function App() {
         });
         playbackRef.current = playback;
         unsubscribePlayback = playback.subscribe((snapshot) => {
+          diagnosticCollector.observePlayback(snapshot);
           if (!active) {
             return;
           }
           setFrameIndex(snapshot.currentFrameIndex);
           setLifecycle(snapshot.lifecycle);
+          setTargetFramesPerSecond(snapshot.targetFramesPerSecond);
           if (snapshot.lifecycle === "ERROR") {
             setError(errorMessage(snapshot.error));
           }
@@ -281,6 +300,7 @@ export function App() {
             return;
           }
           setMetrics(initialisedAdapter.getMetrics());
+          setStreamingDiagnostics(diagnosticCollector.snapshot());
           setTimings({ ...latestTimings });
           if (xrEnabled) {
             void readXrStatus(initialisedAdapter)
@@ -298,9 +318,7 @@ export function App() {
           }
         }, 500);
         if (active) {
-          setXrStatus(
-            xrEnabled ? await readXrStatus(initialisedAdapter) : "disabled",
-          );
+          setXrStatus(xrEnabled ? await readXrStatus(initialisedAdapter) : "disabled");
           setStatus("ready");
         }
       } catch (caught) {
@@ -319,6 +337,10 @@ export function App() {
     return () => {
       active = false;
       abortController.abort();
+      diagnosticCollector.dispose();
+      if (diagnosticsRef.current === diagnosticCollector) {
+        diagnosticsRef.current = undefined;
+      }
       if (metricsTimer !== undefined) {
         window.clearInterval(metricsTimer);
       }
@@ -362,6 +384,7 @@ export function App() {
     if (playback.snapshot.isPlaying) {
       playback.pause();
     } else {
+      diagnosticsRef.current?.reset();
       playback.play();
     }
   }
@@ -397,17 +420,93 @@ export function App() {
     }
 
     const application = adapter.application;
+    const cameraEntity = adapter.cameraEntity;
+    const camera = cameraEntity.camera;
+    if (camera === undefined) {
+      setError("The PlayCanvas mirror camera is unavailable.");
+      return;
+    }
     const previousAutoRender = application.autoRender;
-    let renderLoopRestored = false;
-    const restoreRenderLoop = () => {
-      if (!renderLoopRestored) {
+    const originalCameraPosition = cameraEntity.getPosition().clone();
+    const originalCameraRotation = cameraEntity.getRotation().clone();
+    const originalCameraTransform = cameraEntity.getWorldTransform().clone();
+    const originalCalculateProjection = camera.calculateProjection;
+    const sceneCamera = camera.camera;
+    const originalXrViews = sceneCamera.xrViews;
+    const anchorTransform = originalCameraTransform.clone();
+    const viewerTransform = originalCameraTransform.clone();
+    const parentInverse = originalCameraTransform.clone().setIdentity();
+    const localEyeTransform = originalCameraTransform.clone();
+    const xrEyeTransform = originalCameraTransform.clone();
+    const eyeWorldTransform = originalCameraTransform.clone();
+    const viewerWorldTransform = originalCameraTransform.clone();
+    const viewerPosition = originalCameraPosition.clone();
+    const viewerRotation = originalCameraRotation.clone();
+    const renderViews = {
+      left: new RenderView(),
+      right: new RenderView(),
+    };
+    let anchorInitialised = false;
+    let sourceRestored = false;
+    const restoreSource = () => {
+      if (!sourceRestored) {
         application.autoRender = previousAutoRender;
-        renderLoopRestored = true;
+        camera.calculateProjection = originalCalculateProjection;
+        sceneCamera.xrViews = originalXrViews;
+        cameraEntity.setPosition(originalCameraPosition);
+        cameraEntity.setRotation(originalCameraRotation);
+        sourceRestored = true;
       }
+    };
+    const renderSourceFrame = (pose: WebglXrViewerPose) => {
+      if (!anchorInitialised) {
+        viewerTransform.set(pose.transform.matrix as unknown as number[]).invert();
+        anchorTransform.copy(originalCameraTransform).mul(viewerTransform);
+        const parent = cameraEntity.parent;
+        if (parent !== null) {
+          parentInverse.copy(parent.getWorldTransform()).invert();
+        }
+        anchorInitialised = true;
+      }
+
+      const stereoViews = pose.views.filter(
+        (view) => view.eye === "left" || view.eye === "right",
+      );
+      if (stereoViews.length !== 2) {
+        throw new Error(
+          `Expected two WebXR eye views, received ${stereoViews.length}.`,
+        );
+      }
+      const halfWidth = Math.floor(sourceCanvas.width / 2);
+      for (const view of stereoViews) {
+        const renderView = renderViews[view.eye as "left" | "right"];
+        eyeWorldTransform
+          .copy(anchorTransform)
+          .mul(xrEyeTransform.set(view.transform.matrix as unknown as number[]));
+        localEyeTransform.copy(parentInverse).mul(eyeWorldTransform);
+        renderView.setView(view.projectionMatrix, localEyeTransform.data);
+        renderView.setViewport(
+          view.eye === "left" ? 0 : halfWidth,
+          0,
+          view.eye === "left" ? halfWidth : sourceCanvas.width - halfWidth,
+          sourceCanvas.height,
+        );
+      }
+
+      viewerWorldTransform
+        .copy(anchorTransform)
+        .mul(xrEyeTransform.set(pose.transform.matrix as unknown as number[]));
+      viewerWorldTransform.getTranslation(viewerPosition);
+      viewerRotation.setFromMat4(viewerWorldTransform);
+      cameraEntity.setPosition(viewerPosition);
+      cameraEntity.setRotation(viewerRotation);
+      camera.calculateProjection = originalCalculateProjection;
+      sceneCamera.xrViews = [renderViews.left, renderViews.right];
+      application.render();
     };
     const nextMirror = new WebglXrMirrorPresenter(sourceCanvas, {
       onEnd: () => {
-        restoreRenderLoop();
+        restoreSource();
         if (xrMirrorRef.current === nextMirror) {
           xrMirrorRef.current = undefined;
         }
@@ -418,7 +517,7 @@ export function App() {
         setMirrorActive(false);
       },
       onStats: setMirrorStats,
-      renderSourceFrame: () => application.render(),
+      renderSourceFrame,
     });
     xrMirrorRef.current = nextMirror;
     application.autoRender = false;
@@ -428,7 +527,7 @@ export function App() {
         setMirrorActive(true);
       })
       .catch((caught: unknown) => {
-        restoreRenderLoop();
+        restoreSource();
         nextMirror.dispose();
         if (xrMirrorRef.current === nextMirror) {
           xrMirrorRef.current = undefined;
@@ -449,6 +548,19 @@ export function App() {
         frameStatus === "refining" ||
         frameStatus === "ready"),
   ).length;
+  const selectedByteSize = qualityLevels.find(
+    ({ detailLevel }) => detailLevel === selectedDetail,
+  )?.byteSize;
+  const requiredPayloadMbps =
+    selectedByteSize === undefined || targetFramesPerSecond === undefined
+      ? undefined
+      : (selectedByteSize * 8 * targetFramesPerSecond) / 1_000_000;
+  const deliveryMargin =
+    requiredPayloadMbps === undefined ||
+    requiredPayloadMbps <= 0 ||
+    streamingDiagnostics?.aggregateFetchMbps === undefined
+      ? undefined
+      : streamingDiagnostics.aggregateFetchMbps / requiredPayloadMbps;
 
   return (
     <main>
@@ -507,8 +619,7 @@ export function App() {
             <button
               className="xr-button"
               disabled={
-                status !== "ready" ||
-                rendererRuntime?.graphicsBackend !== "webgpu"
+                status !== "ready" || rendererRuntime?.graphicsBackend !== "webgpu"
               }
               onClick={toggleXrMirror}
             >
@@ -590,8 +701,114 @@ export function App() {
               label="Mirror upload"
               value={mirrorStats?.uploadPath ?? "waiting"}
             />
+            <Metric label="Mirror view" value={mirrorStats?.viewMode ?? "waiting"} />
           </>
         ) : null}
+      </section>
+
+      <div className="diagnostic-heading">
+        <h2>Streaming bottleneck diagnostics</h2>
+        <p>
+          Rolling p50 / p95 over the latest 120 samples; measurements reset when
+          playback starts.
+        </p>
+      </div>
+      <section className="status-grid" aria-label="Streaming bottleneck diagnostics">
+        <Metric
+          label="Aggregate fetch"
+          value={formatMbps(streamingDiagnostics?.aggregateFetchMbps)}
+        />
+        <Metric label="Required payload" value={formatMbps(requiredPayloadMbps)} />
+        <Metric label="Delivery margin" value={formatRatio(deliveryMargin)} />
+        <Metric
+          label="Body throughput"
+          value={formatDistribution(streamingDiagnostics?.requestMbps, "Mbps")}
+        />
+        <Metric
+          label="Response latency"
+          value={formatDistribution(streamingDiagnostics?.responseLatency, "ms")}
+        />
+        <Metric
+          label="Body + ArrayBuffer"
+          value={formatDistribution(streamingDiagnostics?.bodyRead, "ms")}
+        />
+        <Metric
+          label="Fetch total"
+          value={formatDistribution(streamingDiagnostics?.totalFetch, "ms")}
+        />
+        <Metric
+          label="Fetch slots"
+          value={formatSlots(
+            bufferSnapshot?.compressedBuffer?.activeFetchCount,
+            streamingDiagnostics?.configuredFetchConcurrency,
+          )}
+        />
+        <Metric
+          label="Fetch queued"
+          value={`${bufferSnapshot?.compressedBuffer?.queuedFetchCount ?? 0}`}
+        />
+        <Metric
+          label="Cached contiguous"
+          value={`${bufferSnapshot?.compressedBuffer?.contiguousReadyFrameCount ?? 0} / ${
+            bufferSnapshot?.compressedBuffer?.readyFrameCount ?? 0
+          } frames`}
+        />
+        <Metric
+          label="Fetches / cache hits"
+          value={`${streamingDiagnostics?.completedFetchCount ?? 0} / ${
+            streamingDiagnostics?.cacheHitCount ?? 0
+          }`}
+        />
+        <Metric
+          label="Preparation queue"
+          value={formatDistribution(streamingDiagnostics?.preparationQueue, "ms")}
+        />
+        <Metric
+          label="Native SOG load"
+          value={formatDistribution(streamingDiagnostics?.sogAssetLoad, "ms")}
+        />
+        <Metric
+          label="End-to-end prepare"
+          value={formatDistribution(streamingDiagnostics?.basePreparation, "ms")}
+        />
+        <Metric
+          label="Prepare slots"
+          value={formatSlots(
+            bufferSnapshot?.activeBasePreparationCount,
+            streamingDiagnostics?.configuredPreparationConcurrency,
+          )}
+        />
+        <Metric
+          label="Prepare queued"
+          value={`${bufferSnapshot?.queuedBasePreparationCount ?? 0}`}
+        />
+        <Metric
+          label="Presentation FPS"
+          value={formatRate(streamingDiagnostics?.presentationFramesPerSecond)}
+        />
+        <Metric
+          label="Buffering episodes"
+          value={`${streamingDiagnostics?.stallCount ?? 0} / ${formatDuration(
+            streamingDiagnostics?.stallTimeMs,
+          )}`}
+        />
+        <Metric
+          label="Dropped frames"
+          value={`${streamingDiagnostics?.droppedFrameCount ?? 0}`}
+        />
+        <Metric
+          label="Event-loop lag"
+          value={formatDistribution(streamingDiagnostics?.eventLoopLag, "ms")}
+        />
+        <Metric label="Long tasks" value={formatLongTasks(streamingDiagnostics)} />
+        <Metric
+          label="Logical CPU / slots"
+          value={`${streamingDiagnostics?.hardwareConcurrency ?? "unknown"} / ${
+            streamingDiagnostics?.configuredPreparationConcurrency ??
+            preparationConcurrency
+          }`}
+        />
+        <Metric label="SOG worker pool" value="none (native async)" />
       </section>
 
       {error === undefined ? null : <p className="error">{error}</p>}
@@ -652,6 +869,38 @@ function formatRate(value: number | undefined): string {
   return value === undefined ? "waiting" : `${value.toFixed(1)} fps`;
 }
 
+function formatDistribution(
+  distribution: DiagnosticDistribution | undefined,
+  unit: string,
+): string {
+  if (distribution?.p50 === undefined || distribution.p95 === undefined) {
+    return "waiting";
+  }
+  return `${distribution.p50.toFixed(1)} / ${distribution.p95.toFixed(1)} ${unit}`;
+}
+
+function formatMbps(value: number | undefined): string {
+  return value === undefined ? "waiting" : `${value.toFixed(1)} Mbps`;
+}
+
+function formatRatio(value: number | undefined): string {
+  return value === undefined ? "waiting" : `${value.toFixed(2)} x`;
+}
+
+function formatSlots(active: number | undefined, maximum: number | undefined): string {
+  return `${active ?? 0} / ${maximum ?? "unknown"}`;
+}
+
+function formatLongTasks(snapshot: StreamingDiagnosticsSnapshot | undefined): string {
+  if (snapshot === undefined) {
+    return "waiting";
+  }
+  if (!snapshot.longTaskSupported) {
+    return "API unavailable";
+  }
+  return `${snapshot.longTaskCount} / ${snapshot.longTaskTimeMs.toFixed(1)} ms`;
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -667,8 +916,9 @@ async function selectGraphicsBackendForXr(
   ) {
     return requestedGraphicsBackend;
   }
-  const requestedSupport =
-    await queryPlayCanvasImmersiveVrSupport(requestedGraphicsBackend);
+  const requestedSupport = await queryPlayCanvasImmersiveVrSupport(
+    requestedGraphicsBackend,
+  );
   if (requestedSupport.available) {
     return requestedGraphicsBackend;
   }

@@ -193,10 +193,10 @@ click gesture. Meta Quest Browser 146.0 announced experimental WebGPU support on
 renderer, but PlayCanvas still requires the browser to expose `XRGPUBinding` before a
 WebGPU graphics device can host immersive XR. If that binding is missing, WebGPU page
 rendering can still work while the demo reports WebXR as unavailable. Use WebGL2 for XR
-validation on those browser builds, or enable
-`VITE_PLAYCANVAS_XR_BACKEND_FALLBACK=true` so the demo can select WebGL2 when a requested
-WebGPU backend cannot host immersive VR. The fallback is off by default so strict WebGPU
-performance measurements keep the requested backend.
+validation on those browser builds, or enable `VITE_PLAYCANVAS_XR_BACKEND_FALLBACK=true`
+so the demo can select WebGL2 when a requested WebGPU backend cannot host immersive VR.
+The fallback is off by default so strict WebGPU performance measurements keep the
+requested backend.
 
 For a useful Quest comparison:
 
@@ -220,24 +220,38 @@ VITE_STATIC_GS_URL=/assets/YOUR_STATIC_ENVIRONMENT.sog
 VITE_STATIC_GS_SCALE=1
 ```
 
-This adds an `XR mirror` button. It starts a separate WebGL2 WebXR session and uploads
-the visible PlayCanvas WebGPU canvas into a WebGL texture each XR frame, drawing that
-texture to both eyes. The experiment is intentionally mono-to-both-eyes; it measures the
-WebGPU-canvas to WebGL-XR handoff before any larger stereo camera integration. Record
-`Static SOG`, `Mirror render`, `Mirror copy`, `Mirror FPS`, visual stability, and
-headset comfort at minimum, medium, and full dynamic tiers. While the mirror is active,
-its XR frame callback drives the PlayCanvas render immediately before the WebGL upload.
-This is required because reading a WebGPU canvas after its current texture has been
-presented can legitimately return transparent black without a WebGL error.
-`Mirror render` reports the source render call; `Mirror copy` reports the subsequent
-upload and two-eye draw. `Mirror upload` is `direct` when the browser accepts the WebGPU
-canvas as a WebGL texture source. If that operation returns `INVALID_OPERATION`, the
-bridge switches to `canvas-2d`: the synchronized WebGPU frame is first drawn into an
-accelerated 2D canvas and that canvas is uploaded to WebGL. The fallback is an additional
-copy, but its cost remains included in `Mirror copy`. The bridge also fails visibly on
-WebGL context loss, other texture-upload errors, missing or incomplete XR framebuffers,
-and draw errors. If the copy/draw timing or visible latency is already too high, do not
-proceed to the more complex stereo bridge.
+This adds an `XR mirror` button. It starts a separate WebGL2 WebXR session. For each XR
+frame, the bridge anchors the initial viewer-center pose to the existing PlayCanvas
+camera and supplies both ordered `left`/`right` WebXR view-to-world and projection
+matrices through PlayCanvas's native `RenderView` path. This is required for the GPU
+Gaussian projector to select its stereo variant. PlayCanvas renders both eyes into the
+left and right halves of one WebGPU canvas; the bridge uploads that packed canvas once
+and draws the matching half into each WebGL XR viewport. The original camera, XR views,
+and automatic render loop are restored when the session ends.
+
+The source render and upload are synchronized because reading a WebGPU canvas after its
+current texture has been presented can legitimately return transparent black without a
+WebGL error. `Mirror render` reports the packed stereo source render; `Mirror copy`
+reports its single upload plus both eye draws. `Mirror view` confirms whether WebXR
+supplied a left/right stereo pair. `Mirror upload` is `direct` when the browser accepts
+the WebGPU canvas as a WebGL texture source. If that operation returns
+`INVALID_OPERATION`, the bridge switches to `canvas-2d`: the synchronized packed frame
+is first drawn into an accelerated 2D canvas and that canvas is uploaded to WebGL. The
+fallback copy remains included in `Mirror copy`.
+
+Record `Static SOG`, `Mirror view`, `Mirror render`, `Mirror copy`, `Mirror FPS`, visual
+stability, and headset comfort at minimum, medium, and full dynamic tiers. The bridge
+fails visibly on WebGL context loss, other texture-upload errors, missing or incomplete
+XR framebuffers, missing stereo views, and draw errors.
+
+The first successful Quest 3 handoff used the `canvas-2d` fallback at 1178 x 620. A
+captured sample reported a 9.4 ms `Mirror copy`, 1.4 ms `Mirror render`, and 24.5
+`Mirror FPS` while displaying the 25% dynamic tier (about 68k rendered splats) in both
+eyes. This validates image transfer, but not stereo or head tracking: the mono spike
+deliberately sends the same desktop-camera image to both eyes. The configured static SOG
+also failed to load in that run, so medium-quality and composed-scene measurements
+remain open. That measurement predates the stereo implementation and is not
+representative of the packed stereo render path.
 
 ## Current capability boundary
 
