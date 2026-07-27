@@ -228,9 +228,12 @@ Gaussian projector to select its stereo variant. PlayCanvas renders both eyes in
 left and right regions of one WebGPU canvas. The region dimensions come directly from
 the WebGL XR layer's per-eye viewports, avoiding the blur caused by splitting the normal
 desktop canvas resolution between both eyes. The bridge uploads that native-resolution
-packed canvas once and draws the matching region into each WebGL XR viewport. The
-original canvas resolution, camera, XR views, and automatic render loop are restored
-when the session ends.
+packed canvas once and draws the matching region into each WebGL XR viewport. The canvas
+stays in fixed-resolution mode during the mirror session because PlayCanvas's automatic
+desktop resize runs at the start of every render and would otherwise collapse the packed
+eye viewports back into the CSS canvas size. The original resolution mode, canvas
+resolution, camera, XR views, and automatic render loop are restored when the session
+ends.
 
 The source render and upload are synchronized because reading a WebGPU canvas after its
 current texture has been presented can legitimately return transparent black without a

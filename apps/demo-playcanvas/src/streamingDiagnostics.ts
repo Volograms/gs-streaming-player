@@ -17,6 +17,7 @@ export interface StreamingDiagnosticsSnapshot {
   bodyRead: DiagnosticDistribution;
   cacheHitCount: number;
   completedFetchCount: number;
+  connectionSetup: DiagnosticDistribution;
   configuredFetchConcurrency: number;
   configuredPreparationConcurrency: number;
   droppedFrameCount: number;
@@ -25,6 +26,8 @@ export interface StreamingDiagnosticsSnapshot {
   longTaskCount: number;
   longTaskSupported: boolean;
   longTaskTimeMs: number;
+  networkProtocol?: string;
+  newConnectionCount: number;
   presentationFramesPerSecond?: number;
   preparationQueue: DiagnosticDistribution;
   requestMbps: DiagnosticDistribution;
@@ -64,6 +67,9 @@ export class StreamingDiagnostics {
   private longTaskObserver: PerformanceObserver | undefined;
   private longTaskSupported = false;
   private longTaskTimeMs = 0;
+  private readonly connectionSetupMs: number[] = [];
+  private newConnectionCount = 0;
+  private readonly networkProtocols = new Map<string, number>();
   private readonly now: () => number;
   private readonly presentationTimesMs: number[] = [];
   private readonly preparationQueueMs: number[] = [];
@@ -85,6 +91,7 @@ export class StreamingDiagnostics {
       return;
     }
     const intervalMs = 100;
+    performance.setResourceTimingBufferSize?.(2_000);
     let expectedAt = this.now() + intervalMs;
     this.eventLoopTimer = window.setInterval(() => {
       const observedAt = this.now();
@@ -118,14 +125,18 @@ export class StreamingDiagnostics {
   }
 
   reset(): void {
+    performance.clearResourceTimings?.();
     this.basePreparationMs.length = 0;
     this.cacheHitCount = 0;
     this.completedFetchCount = 0;
+    this.connectionSetupMs.length = 0;
     this.eventLoopLagMs.length = 0;
     this.fetchSamples.length = 0;
     this.lastPlayback = undefined;
     this.longTaskCount = 0;
     this.longTaskTimeMs = 0;
+    this.networkProtocols.clear();
+    this.newConnectionCount = 0;
     this.presentationTimesMs.length = 0;
     this.preparationQueueMs.length = 0;
     this.sogAssetLoadMs.length = 0;
@@ -149,6 +160,18 @@ export class StreamingDiagnostics {
       });
       this.completedFetchCount += 1;
       trimBounded(this.fetchSamples);
+      if (event.connectionSetupMs !== undefined) {
+        pushBounded(this.connectionSetupMs, event.connectionSetupMs);
+      }
+      if (event.connectionReused === false) {
+        this.newConnectionCount += 1;
+      }
+      if (event.networkProtocol !== undefined) {
+        this.networkProtocols.set(
+          event.networkProtocol,
+          (this.networkProtocols.get(event.networkProtocol) ?? 0) + 1,
+        );
+      }
     } else if (event.type === "compressed-cache-hit") {
       this.cacheHitCount += 1;
     } else if (event.type === "base-started" && event.durationMs !== undefined) {
@@ -217,6 +240,10 @@ export class StreamingDiagnostics {
         : lastPresentation - firstPresentation;
     const activeStallMs =
       this.stallStartedAtMs === undefined ? 0 : this.now() - this.stallStartedAtMs;
+    const networkProtocol = [...this.networkProtocols.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .map(([protocol, count]) => `${protocol} (${count})`)
+      .join(", ");
 
     return {
       ...(!Number.isFinite(aggregateWindowMs) || aggregateWindowMs <= 0
@@ -226,6 +253,7 @@ export class StreamingDiagnostics {
       bodyRead: distribution(bodyReadMs),
       cacheHitCount: this.cacheHitCount,
       completedFetchCount: this.completedFetchCount,
+      connectionSetup: distribution(this.connectionSetupMs),
       configuredFetchConcurrency: this.configuredFetchConcurrency,
       configuredPreparationConcurrency: this.configuredPreparationConcurrency,
       droppedFrameCount: this.lastPlayback?.droppedFrameCount ?? 0,
@@ -237,6 +265,8 @@ export class StreamingDiagnostics {
       longTaskCount: this.longTaskCount,
       longTaskSupported: this.longTaskSupported,
       longTaskTimeMs: this.longTaskTimeMs,
+      ...(networkProtocol.length === 0 ? {} : { networkProtocol }),
+      newConnectionCount: this.newConnectionCount,
       ...(presentationSpanMs === undefined || presentationSpanMs <= 0
         ? {}
         : {

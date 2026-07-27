@@ -821,10 +821,19 @@ export class FrameRingBuffer {
             : "compressed-fetch-failed";
     this.trace({
       ...(event.bodyReadMs === undefined ? {} : { bodyReadMs: event.bodyReadMs }),
+      ...(event.connectionReused === undefined
+        ? {}
+        : { connectionReused: event.connectionReused }),
+      ...(event.connectionSetupMs === undefined
+        ? {}
+        : { connectionSetupMs: event.connectionSetupMs }),
       ...(event.durationMs === undefined ? {} : { durationMs: event.durationMs }),
       ...(event.errorMessage === undefined ? {} : { errorMessage: event.errorMessage }),
       frameIndex: event.frameIndex,
       ...(event.loadedBytes === undefined ? {} : { loadedBytes: event.loadedBytes }),
+      ...(event.networkProtocol === undefined
+        ? {}
+        : { networkProtocol: event.networkProtocol }),
       ...(event.responseLatencyMs === undefined
         ? {}
         : { responseLatencyMs: event.responseLatencyMs }),

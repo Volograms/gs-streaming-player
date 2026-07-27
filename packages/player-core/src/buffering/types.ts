@@ -88,6 +88,10 @@ export interface FrameRingBufferTraceEvent {
   atMs: number;
   /** Time spent reading the response body into the owned ArrayBuffer. */
   bodyReadMs?: number;
+  /** Whether Resource Timing reported no new connection setup for this request. */
+  connectionReused?: boolean;
+  /** DNS-independent TCP/TLS connection setup time reported by Resource Timing. */
+  connectionSetupMs?: number;
   /** Duration of the operation represented by this event, when applicable. */
   durationMs?: number;
   displayCommitIntervalsMs?: readonly number[];
@@ -95,6 +99,8 @@ export interface FrameRingBufferTraceEvent {
   frameIndex?: number;
   frames?: readonly FrameRingBufferTraceFrame[];
   loadedBytes?: number;
+  /** Browser-reported next-hop protocol, for example http/1.1, h2, or h3. */
+  networkProtocol?: string;
   chunkIndex?: number;
   codecId?: string;
   codecPhase?: string;

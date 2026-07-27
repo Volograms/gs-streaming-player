@@ -433,6 +433,7 @@ export function App() {
     const previousAutoRender = application.autoRender;
     const originalCanvasHeight = sourceCanvas.height;
     const originalCanvasWidth = sourceCanvas.width;
+    const originalResolutionMode = application.resolutionMode;
     const originalCameraPosition = cameraEntity.getPosition().clone();
     const originalCameraRotation = cameraEntity.getRotation().clone();
     const originalCameraTransform = cameraEntity.getWorldTransform().clone();
@@ -461,10 +462,23 @@ export function App() {
         sceneCamera.xrViews = originalXrViews;
         cameraEntity.setPosition(originalCameraPosition);
         cameraEntity.setRotation(originalCameraRotation);
-        application.graphicsDevice.setResolution(
-          originalCanvasWidth,
-          originalCanvasHeight,
-        );
+        if (originalResolutionMode === "AUTO") {
+          application.setCanvasResolution(originalResolutionMode);
+        } else {
+          const pixelRatio = Math.min(
+            application.graphicsDevice.maxPixelRatio,
+            window.devicePixelRatio,
+          );
+          application.setCanvasResolution(
+            originalResolutionMode,
+            originalCanvasWidth / pixelRatio,
+            originalCanvasHeight / pixelRatio,
+          );
+          application.graphicsDevice.setResolution(
+            originalCanvasWidth,
+            originalCanvasHeight,
+          );
+        }
         sourceRestored = true;
       }
     };
@@ -491,9 +505,22 @@ export function App() {
         );
       }
       if (
+        application.resolutionMode !== "FIXED" ||
         sourceCanvas.width !== sourceLayout.width ||
         sourceCanvas.height !== sourceLayout.height
       ) {
+        // application.render() calls updateCanvasSize(). Keep the mirror resolution
+        // fixed or RESOLUTION_AUTO immediately shrinks the packed XR viewports back to
+        // the desktop CSS size, placing both views in one source region.
+        const pixelRatio = Math.min(
+          application.graphicsDevice.maxPixelRatio,
+          window.devicePixelRatio,
+        );
+        application.setCanvasResolution(
+          "FIXED",
+          sourceLayout.width / pixelRatio,
+          sourceLayout.height / pixelRatio,
+        );
         application.graphicsDevice.setResolution(
           sourceLayout.width,
           sourceLayout.height,
@@ -747,6 +774,18 @@ export function App() {
         />
         <Metric label="Required payload" value={formatMbps(requiredPayloadMbps)} />
         <Metric label="Delivery margin" value={formatRatio(deliveryMargin)} />
+        <Metric
+          label="Network protocol"
+          value={streamingDiagnostics?.networkProtocol ?? "unavailable"}
+        />
+        <Metric
+          label="Connection setup"
+          value={formatDistribution(streamingDiagnostics?.connectionSetup, "ms")}
+        />
+        <Metric
+          label="New connections"
+          value={`${streamingDiagnostics?.newConnectionCount ?? 0}`}
+        />
         <Metric
           label="Body throughput"
           value={formatDistribution(streamingDiagnostics?.requestMbps, "Mbps")}
