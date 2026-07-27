@@ -1,6 +1,7 @@
 export const CONTENT_TOOL_COMMANDS = [
   "build-manifest",
   "convert-sog",
+  "export-sog-lod",
   "extract-rad-cuts",
   "inspect-rad",
   "measure-quality-levels",

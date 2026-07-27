@@ -96,6 +96,45 @@ Expose the output using the same public asset mechanism as the other demos. For 
 create a directory link named `apps/demo/public/assets/local-dynamic-cuts-sog` that
 points to the generated directory.
 
+## Export a static Streamed SOG LOD tree
+
+A bundled `.sog` file is compressed, but it is not itself a spatial LOD tree. For a
+large persistent environment, generate PlayCanvas's Streamed SOG layout instead:
+
+```bash
+pnpm gs-content export-sog-lod generated/static-sog/environment.sog \
+  --output-dir generated/static-sog-lod \
+  --lod-ratios 1,0.5,0.25,0.1 \
+  --lod-chunk-count 512 \
+  --lod-chunk-extent 16
+```
+
+The exporter materialises non-PLY input as a temporary full-detail PLY, creates
+temporary decimated PLY levels, then feeds all levels to the pinned PlayCanvas
+`splat-transform` package with explicit LOD tags. The output directory contains
+`lod-meta.json` plus its spatial SOG chunks. Temporary PLY files are removed when the
+command finishes. Source `.ply`, `.compressed.ply`, `.spz`, and `.sog` files are
+accepted by the underlying converter; prefer the highest-quality original source
+available instead of recompressing an already compressed `.sog`.
+
+The default ratios are `1,0.5,0.25,0.1`. They must begin at full detail and descend
+strictly, with at least one coarse level. `--lod-chunk-count` is measured in thousands
+of Gaussians and defaults to PlayCanvas's 512K; `--lod-chunk-extent` defaults to 16
+world units. Both values affect tree granularity and should be profiled against the
+actual environment scale. Existing `lod-meta.json` output is protected unless `--force`
+is specified.
+
+Serve the complete output directory without renaming its index and point the static
+scene URL at that index:
+
+```dotenv
+VITE_STATIC_GS_URL=/assets/static-sog-lod/lod-meta.json
+```
+
+PlayCanvas recognises that exact basename as its streamed octree resource. The existing
+static scale and X-rotation settings apply to the resulting entity in the same way as
+they do to a bundled `.sog`.
+
 ## Run the dedicated demo
 
 Copy the example environment and point it at the converted index:

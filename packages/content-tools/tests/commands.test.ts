@@ -7,6 +7,7 @@ describe("isContentToolCommand", () => {
     expect(isContentToolCommand("validate-sequence")).toBe(true);
     expect(isContentToolCommand("extract-rad-cuts")).toBe(true);
     expect(isContentToolCommand("convert-sog")).toBe(true);
+    expect(isContentToolCommand("export-sog-lod")).toBe(true);
     expect(isContentToolCommand("repack-spz-v4")).toBe(true);
   });
 

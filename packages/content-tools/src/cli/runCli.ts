@@ -1,5 +1,6 @@
 import { runRadQualityCuts } from "../rad-cuts/runRadQualityCuts.js";
 import { convertQualityCutsToSog } from "../sog/convertQualityCutsToSog.js";
+import { exportStreamedSog } from "../sog/exportStreamedSog.js";
 import { repackSpzV4 } from "../spz-v4/repackSpzV4.js";
 import {
   countManifestFrames,
@@ -14,6 +15,10 @@ import type {
   ConvertQualityCutsToSogRequest,
   ConvertQualityCutsToSogRunner,
 } from "../sog/convertQualityCutsToSog.js";
+import type {
+  ExportStreamedSogRequest,
+  ExportStreamedSogRunner,
+} from "../sog/exportStreamedSog.js";
 import type { RepackSpzV4Request, RepackSpzV4Runner } from "../spz-v4/repackSpzV4.js";
 
 export interface CliIo {
@@ -25,6 +30,7 @@ const USAGE = `Usage:
   pnpm gs-manifest validate <manifest.json> [--check-assets]
   pnpm gs-content extract-rad-cuts <frame.rad> [more.rad ...] --output-dir <dir> [options]
   pnpm gs-content convert-sog <quality-cuts.json|scene.spz> --output-dir <dir> [options]
+  pnpm gs-content export-sog-lod <scene.sog|source> --output-dir <dir> [options]
   pnpm gs-content repack-spz-v4 <quality-cuts.json> --output-dir <dir> --spz-tools-dir <dir> [--force]
 
 Options:
@@ -39,11 +45,18 @@ Options:
                   SOG spherical-harmonic compression iterations. Default: 10.
   --max-workers <n>
                   SOG encoding worker threads; 0 runs inline. Default: 4.
+  --lod-ratios <csv>
+                  Streamed SOG detail ratios. Default: 1,0.5,0.25,0.1
+  --lod-chunk-count <n>
+                  Approximate Gaussians per spatial chunk in K. Default: 512.
+  --lod-chunk-extent <n>
+                  Approximate spatial chunk extent in world units. Default: 16.
   --force         Replace existing generated files.
   --help          Show this help.`;
 
 export interface CliDependencies {
   convertQualityCutsToSog?: ConvertQualityCutsToSogRunner;
+  exportStreamedSog?: ExportStreamedSogRunner;
   repackSpzV4?: RepackSpzV4Runner;
   runRadQualityCuts?: RadQualityCutsRunner;
 }
@@ -83,6 +96,13 @@ export async function runCli(
       io,
     );
   }
+  if (command === "export-sog-lod") {
+    const request = parseExportStreamedSogRequest(args.slice(1), io);
+    if (request === undefined) {
+      return 2;
+    }
+    return (dependencies.exportStreamedSog ?? exportStreamedSog)(request, io);
+  }
 
   const positional = args.slice(1).filter((argument) => !argument.startsWith("--"));
   const unknownFlags = args
@@ -119,6 +139,127 @@ export async function runCli(
     `  ${result.manifest.dynamicSequences.length} sequence(s), ${countManifestFrames(result.manifest)} frame(s)`,
   );
   return 0;
+}
+
+function parseExportStreamedSogRequest(
+  args: readonly string[],
+  io: CliIo,
+): ExportStreamedSogRequest | undefined {
+  const request: ExportStreamedSogRequest = {
+    force: false,
+    inputPath: "",
+    lodChunkCount: 512,
+    lodChunkExtent: 16,
+    lodRatios: [1, 0.5, 0.25, 0.1],
+    maxWorkers: 4,
+    outputDir: "",
+    shIterations: 10,
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === undefined) {
+      continue;
+    }
+    if (!argument.startsWith("--")) {
+      if (request.inputPath !== "") {
+        io.stderr("export-sog-lod accepts exactly one source splat scene.");
+        io.stderr(USAGE);
+        return undefined;
+      }
+      request.inputPath = argument;
+      continue;
+    }
+    if (argument === "--force") {
+      request.force = true;
+      continue;
+    }
+    const value = args[index + 1];
+    if (value === undefined || value.startsWith("--")) {
+      io.stderr(`Option ${argument} requires a value.`);
+      io.stderr(USAGE);
+      return undefined;
+    }
+    index += 1;
+    switch (argument) {
+      case "--output-dir":
+        request.outputDir = value;
+        break;
+      case "--lod-ratios": {
+        const ratios = value.split(",").map(Number);
+        if (
+          ratios.length < 2 ||
+          ratios[0] !== 1 ||
+          ratios.some(
+            (ratio, ratioIndex) =>
+              !Number.isFinite(ratio) ||
+              ratio <= 0 ||
+              ratio > 1 ||
+              (ratioIndex > 0 && ratio >= (ratios[ratioIndex - 1] ?? 0)),
+          )
+        ) {
+          io.stderr(
+            "--lod-ratios must start with 1 and contain strictly descending positive ratios.",
+          );
+          io.stderr(USAGE);
+          return undefined;
+        }
+        request.lodRatios = ratios;
+        break;
+      }
+      case "--lod-chunk-count": {
+        const chunkCount = Number(value);
+        if (!Number.isInteger(chunkCount) || chunkCount <= 0) {
+          io.stderr("--lod-chunk-count must be a positive integer in thousands.");
+          io.stderr(USAGE);
+          return undefined;
+        }
+        request.lodChunkCount = chunkCount;
+        break;
+      }
+      case "--lod-chunk-extent": {
+        const chunkExtent = Number(value);
+        if (!Number.isFinite(chunkExtent) || chunkExtent <= 0) {
+          io.stderr("--lod-chunk-extent must be a positive number.");
+          io.stderr(USAGE);
+          return undefined;
+        }
+        request.lodChunkExtent = chunkExtent;
+        break;
+      }
+      case "--sh-iterations": {
+        const iterations = Number(value);
+        if (!Number.isInteger(iterations) || iterations < 0) {
+          io.stderr("--sh-iterations must be a non-negative integer.");
+          io.stderr(USAGE);
+          return undefined;
+        }
+        request.shIterations = iterations;
+        break;
+      }
+      case "--max-workers": {
+        const maxWorkers = Number(value);
+        if (!Number.isInteger(maxWorkers) || maxWorkers < 0) {
+          io.stderr("--max-workers must be a non-negative integer.");
+          io.stderr(USAGE);
+          return undefined;
+        }
+        request.maxWorkers = maxWorkers;
+        break;
+      }
+      default:
+        io.stderr(`Unknown option: ${argument}`);
+        io.stderr(USAGE);
+        return undefined;
+    }
+  }
+
+  if (request.inputPath === "" || request.outputDir === "") {
+    io.stderr("A source splat scene and --output-dir are required.");
+    io.stderr(USAGE);
+    return undefined;
+  }
+  return request;
 }
 
 function parseConvertQualityCutsToSogRequest(

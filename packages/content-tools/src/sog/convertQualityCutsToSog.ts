@@ -1,6 +1,4 @@
-import { execFile } from "node:child_process";
 import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import {
   basename,
   dirname,
@@ -11,10 +9,8 @@ import {
   resolve,
   sep,
 } from "node:path";
-import { promisify } from "node:util";
 
-const execFileAsync = promisify(execFile);
-const require = createRequire(import.meta.url);
+import { runSplatTransformCli } from "./runSplatTransformCli.js";
 
 interface QualityCutLevel {
   byteSize?: number;
@@ -192,12 +188,7 @@ async function convertStaticScene(
 }
 
 async function runSplatTransform(request: SogAssetConversionRequest): Promise<void> {
-  const libraryEntry = require.resolve("@playcanvas/splat-transform");
-  const cliPath = resolve(dirname(libraryEntry), "../bin/cli.mjs");
   const args = [
-    cliPath,
-    "--no-tty",
-    "--quiet",
     request.inputPath,
     request.outputPath,
     "--sh-iterations",
@@ -208,7 +199,7 @@ async function runSplatTransform(request: SogAssetConversionRequest): Promise<vo
   if (request.force) {
     args.push("--overwrite");
   }
-  await execFileAsync(process.execPath, args);
+  await runSplatTransformCli(args);
 }
 
 function validateRequest(request: ConvertQualityCutsToSogRequest): void {

@@ -22,6 +22,13 @@ export type {
   SogAssetConversionRequest,
   SogAssetConversionRunner,
 } from "./sog/convertQualityCutsToSog.js";
+export { exportStreamedSog } from "./sog/exportStreamedSog.js";
+export type {
+  ExportStreamedSogDependencies,
+  ExportStreamedSogIo,
+  ExportStreamedSogRequest,
+  ExportStreamedSogRunner,
+} from "./sog/exportStreamedSog.js";
 export { repackSpzV4 } from "./spz-v4/repackSpzV4.js";
 export type {
   RepackSpzV4Io,

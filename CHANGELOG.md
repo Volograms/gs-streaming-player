@@ -7,6 +7,9 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- A `gs-content export-sog-lod` command that derives configurable coarse levels from one
+  source scene and exports PlayCanvas's spatially chunked Streamed SOG `lod-meta.json`
+  layout with bounded encoder workers.
 - Quest-oriented PlayCanvas streaming diagnostics separating response latency,
   response-body/`ArrayBuffer` time, overlapping aggregate throughput, preparation queue
   delay, native SOG asset loading, presentation cadence, buffering episodes, and
@@ -15,6 +18,8 @@ All notable changes to this project will be documented here. The project uses
 - A one-shot PlayCanvas static-SOG load benchmark reporting payload and wire sizes,
   response and body timing, effective throughput, cache status, protocol, and native
   processing time for large-file delivery comparisons.
+- PlayCanvas demo static-scene placement now accepts signed uniform scales and an
+  explicit `VITE_STATIC_GS_ROTATION_X_DEGREES` orientation correction.
 - Standalone static SPZ-to-SOG conversion through `gs-content convert-sog`, alongside
   the existing dynamic quality-cut index conversion.
 - Strict, opt-in PlayCanvas WebGPU initialisation for GPU-sort SOG measurements. The

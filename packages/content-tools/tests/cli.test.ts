@@ -250,4 +250,94 @@ describe("gs-manifest CLI", () => {
       },
     ]);
   });
+
+  it("forwards Streamed SOG LOD export options", async () => {
+    const output = createIo();
+    const requests: unknown[] = [];
+    const exitCode = await runCli(
+      [
+        "export-sog-lod",
+        "static/environment.sog",
+        "--output-dir",
+        "static-lod",
+        "--lod-ratios",
+        "1,0.4,0.1",
+        "--lod-chunk-count",
+        "256",
+        "--lod-chunk-extent",
+        "8",
+        "--sh-iterations",
+        "6",
+        "--max-workers",
+        "2",
+        "--force",
+      ],
+      output.io,
+      {
+        exportStreamedSog: async (request) => {
+          requests.push(request);
+          return 0;
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(requests).toEqual([
+      {
+        force: true,
+        inputPath: "static/environment.sog",
+        lodChunkCount: 256,
+        lodChunkExtent: 8,
+        lodRatios: [1, 0.4, 0.1],
+        maxWorkers: 2,
+        outputDir: "static-lod",
+        shIterations: 6,
+      },
+    ]);
+  });
+
+  it("uses real multi-level Streamed SOG defaults and rejects invalid ratios", async () => {
+    const output = createIo();
+    const requests: unknown[] = [];
+    const exitCode = await runCli(
+      ["export-sog-lod", "static/environment.sog", "--output-dir", "static-lod"],
+      output.io,
+      {
+        exportStreamedSog: async (request) => {
+          requests.push(request);
+          return 0;
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(requests).toEqual([
+      {
+        force: false,
+        inputPath: "static/environment.sog",
+        lodChunkCount: 512,
+        lodChunkExtent: 16,
+        lodRatios: [1, 0.5, 0.25, 0.1],
+        maxWorkers: 4,
+        outputDir: "static-lod",
+        shIterations: 10,
+      },
+    ]);
+
+    const invalidOutput = createIo();
+    expect(
+      await runCli(
+        [
+          "export-sog-lod",
+          "static/environment.sog",
+          "--output-dir",
+          "static-lod",
+          "--lod-ratios",
+          "1,0.25,0.5",
+        ],
+        invalidOutput.io,
+      ),
+    ).toBe(2);
+    expect(invalidOutput.stderr.join("\n")).toContain("strictly descending");
+  });
 });
