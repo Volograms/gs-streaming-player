@@ -24,7 +24,7 @@ export interface CliIo {
 const USAGE = `Usage:
   pnpm gs-manifest validate <manifest.json> [--check-assets]
   pnpm gs-content extract-rad-cuts <frame.rad> [more.rad ...] --output-dir <dir> [options]
-  pnpm gs-content convert-sog <quality-cuts.json> --output-dir <dir> [options]
+  pnpm gs-content convert-sog <quality-cuts.json|scene.spz> --output-dir <dir> [options]
   pnpm gs-content repack-spz-v4 <quality-cuts.json> --output-dir <dir> --spz-tools-dir <dir> [--force]
 
 Options:
@@ -139,7 +139,7 @@ function parseConvertQualityCutsToSogRequest(
     }
     if (!argument.startsWith("--")) {
       if (request.indexPath !== "") {
-        io.stderr("convert-sog accepts exactly one quality-cuts index.");
+        io.stderr("convert-sog accepts exactly one quality-cuts index or SPZ scene.");
         io.stderr(USAGE);
         return undefined;
       }
@@ -188,7 +188,7 @@ function parseConvertQualityCutsToSogRequest(
     }
   }
   if (request.indexPath === "" || request.outputDir === "") {
-    io.stderr("A quality-cuts index and --output-dir are required.");
+    io.stderr("A quality-cuts index or SPZ scene and --output-dir are required.");
     io.stderr(USAGE);
     return undefined;
   }

@@ -73,7 +73,7 @@ export interface ConvertQualityCutsToSogDependencies {
   convertAsset?: SogAssetConversionRunner;
 }
 
-/** Converts every local SPZ tier in a flat quality index to PlayCanvas SOG v2. */
+/** Converts a standalone SPZ scene or every local SPZ tier in a flat quality index. */
 export async function convertQualityCutsToSog(
   request: ConvertQualityCutsToSogRequest,
   io: ConvertQualityCutsToSogIo,
@@ -82,8 +82,19 @@ export async function convertQualityCutsToSog(
   try {
     validateRequest(request);
     const indexPath = resolve(request.indexPath);
-    const inputDir = dirname(indexPath);
     const outputDir = resolve(request.outputDir);
+
+    if (extname(indexPath).toLowerCase() === ".spz") {
+      return await convertStaticScene(
+        request,
+        indexPath,
+        outputDir,
+        io,
+        dependencies.convertAsset ?? runSplatTransform,
+      );
+    }
+
+    const inputDir = dirname(indexPath);
     const outputIndexPath = join(outputDir, basename(indexPath));
     if (!request.force && (await exists(outputIndexPath))) {
       throw new Error(`Output index already exists: ${outputIndexPath}`);
@@ -149,6 +160,35 @@ export async function convertQualityCutsToSog(
     io.stderr(error instanceof Error ? error.message : String(error));
     return 1;
   }
+}
+
+async function convertStaticScene(
+  request: ConvertQualityCutsToSogRequest,
+  inputPath: string,
+  outputDir: string,
+  io: ConvertQualityCutsToSogIo,
+  convertAsset: SogAssetConversionRunner,
+): Promise<number> {
+  await access(inputPath);
+  const inputFilename = basename(inputPath);
+  const outputFilename = `${inputFilename.slice(0, -extname(inputFilename).length)}.sog`;
+  const outputPath = join(outputDir, outputFilename);
+  if (!request.force && (await exists(outputPath))) {
+    throw new Error(`Output already exists: ${outputPath}`);
+  }
+
+  await mkdir(outputDir, { recursive: true });
+  io.stdout(`SOG v2 static scene: ${inputPath}`);
+  await convertAsset({
+    force: request.force,
+    inputPath,
+    maxWorkers: request.maxWorkers,
+    outputPath,
+    shIterations: request.shIterations,
+  });
+  await assertSog(outputPath);
+  io.stdout(`Wrote SOG v2 static scene ${outputPath}`);
+  return 0;
 }
 
 async function runSplatTransform(request: SogAssetConversionRequest): Promise<void> {

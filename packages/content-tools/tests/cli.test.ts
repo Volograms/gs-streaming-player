@@ -224,4 +224,30 @@ describe("gs-manifest CLI", () => {
     ).toBe(2);
     expect(invalidOutput.stderr.join("\n")).toContain("non-negative integer");
   });
+
+  it("accepts a standalone SPZ scene for SOG conversion", async () => {
+    const output = createIo();
+    const requests: unknown[] = [];
+    const exitCode = await runCli(
+      ["convert-sog", "static/environment.spz", "--output-dir", "static-sog"],
+      output.io,
+      {
+        convertQualityCutsToSog: async (request) => {
+          requests.push(request);
+          return 0;
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(requests).toEqual([
+      {
+        force: false,
+        indexPath: "static/environment.spz",
+        maxWorkers: 4,
+        outputDir: "static-sog",
+        shIterations: 10,
+      },
+    ]);
+  });
 });

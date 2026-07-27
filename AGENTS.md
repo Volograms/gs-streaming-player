@@ -23,12 +23,12 @@ A separate demo application will integrate the library and provide:
 - 6G telemetry integration;
 - experiment logging.
 
-## Subagent use
+<!-- ## Subagent use
 
-- Use parallel agents for independent, read-heavy work such as repository exploration, review, test analysis, and log investigation.
+- Do NOT Use parallel agents for independent, read-heavy work such as repository exploration, review, test analysis, and log investigation. There is a bug and it is not efficient. 
 - Do not delegate trivial tasks.
 - Avoid parallel edits to overlapping files.
-- Wait for delegated results and consolidate them before making architectural decisions.
+- Wait for delegated results and consolidate them before making architectural decisions. -->
 
 ## Toolchain
 

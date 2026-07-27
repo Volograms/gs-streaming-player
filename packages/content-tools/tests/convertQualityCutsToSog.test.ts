@@ -45,6 +45,48 @@ async function createTemporaryDirectory(): Promise<string> {
 }
 
 describe("convertQualityCutsToSog", () => {
+  it("converts a standalone static SPZ scene", async () => {
+    const root = await createTemporaryDirectory();
+    const inputPath = join(root, "static-scene.spz");
+    const outputDir = join(root, "output");
+    await writeFile(inputPath, "spz-v2-through-v4");
+    const requests: SogAssetConversionRequest[] = [];
+    const output = createIo();
+
+    const exitCode = await convertQualityCutsToSog(
+      {
+        force: false,
+        indexPath: inputPath,
+        maxWorkers: 3,
+        outputDir,
+        shIterations: 8,
+      },
+      output.io,
+      {
+        convertAsset: async (request) => {
+          requests.push(request);
+          await writeFile(
+            request.outputPath,
+            new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]),
+          );
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(output.stderr).toEqual([]);
+    expect(requests).toEqual([
+      {
+        force: false,
+        inputPath,
+        maxWorkers: 3,
+        outputPath: join(outputDir, "static-scene.sog"),
+        shIterations: 8,
+      },
+    ]);
+    expect(output.stdout.join("\n")).toContain("Wrote SOG v2 static scene");
+  });
+
   it("converts unique local tiers and preserves index metadata", async () => {
     const root = await createTemporaryDirectory();
     const inputDir = join(root, "input");
