@@ -41,7 +41,18 @@ demo.
 There is no runtime SPZ-to-SOG transcode and no silent fallback to Spark or Babylon. A
 source index or environment codec that does not declare `sog-v2` fails before playback.
 
-## Convert existing quality cuts
+## Convert SPZ content
+
+Convert a standalone static SPZ scene offline (SPZ v2 through v4 inputs are accepted by
+the pinned `splat-transform` converter):
+
+```bash
+pnpm gs-content convert-sog test-data/static/environment.spz \
+  --output-dir generated/static-sog
+```
+
+This writes `generated/static-sog/environment.sog`. As with dynamic assets, an existing
+output is protected unless `--force` is supplied.
 
 Convert an existing flat SPZ quality-cut index offline:
 
@@ -213,9 +224,20 @@ This adds an `XR mirror` button. It starts a separate WebGL2 WebXR session and u
 the visible PlayCanvas WebGPU canvas into a WebGL texture each XR frame, drawing that
 texture to both eyes. The experiment is intentionally mono-to-both-eyes; it measures the
 WebGPU-canvas to WebGL-XR handoff before any larger stereo camera integration. Record
-`Static SOG`, `Mirror copy`, `Mirror FPS`, visual stability, and headset comfort at
-minimum, medium, and full dynamic tiers. If the copy/draw timing or visible latency is
-already too high, do not proceed to the more complex stereo bridge.
+`Static SOG`, `Mirror render`, `Mirror copy`, `Mirror FPS`, visual stability, and
+headset comfort at minimum, medium, and full dynamic tiers. While the mirror is active,
+its XR frame callback drives the PlayCanvas render immediately before the WebGL upload.
+This is required because reading a WebGPU canvas after its current texture has been
+presented can legitimately return transparent black without a WebGL error.
+`Mirror render` reports the source render call; `Mirror copy` reports the subsequent
+upload and two-eye draw. `Mirror upload` is `direct` when the browser accepts the WebGPU
+canvas as a WebGL texture source. If that operation returns `INVALID_OPERATION`, the
+bridge switches to `canvas-2d`: the synchronized WebGPU frame is first drawn into an
+accelerated 2D canvas and that canvas is uploaded to WebGL. The fallback is an additional
+copy, but its cost remains included in `Mirror copy`. The bridge also fails visibly on
+WebGL context loss, other texture-upload errors, missing or incomplete XR framebuffers,
+and draw errors. If the copy/draw timing or visible latency is already too high, do not
+proceed to the more complex stereo bridge.
 
 ## Current capability boundary
 

@@ -384,31 +384,51 @@ export function App() {
 
   function toggleXrMirror() {
     const sourceCanvas = canvasRef.current;
-    if (sourceCanvas === null) {
+    const adapter = adapterRef.current;
+    if (sourceCanvas === null || adapter === undefined) {
       return;
     }
     const activeMirror = xrMirrorRef.current;
     if (activeMirror !== undefined && activeMirror.active) {
-      void activeMirror.end().then(() => {
-        setMirrorActive(false);
+      void activeMirror.end().catch((caught: unknown) => {
+        setError(errorMessage(caught));
       });
       return;
     }
 
+    const application = adapter.application;
+    const previousAutoRender = application.autoRender;
+    let renderLoopRestored = false;
+    const restoreRenderLoop = () => {
+      if (!renderLoopRestored) {
+        application.autoRender = previousAutoRender;
+        renderLoopRestored = true;
+      }
+    };
     const nextMirror = new WebglXrMirrorPresenter(sourceCanvas, {
+      onEnd: () => {
+        restoreRenderLoop();
+        if (xrMirrorRef.current === nextMirror) {
+          xrMirrorRef.current = undefined;
+        }
+        setMirrorActive(false);
+      },
       onError: (caught) => {
         setError(errorMessage(caught));
         setMirrorActive(false);
       },
       onStats: setMirrorStats,
+      renderSourceFrame: () => application.render(),
     });
     xrMirrorRef.current = nextMirror;
+    application.autoRender = false;
     void nextMirror
       .start()
       .then(() => {
         setMirrorActive(true);
       })
       .catch((caught: unknown) => {
+        restoreRenderLoop();
         nextMirror.dispose();
         if (xrMirrorRef.current === nextMirror) {
           xrMirrorRef.current = undefined;
@@ -555,12 +575,20 @@ export function App() {
               value={formatDuration(mirrorStats?.uploadAndDrawMs)}
             />
             <Metric
+              label="Mirror render"
+              value={formatDuration(mirrorStats?.sourceRenderMs)}
+            />
+            <Metric
               label="Mirror source"
               value={
                 mirrorStats === undefined
                   ? "waiting"
                   : `${mirrorStats.sourceWidth} x ${mirrorStats.sourceHeight}`
               }
+            />
+            <Metric
+              label="Mirror upload"
+              value={mirrorStats?.uploadPath ?? "waiting"}
             />
           </>
         ) : null}
