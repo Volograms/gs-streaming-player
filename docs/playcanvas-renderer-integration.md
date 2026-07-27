@@ -235,6 +235,16 @@ eye viewports back into the CSS canvas size. The original resolution mode, canva
 resolution, camera, XR views, and automatic render loop are restored when the session
 ends.
 
+Browsers can pause or heavily throttle normal window timers and animation frames while
+an immersive session presents. The demo therefore migrates pending playback deadlines to
+an XR-aware clock when the mirror starts. Each `XRSession.requestAnimationFrame`
+services due playback work and drives PlayCanvas's update, `framerender`, render, and
+`frameend` lifecycle. The complete lifecycle is necessary because dynamic splat
+presentation commits during `prerender`, unified-splat streaming reconciles during
+`framerender`, and deferred resource release completes at `frameend`. Ending the session
+moves any remaining deadline back to a normal window timer without restarting the
+playback timeline.
+
 The source render and upload are synchronized because reading a WebGPU canvas after its
 current texture has been presented can legitimately return transparent black without a
 WebGL error. `Mirror render` reports the packed stereo source render; `Mirror copy`

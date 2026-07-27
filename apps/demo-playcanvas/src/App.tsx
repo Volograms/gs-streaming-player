@@ -8,9 +8,12 @@ import {
 } from "@6g-path/gaussian-renderer-playcanvas";
 import { useEffect, useRef, useState } from "react";
 
+import { readStaticLoadDiagnostics } from "./staticLoadDiagnostics.js";
 import { StreamingDiagnostics } from "./streamingDiagnostics.js";
 import { WebglXrMirrorPresenter } from "./webglXrMirror.js";
+import { XrPlaybackClock } from "./xrPlaybackClock.js";
 
+import type { StaticLoadDiagnostics } from "./staticLoadDiagnostics.js";
 import type {
   DiagnosticDistribution,
   StreamingDiagnosticsSnapshot,
@@ -89,6 +92,7 @@ export function App() {
   const bufferRef = useRef<FrameRingBuffer | undefined>(undefined);
   const diagnosticsRef = useRef<StreamingDiagnostics | undefined>(undefined);
   const playbackRef = useRef<SequencePlaybackController | undefined>(undefined);
+  const playbackClockRef = useRef<XrPlaybackClock | undefined>(undefined);
   const xrMirrorRef = useRef<WebglXrMirrorPresenter | undefined>(undefined);
   const [bufferSnapshot, setBufferSnapshot] = useState<FrameRingBufferSnapshot>();
   const [error, setError] = useState<string>();
@@ -108,6 +112,7 @@ export function App() {
       ? "not configured"
       : "loading",
   );
+  const [staticLoadMetrics, setStaticLoadMetrics] = useState<StaticLoadDiagnostics>();
   const [status, setStatus] = useState<RuntimeStatus>("initialising");
   const [targetFramesPerSecond, setTargetFramesPerSecond] = useState<number>();
   const [streamingDiagnostics, setStreamingDiagnostics] =
@@ -141,6 +146,8 @@ export function App() {
     );
     diagnosticsRef.current = diagnosticCollector;
     diagnosticCollector.start();
+    const playbackClock = new XrPlaybackClock();
+    playbackClockRef.current = playbackClock;
     const latestTimings: LatestTimings = {
       compressedFetchMs: undefined,
       framePreparationMs: undefined,
@@ -204,6 +211,8 @@ export function App() {
         }
         if (staticGsUrl !== undefined && staticGsUrl.length > 0) {
           try {
+            const staticLoadStartedAt = performance.now();
+            let staticLoadedBytes: number | undefined;
             await initialisedAdapter.loadStaticObject(
               {
                 id: "demo-static-sog",
@@ -220,9 +229,24 @@ export function App() {
                     }),
                 url: staticGsUrl,
               },
-              { signal: abortController.signal },
+              {
+                onProgress: ({ loadedBytes }) => {
+                  staticLoadedBytes = Math.max(staticLoadedBytes ?? 0, loadedBytes);
+                },
+                signal: abortController.signal,
+              },
             );
             if (active) {
+              setStaticLoadMetrics(
+                readStaticLoadDiagnostics({
+                  completedAtMs: performance.now(),
+                  ...(staticLoadedBytes === undefined
+                    ? {}
+                    : { loadedBytes: staticLoadedBytes }),
+                  startedAtMs: staticLoadStartedAt,
+                  url: staticGsUrl,
+                }),
+              );
               setStaticAssetStatus("ready");
             }
           } catch (caught) {
@@ -281,6 +305,7 @@ export function App() {
         await buffer.initialise(0);
         playback = new SequencePlaybackController({
           buffer,
+          clock: playbackClock,
           loop: true,
           minimumReadyFrames: Math.min(2, buffer.snapshot.futureFrameCount),
           sequence,
@@ -351,6 +376,10 @@ export function App() {
       unsubscribePlayback?.();
       playback?.dispose();
       playbackRef.current = undefined;
+      playbackClock.dispose();
+      if (playbackClockRef.current === playbackClock) {
+        playbackClockRef.current = undefined;
+      }
       unsubscribeBuffer?.();
       buffer?.dispose();
       bufferRef.current = undefined;
@@ -424,6 +453,7 @@ export function App() {
     }
 
     const application = adapter.application;
+    const playbackClock = playbackClockRef.current;
     const cameraEntity = adapter.cameraEntity;
     const camera = cameraEntity.camera;
     if (camera === undefined) {
@@ -453,6 +483,7 @@ export function App() {
       left: new RenderView(),
       right: new RenderView(),
     };
+    let lastXrApplicationTime: number | undefined;
     let anchorInitialised = false;
     let sourceRestored = false;
     const restoreSource = () => {
@@ -485,6 +516,7 @@ export function App() {
     const renderSourceFrame = (
       pose: WebglXrViewerPose,
       sourceLayout: WebglXrMirrorSourceLayout,
+      time: number,
     ) => {
       if (!anchorInitialised) {
         viewerTransform.set(pose.transform.matrix as unknown as number[]).invert();
@@ -556,10 +588,24 @@ export function App() {
       cameraEntity.setRotation(viewerRotation);
       camera.calculateProjection = originalCalculateProjection;
       sceneCamera.xrViews = [renderViews.left, renderViews.right];
+      const elapsedMs =
+        lastXrApplicationTime === undefined
+          ? 0
+          : Math.max(0, time - lastXrApplicationTime);
+      const deltaSeconds =
+        Math.min(application.maxDeltaTime, elapsedMs / 1000) * application.timeScale;
+      application.fire("frameupdate", elapsedMs);
+      application.update(deltaSeconds);
+      application.fire("framerender");
       application.render();
+      application.renderNextFrame = false;
+      application.fire("frameend");
+      application.stats.frameEnd();
+      lastXrApplicationTime = time;
     };
     const nextMirror = new WebglXrMirrorPresenter(sourceCanvas, {
       onEnd: () => {
+        playbackClock?.exitXr();
         restoreSource();
         if (xrMirrorRef.current === nextMirror) {
           xrMirrorRef.current = undefined;
@@ -567,20 +613,24 @@ export function App() {
         setMirrorActive(false);
       },
       onError: (caught) => {
+        playbackClock?.exitXr();
         setError(errorMessage(caught));
         setMirrorActive(false);
       },
       onStats: setMirrorStats,
+      onXrFrame: () => playbackClock?.tick(performance.now()),
       renderSourceFrame,
     });
     xrMirrorRef.current = nextMirror;
     application.autoRender = false;
+    playbackClock?.enterXr();
     void nextMirror
       .start()
       .then(() => {
         setMirrorActive(true);
       })
       .catch((caught: unknown) => {
+        playbackClock?.exitXr();
         restoreSource();
         nextMirror.dispose();
         if (xrMirrorRef.current === nextMirror) {
@@ -760,6 +810,67 @@ export function App() {
         ) : null}
       </section>
 
+      {staticGsUrl === undefined || staticGsUrl.length === 0 ? null : (
+        <>
+          <div className="diagnostic-heading">
+            <h2>Static scene load benchmark</h2>
+            <p>
+              One-shot delivery and native PlayCanvas processing for the linked asset.
+            </p>
+          </div>
+          <section className="status-grid" aria-label="Static scene load benchmark">
+            <Metric
+              label="Payload"
+              value={formatBytes(staticLoadMetrics?.loadedBytes)}
+            />
+            <Metric
+              label="End-to-end throughput"
+              value={formatMbps(staticLoadMetrics?.endToEndThroughputMbps)}
+            />
+            <Metric
+              label="Body throughput"
+              value={formatMbps(staticLoadMetrics?.bodyThroughputMbps)}
+            />
+            <Metric
+              label="Total load"
+              value={formatDuration(staticLoadMetrics?.totalLoadMs)}
+            />
+            <Metric
+              label="Network delivery"
+              value={formatDuration(staticLoadMetrics?.networkTimeMs)}
+            />
+            <Metric
+              label="Native processing"
+              value={formatDuration(staticLoadMetrics?.nativeProcessingMs)}
+            />
+            <Metric
+              label="Response latency"
+              value={formatDuration(staticLoadMetrics?.responseLatencyMs)}
+            />
+            <Metric
+              label="Network protocol"
+              value={staticLoadMetrics?.networkProtocol ?? "waiting"}
+            />
+            <Metric
+              label="Connection setup"
+              value={formatDuration(staticLoadMetrics?.connectionSetupMs)}
+            />
+            <Metric
+              label="Connection reused"
+              value={formatBoolean(staticLoadMetrics?.connectionReused)}
+            />
+            <Metric
+              label="Delivery source"
+              value={staticLoadMetrics?.cacheStatus ?? "waiting"}
+            />
+            <Metric
+              label="Wire transfer"
+              value={formatBytes(staticLoadMetrics?.transferredBytes)}
+            />
+          </section>
+        </>
+      )}
+
       <div className="diagnostic-heading">
         <h2>Streaming bottleneck diagnostics</h2>
         <p>
@@ -925,6 +1036,14 @@ function formatCache(snapshot: FrameRingBufferSnapshot["compressedBuffer"]): str
 
 function formatCount(value: number | undefined): string {
   return value === undefined ? "waiting" : Math.round(value).toLocaleString();
+}
+
+function formatBytes(value: number | undefined): string {
+  return value === undefined ? "waiting" : `${(value / 1_000_000).toFixed(1)} MB`;
+}
+
+function formatBoolean(value: boolean | undefined): string {
+  return value === undefined ? "waiting" : value ? "yes" : "no";
 }
 
 function formatDuration(value: number | undefined): string {

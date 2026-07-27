@@ -14,10 +14,12 @@ export interface WebglXrMirrorStats {
 export interface WebglXrMirrorOptions {
   onEnd?: () => void;
   onError?: (error: unknown) => void;
+  onXrFrame?: (time: number) => void;
   onStats?: (stats: WebglXrMirrorStats) => void;
   renderSourceFrame?: (
     pose: WebglXrViewerPose,
     layout: WebglXrMirrorSourceLayout,
+    time: number,
   ) => void;
 }
 
@@ -213,6 +215,7 @@ export class WebglXrMirrorPresenter {
       return;
     }
     this.animationFrameHandle = session.requestAnimationFrame(this.renderXrFrame);
+    this.options.onXrFrame?.(time);
     const pose = frame.getViewerPose(referenceSpace);
     if (pose === null) {
       return;
@@ -243,7 +246,7 @@ export class WebglXrMirrorPresenter {
 
       const sourceLayout = createSourceLayout(pose, layer);
       const sourceRenderStartedAt = performance.now();
-      this.options.renderSourceFrame?.(pose, sourceLayout);
+      this.options.renderSourceFrame?.(pose, sourceLayout, time);
       sourceRenderMs = performance.now() - sourceRenderStartedAt;
 
       const uploadStartedAt = performance.now();

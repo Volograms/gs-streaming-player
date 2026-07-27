@@ -69,6 +69,9 @@ acceptance criteria are covered by implementation and verification.
     - [x] Match the packed WebGPU source regions to the WebGL XR layer's native per-eye
           viewport dimensions instead of dividing the lower-resolution desktop canvas.
           Recheck visual artifacts and performance at the resulting resolution on Quest.
+    - [x] Keep dynamic playback advancing during the mirror session by migrating its
+          absolute deadlines between window timers and XR session animation frames, and
+          drive the full PlayCanvas frame lifecycle from those XR frames.
 - [ ] Run the chosen candidates on Meta Quest 3 and representative mobile Safari after
       desktop format/adapter comparisons have narrowed the device matrix.
   - [ ] Validate the Babylon streamed-splat stereo-buffer compatibility patch on both

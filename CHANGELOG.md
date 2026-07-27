@@ -10,7 +10,11 @@ All notable changes to this project will be documented here. The project uses
 - Quest-oriented PlayCanvas streaming diagnostics separating response latency,
   response-body/`ArrayBuffer` time, overlapping aggregate throughput, preparation queue
   delay, native SOG asset loading, presentation cadence, buffering episodes, and
-  main-thread event-loop pressure with bounded rolling samples.
+  main-thread event-loop pressure with bounded rolling samples. Browser Resource Timing
+  also reports the negotiated network protocol and connection setup/reuse.
+- A one-shot PlayCanvas static-SOG load benchmark reporting payload and wire sizes,
+  response and body timing, effective throughput, cache status, protocol, and native
+  processing time for large-file delivery comparisons.
 - Standalone static SPZ-to-SOG conversion through `gs-content convert-sog`, alongside
   the existing dynamic quality-cut index conversion.
 - Strict, opt-in PlayCanvas WebGPU initialisation for GPU-sort SOG measurements. The
@@ -29,7 +33,13 @@ All notable changes to this project will be documented here. The project uses
   Canvas2D staging path. The bridge now feeds the ordered left/right WebXR view and
   projection matrices into PlayCanvas's native stereo path, renders a packed
   side-by-side WebGPU frame at the WebGL XR layer's native per-eye viewport resolution,
-  and routes the matching region to each WebGL XR eye.
+  and routes the matching region to each WebGL XR eye. The mirror temporarily locks
+  PlayCanvas to fixed canvas resolution so its automatic desktop resize cannot collapse
+  both native eye viewports into one texture region. Dynamic playback deadlines migrate
+  from window timers to the immersive session's animation frames while the mirror is
+  active, then return to window timers when XR ends. Each XR frame also drives the full
+  PlayCanvas update, `framerender`, render, and `frameend` lifecycle so dynamic splat
+  commits and cleanup do not wait on the suspended window animation loop.
 - Native PlayCanvas SOG v2 playback through a dedicated renderer adapter and demo. The
   adapter consumes compressed SOG bytes from the player-owned cache, creates
   PlayCanvas-native assets without an expanded neutral Gaussian frame, reuses one
