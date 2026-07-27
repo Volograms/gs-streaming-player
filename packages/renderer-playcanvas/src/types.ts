@@ -45,6 +45,17 @@ export interface PlayCanvasRendererAdapterOptions {
   manageResize?: boolean;
   now?: () => number;
   /**
+   * Global unified-renderer splat budget. Zero disables budget balancing. Streamed
+   * octrees select coarser node LODs to approach this limit; fixed resources cannot
+   * be reduced. Defaults to the PlayCanvas scene setting.
+   */
+  splatBudget?: number;
+  /**
+   * Pin static streamed-octree nodes to this LOD index. Zero is the finest exported
+   * level. PlayCanvas clamps the value to each asset's available LOD range.
+   */
+  staticLodLevel?: number;
+  /**
    * Resolve presentation only after PlayCanvas reports an up-to-date GSplat sort.
    * Defaults to false, matching PlayCanvas's native GSplat flipbook handoff.
    */

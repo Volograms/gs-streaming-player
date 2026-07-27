@@ -13,14 +13,17 @@ target/
 .cert/
 
 # Developer-provided renderer fixtures are staged here for local smoke tests only.
-apps/demo/public/assets/local-static.rad
+apps/demo/public/assets/static-sog/
 apps/demo/public/assets/local-dynamic
 apps/demo/public/assets/local-dynamic-cuts
 apps/demo/public/assets/local-dynamic-cuts-v4
 apps/demo/public/assets/local-dynamic-cuts*/
-test-data/*.rad
-test-data/dynamic
-test-data/static
+test-data/
+test-data/
+test-data/
 
 # Chrome DevTools performance captures are large local diagnostic artifacts.
 Trace-*.json
+*.jpeg
+*.mp4
+*.lnk

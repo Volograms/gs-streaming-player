@@ -18,6 +18,7 @@ body {
 }
 
 button,
+input,
 select {
   color: inherit;
   border: 1px solid #39727a;
@@ -32,8 +33,16 @@ select:not(:disabled) {
 }
 
 button:disabled,
+input:disabled,
 select:disabled {
   opacity: 0.45;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #70dfcd;
+  outline-offset: 2px;
 }
 
 main {
@@ -99,6 +108,7 @@ canvas {
 }
 
 .renderer-badge,
+.scene-position-controls,
 .controls {
   position: absolute;
   z-index: 2;
@@ -106,6 +116,65 @@ canvas {
   border-radius: 0.8rem;
   background: rgb(7 24 29 / 88%);
   backdrop-filter: blur(12px);
+}
+
+.scene-position-controls {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 2;
+  width: min(18rem, calc(100% - 2rem));
+  margin: 0;
+  padding: 0.75rem;
+}
+
+.scene-position-controls legend {
+  padding: 0 0.25rem;
+  color: #70dfcd;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.scene-position-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: #a9bec3;
+  font-size: 0.72rem;
+}
+
+.scene-position-heading button {
+  padding: 0.3rem 0.55rem;
+}
+
+.scene-position-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.scene-position-grid label {
+  display: grid;
+  gap: 0.25rem;
+  color: #a9bec3;
+  font-size: 0.72rem;
+}
+
+.scene-position-grid input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.45rem 0.5rem;
+}
+
+.scene-position-controls small {
+  display: block;
+  margin-top: 0.55rem;
+  color: #a9bec3;
+  font-size: 0.7rem;
+  line-height: 1.35;
 }
 
 .renderer-badge {
@@ -183,5 +252,11 @@ footer {
 
   .status-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .scene-position-controls {
+    top: 5rem;
   }
 }

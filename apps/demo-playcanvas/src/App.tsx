@@ -9,12 +9,15 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { resolvePlayCanvasDemoSceneMode } from "./sceneConfiguration.js";
+import { parseScenePosition, withScenePosition } from "./scenePosition.js";
 import { readStaticLoadDiagnostics } from "./staticLoadDiagnostics.js";
+import { parseStaticLodConfiguration } from "./staticLodConfiguration.js";
 import { createStaticSceneTransform } from "./staticSceneTransform.js";
 import { StreamingDiagnostics } from "./streamingDiagnostics.js";
 import { WebglXrMirrorPresenter } from "./webglXrMirror.js";
 import { XrPlaybackClock } from "./xrPlaybackClock.js";
 
+import type { ScenePosition } from "./scenePosition.js";
 import type { StaticLoadDiagnostics } from "./staticLoadDiagnostics.js";
 import type {
   DiagnosticDistribution,
@@ -28,6 +31,7 @@ import type {
 import type {
   FrameRingBufferSnapshot,
   FrameRingBufferTraceEvent,
+  DynamicGaussianSequence,
   GaussianQualityLevel,
   PlayerLifecycleState,
   RendererMetrics,
@@ -55,6 +59,14 @@ interface LatestTimings {
   framePreparationMs: number | undefined;
 }
 
+interface ScenePositionInputs {
+  readonly x: string;
+  readonly y: string;
+  readonly z: string;
+}
+
+type ScenePositionAxis = keyof ScenePositionInputs;
+
 const minimumDynamicSplatCount = 100;
 const minimumDynamicTransferDetail = 0.25;
 const staticGsUrl = import.meta.env.VITE_STATIC_GS_URL?.trim();
@@ -63,6 +75,7 @@ const sceneMode = resolvePlayCanvasDemoSceneMode({
   staticGsUrl,
 });
 const dynamicSequenceConfigured = sceneMode === "dynamic-enabled";
+const staticObjectId = "demo-static-sog";
 
 function positiveInteger(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
@@ -86,16 +99,28 @@ const futureFrameCount = positiveInteger(
 const xrBackendFallbackEnabled =
   import.meta.env.VITE_PLAYCANVAS_XR_BACKEND_FALLBACK === "true";
 const xrMirrorEnabled = import.meta.env.VITE_PLAYCANVAS_XR_MIRROR === "true";
-const staticGsTransform = createStaticSceneTransform({
+const staticGsBaseTransform = createStaticSceneTransform({
   rotationXDegrees: import.meta.env.VITE_STATIC_GS_ROTATION_X_DEGREES,
   scale: import.meta.env.VITE_STATIC_GS_SCALE,
 });
+const configuredScenePosition = parseScenePosition({
+  x: import.meta.env.VITE_SCENE_POSITION_X,
+  y: import.meta.env.VITE_SCENE_POSITION_Y,
+  z: import.meta.env.VITE_SCENE_POSITION_Z,
+});
+const configuredScenePositionInputs = scenePositionInputs(configuredScenePosition);
+const staticGsTransform = withScenePosition(
+  staticGsBaseTransform,
+  configuredScenePosition,
+);
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const adapterRef = useRef<PlayCanvasGaussianRendererAdapter | undefined>(undefined);
   const bufferRef = useRef<FrameRingBuffer | undefined>(undefined);
   const diagnosticsRef = useRef<StreamingDiagnostics | undefined>(undefined);
+  const dynamicBaseTransformRef =
+    useRef<DynamicGaussianSequence["transform"]>(undefined);
   const playbackRef = useRef<SequencePlaybackController | undefined>(undefined);
   const playbackClockRef = useRef<XrPlaybackClock | undefined>(undefined);
   const xrMirrorRef = useRef<WebglXrMirrorPresenter | undefined>(undefined);
@@ -111,6 +136,9 @@ export function App() {
   );
   const [rendererRuntime, setRendererRuntime] =
     useState<PlayCanvasRendererRuntimeInfo>();
+  const [scenePosition, setScenePosition] = useState<ScenePositionInputs>(
+    configuredScenePositionInputs,
+  );
   const [selectedDetail, setSelectedDetail] = useState(0.25);
   const [staticAssetStatus, setStaticAssetStatus] = useState<StaticAssetStatus>(
     staticGsUrl === undefined || staticGsUrl.length === 0
@@ -118,7 +146,9 @@ export function App() {
       : "loading",
   );
   const [staticLoadMetrics, setStaticLoadMetrics] = useState<StaticLoadDiagnostics>();
+  const [staticLodLevel, setStaticLodLevel] = useState<number>();
   const [status, setStatus] = useState<RuntimeStatus>("initialising");
+  const [splatBudget, setSplatBudget] = useState<number>();
   const [targetFramesPerSecond, setTargetFramesPerSecond] = useState<number>();
   const [streamingDiagnostics, setStreamingDiagnostics] =
     useState<StreamingDiagnosticsSnapshot>();
@@ -203,16 +233,28 @@ export function App() {
             `The PlayCanvas comparison demo requires VITE_DYNAMIC_FRAME_CODEC=${PLAYCANVAS_SOG_CODEC_ID}.`,
           );
         }
+        const staticLodConfiguration = parseStaticLodConfiguration({
+          lodLevel: import.meta.env.VITE_STATIC_GS_LOD_LEVEL,
+          splatBudget: import.meta.env.VITE_PLAYCANVAS_SPLAT_BUDGET,
+        });
 
         const initialisedAdapter = new PlayCanvasGaussianRendererAdapter({
           canvas: targetCanvas,
           graphicsBackend,
+          ...(staticLodConfiguration.splatBudget === undefined
+            ? {}
+            : { splatBudget: staticLodConfiguration.splatBudget }),
+          ...(staticLodConfiguration.lodLevel === undefined
+            ? {}
+            : { staticLodLevel: staticLodConfiguration.lodLevel }),
         });
         adapter = initialisedAdapter;
         adapterRef.current = initialisedAdapter;
         await initialisedAdapter.initialise();
         if (active) {
           setRendererRuntime(initialisedAdapter.getRuntimeInfo());
+          setSplatBudget(staticLodConfiguration.splatBudget);
+          setStaticLodLevel(staticLodConfiguration.lodLevel);
         }
         if (staticGsUrl !== undefined && staticGsUrl.length > 0) {
           try {
@@ -220,7 +262,7 @@ export function App() {
             let staticLoadedBytes: number | undefined;
             await initialisedAdapter.loadStaticObject(
               {
-                id: "demo-static-sog",
+                id: staticObjectId,
                 ...(staticGsTransform === undefined
                   ? {}
                   : { transform: staticGsTransform }),
@@ -260,6 +302,7 @@ export function App() {
           if (sequence === undefined) {
             throw new Error("The configured dynamic SOG sequence could not be loaded.");
           }
+          dynamicBaseTransformRef.current = sequence.transform;
           const levels = collectTransferLevels(sequence.frames[0]?.qualityLevels ?? []);
           const initialDetail =
             levels.find(
@@ -295,6 +338,9 @@ export function App() {
             sequence,
           });
           bufferRef.current = buffer;
+          buffer.setTransform(
+            withScenePosition(sequence.transform, configuredScenePosition),
+          );
           unsubscribeBuffer = buffer.subscribe((snapshot) => {
             if (active) {
               setBufferSnapshot(snapshot);
@@ -382,6 +428,7 @@ export function App() {
       unsubscribeBuffer?.();
       buffer?.dispose();
       bufferRef.current = undefined;
+      dynamicBaseTransformRef.current = undefined;
       adapter?.dispose();
       if (adapterRef.current === adapter) {
         adapterRef.current = undefined;
@@ -399,6 +446,43 @@ export function App() {
       minimumSplatCount: minimumDynamicSplatCount,
     });
     setSelectedDetail(detailLevel);
+  }
+
+  function updateScenePosition(axis: ScenePositionAxis, value: string) {
+    const nextPosition = { ...scenePosition, [axis]: value };
+    setScenePosition(nextPosition);
+    const parsedPosition = parseScenePositionInputs(nextPosition);
+    if (parsedPosition === undefined) {
+      return;
+    }
+
+    try {
+      if (staticAssetStatus === "ready") {
+        adapterRef.current?.setObjectTransform(
+          staticObjectId,
+          withScenePosition(staticGsBaseTransform, parsedPosition) ?? {},
+        );
+      }
+      bufferRef.current?.setTransform(
+        withScenePosition(dynamicBaseTransformRef.current, parsedPosition),
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
+  function resetScenePosition() {
+    setScenePosition(configuredScenePositionInputs);
+    try {
+      if (staticAssetStatus === "ready") {
+        adapterRef.current?.setObjectTransform(staticObjectId, staticGsTransform ?? {});
+      }
+      bufferRef.current?.setTransform(
+        withScenePosition(dynamicBaseTransformRef.current, configuredScenePosition),
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
   }
 
   function step(delta: number) {
@@ -682,6 +766,33 @@ export function App() {
           <span>PlayCanvas adapter</span>
           <strong>{status}</strong>
         </div>
+        <fieldset className="scene-position-controls" disabled={status !== "ready"}>
+          <legend>Scene position</legend>
+          <div className="scene-position-heading">
+            <span>World offset</span>
+            <button type="button" onClick={resetScenePosition}>
+              Reset
+            </button>
+          </div>
+          <div className="scene-position-grid">
+            {(["x", "y", "z"] as const).map((axis) => (
+              <label key={axis}>
+                {axis.toUpperCase()}
+                <input
+                  aria-invalid={scenePosition[axis].trim() === ""}
+                  inputMode="decimal"
+                  step="0.1"
+                  type="number"
+                  value={scenePosition[axis]}
+                  onChange={(event) =>
+                    updateScenePosition(axis, event.currentTarget.value)
+                  }
+                />
+              </label>
+            ))}
+          </div>
+          <small>Use Y to align the scene floor with world height 0.</small>
+        </fieldset>
         <div className="controls">
           <button
             disabled={status !== "ready" || !dynamicSequenceConfigured}
@@ -748,6 +859,20 @@ export function App() {
         />
         <Metric label="Static SOG" value={staticAssetStatus} />
         <Metric
+          label="Static LOD"
+          value={
+            staticLodLevel === undefined ? "automatic" : `${staticLodLevel} pinned`
+          }
+        />
+        <Metric
+          label="Splat budget"
+          value={
+            splatBudget === undefined || splatBudget === 0
+              ? "unlimited"
+              : formatCount(splatBudget)
+          }
+        />
+        <Metric
           label="Frame"
           value={dynamicSequenceConfigured ? `${frameIndex + 1}` : "not configured"}
         />
@@ -757,7 +882,7 @@ export function App() {
           value={formatCache(bufferSnapshot?.compressedBuffer)}
         />
         <Metric
-          label="Rendered splats"
+          label="Active splats"
           value={formatCount(metrics?.renderedSplatCount)}
         />
         <Metric label="Render FPS" value={formatRate(metrics?.renderFramesPerSecond)} />
@@ -1026,6 +1151,28 @@ function collectTransferLevels(
   return [...levels].sort(
     (left, right) => (left.detailLevel ?? 0) - (right.detailLevel ?? 0),
   );
+}
+
+function scenePositionInputs(position: ScenePosition): ScenePositionInputs {
+  return {
+    x: String(position.x),
+    y: String(position.y),
+    z: String(position.z),
+  };
+}
+
+function parseScenePositionInputs(
+  position: ScenePositionInputs,
+): ScenePosition | undefined {
+  if (Object.values(position).some((value) => value.trim() === "")) {
+    return undefined;
+  }
+  const parsed = {
+    x: Number(position.x),
+    y: Number(position.y),
+    z: Number(position.z),
+  };
+  return Object.values(parsed).every(Number.isFinite) ? parsed : undefined;
 }
 
 function qualityLabel(level: GaussianQualityLevel, index: number): string {

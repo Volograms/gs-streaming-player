@@ -46,6 +46,22 @@ function createApplicationEvents() {
 }
 
 describe("PlayCanvasGaussianRendererAdapter", () => {
+  it("validates optional LOD and splat-budget controls", () => {
+    expect(() => new PlayCanvasGaussianRendererAdapter({ staticLodLevel: -1 })).toThrow(
+      /staticLodLevel must be a non-negative integer/i,
+    );
+    expect(() => new PlayCanvasGaussianRendererAdapter({ splatBudget: 1.5 })).toThrow(
+      /splatBudget must be a non-negative integer/i,
+    );
+    expect(
+      () =>
+        new PlayCanvasGaussianRendererAdapter({
+          splatBudget: 500_000,
+          staticLodLevel: 0,
+        }),
+    ).not.toThrow();
+  });
+
   it("requires a canvas when it owns the application", async () => {
     const adapter = new PlayCanvasGaussianRendererAdapter({});
 
@@ -178,6 +194,20 @@ describe("PlayCanvasGaussianRendererAdapter", () => {
     expect(gsplat.enabled).toBe(true);
     expect(application.renderNextFrame).toBe(true);
     expect(adapter.getMetrics().activeFrameIndex).toBe(FRAME.frameIndex);
+  });
+
+  it("reports PlayCanvas's unified splat count when static content is present", () => {
+    const adapter = new PlayCanvasGaussianRendererAdapter({});
+    Object.assign(adapter as unknown as Record<string, unknown>, {
+      applicationValue: {
+        stats: {
+          frame: { fps: 72, gsplats: 345_678, gsplatSort: 1, ms: 13, renderTime: 8 },
+        },
+      },
+      initialised: true,
+    });
+
+    expect(adapter.getMetrics().renderedSplatCount).toBe(345_678);
   });
 
   it("resolves the presentation fence for PlayCanvas's camera component", async () => {

@@ -54,6 +54,9 @@ acceptance criteria are covered by implementation and verification.
         `gpu (no CPU centers)`, `Sort 0.0 ms`, `Presented tier 0.5`, and acceptable but
         slower playback.
   - [x] Validate PlayCanvas XR on Quest 3 with the WebGL2 backend.
+  - [x] Validate native PlayCanvas WebGPU XR availability on Quest 3 after enabling the
+        WebXR/WebGPU Binding, WebXR Projection Layers, and WebXR Experiments browser
+        flags; the browser exposes `XRGPUBinding` and the demo enters immersive XR.
   - [ ] Capture repeated desktop and Quest 3 p50/p95 samples, including full-tier Quest
         traces and any WebGPU XR run that reports `XRGPUBinding`.
   - [ ] Test the opt-in WebGPU-to-WebGL XR mirror spike on Quest 3. Record mirror
@@ -183,10 +186,11 @@ bottleneck and real 30 fps validation.
 - [ ] E03-T01 — Complete visual alignment validation for the composed static GS, dynamic
       GS, and mesh scene. The real assets now load and switch together, and independent
       static-scene scale/X-rotation and dynamic-actor scale controls are available for
-      calibration. A content-tool command now derives true multi-resolution static
-      Streamed SOG trees for PlayCanvas spatial refinement and culling; final origin,
-      floor alignment, and Quest tree-granularity validation still require visual
-      confirmation.
+      calibration. The PlayCanvas demo also applies a live, shared XYZ world offset to
+      its static and dynamic content for floor alignment. A content-tool command now
+      derives true multi-resolution static Streamed SOG trees for PlayCanvas spatial
+      refinement and culling; final offset values and Quest tree-granularity validation
+      still require visual confirmation.
 - [ ] E03-T04 — Validate dynamic alpha and background masking behaviour.
 - [ ] E03-T05 — Measure dynamic switching performance. An opt-in monotonic playback
       trace now separates Spark resource initialisation, metadata, root-page readiness,

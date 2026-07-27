@@ -144,6 +144,48 @@ VITE_DYNAMIC_QUALITY_INDEX_URL=
 VITE_STATIC_GS_URL=/assets/static-sog-lod/lod-meta.json
 ```
 
+### Control static LOD during a benchmark
+
+PlayCanvas chooses a Streamed SOG LOD independently for each spatial leaf. LOD 0 is the
+finest source passed to `export-sog-lod`; LOD 1 is the first coarse ratio, and so on.
+Its normal selection uses the camera's distance to each node's bounding box with
+field-of-view compensation. On the WebGPU path, a later bounds-culling stage removes
+off-screen node ranges from GPU rendering; LOD selection and budgeting still account for
+the active octree nodes rather than only the final visible pixels.
+
+Pin every selected static node to one exported level with:
+
+```dotenv
+VITE_STATIC_GS_LOD_LEVEL=2
+VITE_PLAYCANVAS_SPLAT_BUDGET=0
+```
+
+For the default ratios `1,0.5,0.25,0.1`, levels 0 through 3 correspond to those four
+ratios. Pinning fixes the per-node representation, so the active count normally settles
+at that level's scene-wide count after its chunks load. The setting affects Streamed SOG
+octrees and has no useful effect on a bundled single-resource `.sog`.
+
+Alternatively, leave the level automatic and set a global PlayCanvas budget:
+
+```dotenv
+VITE_STATIC_GS_LOD_LEVEL=
+VITE_PLAYCANVAS_SPLAT_BUDGET=500000
+```
+
+The budget balancer mixes LOD levels across spatial nodes to approach the requested
+maximum. Zero means unlimited. This is a global unified-renderer budget, so dynamic or
+other fixed splats also consume it when present. A budget is not an absolute guarantee:
+the coarsest available active nodes and fixed non-LOD resources establish a lower bound,
+and node/chunk granularity prevents every exact count. Avoid combining a pinned level
+with a lower budget—the pin prevents the balancer from choosing a different level.
+
+The demo reports the configured static LOD, budget, unified renderer's active splat
+count, render FPS, render time, and sort time. The active count is the budgeted/sorted
+workload before final WebGPU bounds and per-splat rejection, not a count of fragments
+that reached the screen. For a repeatable Quest sweep, keep the camera pose and backend
+fixed, then test the budget in increasing steps until frame time or head-tracked motion
+becomes unacceptable.
+
 ## Run the dedicated demo
 
 Copy the example environment and point it at the converted index:
@@ -236,15 +278,41 @@ VITE_PLAYCANVAS_GRAPHICS_BACKEND=webgl2
 Run `pnpm dev:playcanvas` and open `https://YOUR-LAN-IP:4177/` in the Quest browser. The
 Windows connection profile and firewall must allow private-network access to that port.
 Enter immersive VR from the demo control; session creation must remain in the user's
-click gesture. Meta Quest Browser 146.0 announced experimental WebGPU support on April
-21, 2026. PlayCanvas 2.20 and newer also support stereo XR in its WebGPU GPU-sort
-renderer, but PlayCanvas still requires the browser to expose `XRGPUBinding` before a
-WebGPU graphics device can host immersive XR. If that binding is missing, WebGPU page
-rendering can still work while the demo reports WebXR as unavailable. Use WebGL2 for XR
-validation on those browser builds, or enable `VITE_PLAYCANVAS_XR_BACKEND_FALLBACK=true`
-so the demo can select WebGL2 when a requested WebGPU backend cannot host immersive VR.
-The fallback is off by default so strict WebGPU performance measurements keep the
-requested backend.
+click gesture.
+
+### Native WebGPU WebXR on Quest Browser 146+
+
+Meta Quest Browser 146.0 introduced experimental WebGPU support in WebXR. On the
+validated Quest 3 setup, open each of these URLs in the headset browser, set the flag to
+**Enabled**, and relaunch the browser:
+
+1. `chrome://flags/#webxr-webgpu-binding` — WebXR/WebGPU Binding
+2. `chrome://flags/#webxr-projection-layers` — WebXR Projection Layers
+3. `chrome://flags/#webxr-experiments` — WebXR Experiments
+
+If Relaunch does not apply all three flags, fully close the browser or restart the
+headset. These experimental settings belong to the Quest Browser profile and may need to
+be rechecked after a browser update.
+
+Configure the demo for strict native WebGPU-backed XR:
+
+```dotenv
+VITE_PLAYCANVAS_GRAPHICS_BACKEND=webgpu
+VITE_PLAYCANVAS_XR_BACKEND_FALLBACK=false
+VITE_PLAYCANVAS_XR_MIRROR=false
+```
+
+After loading the demo, verify that its diagnostics report `Graphics webgpu`,
+`Sort path gpu (no CPU centers)`, and `WebXR ready`. Entering VR then exercises
+PlayCanvas's native WebGPU stereo path rather than the WebGPU-to-WebGL mirror.
+
+PlayCanvas requires the browser to expose `XRGPUBinding` before a WebGPU graphics device
+can host immersive XR. If the demo still reports `webgpu binding missing`, WebGPU page
+rendering is available but the browser has not exposed the WebXR binding. Recheck the
+browser version and all three flags. On older browser builds, use WebGL2 for XR
+validation or enable `VITE_PLAYCANVAS_XR_BACKEND_FALLBACK=true` so the demo can select
+WebGL2. The fallback is off by default so strict WebGPU measurements keep the requested
+backend.
 
 For a useful Quest comparison:
 
@@ -267,11 +335,18 @@ VITE_PLAYCANVAS_XR_MIRROR=true
 VITE_STATIC_GS_URL=/assets/YOUR_STATIC_ENVIRONMENT.sog
 VITE_STATIC_GS_SCALE=1
 VITE_STATIC_GS_ROTATION_X_DEGREES=0
+VITE_SCENE_POSITION_X=0
+VITE_SCENE_POSITION_Y=0
+VITE_SCENE_POSITION_Z=0
 ```
 
 `VITE_STATIC_GS_SCALE` is a signed uniform scale, so values such as `-2` are passed
 through to the PlayCanvas entity. Use `VITE_STATIC_GS_ROTATION_X_DEGREES=180` when an
 asset needs an explicit upside-down orientation correction without changing handedness.
+The `VITE_SCENE_POSITION_*` values add a shared world-space offset to the static scene
+and dynamic sequence. The demo's Scene position panel applies the same offset live;
+adjust Y until the captured floor aligns with world height 0, then copy the values into
+the environment configuration when the placement should persist across reloads.
 
 This adds an `XR mirror` button. It starts a separate WebGL2 WebXR session. For each XR
 frame, the bridge anchors the initial viewer-center pose to the existing PlayCanvas

@@ -12,6 +12,9 @@ All notable changes to this project will be documented here. The project uses
   layout with bounded encoder workers.
 - PlayCanvas static-only operation when no dynamic quality index is configured, while
   retaining renderer metrics and WebXR entry for isolated Quest scene measurements.
+- PlayCanvas Streamed SOG benchmark controls for a pinned static LOD level or global
+  splat budget, with the diagnostics reporting the unified renderer's actual splat
+  count.
 - Quest-oriented PlayCanvas streaming diagnostics separating response latency,
   response-body/`ArrayBuffer` time, overlapping aggregate throughput, preparation queue
   delay, native SOG asset loading, presentation cadence, buffering episodes, and
@@ -21,7 +24,9 @@ All notable changes to this project will be documented here. The project uses
   response and body timing, effective throughput, cache status, protocol, and native
   processing time for large-file delivery comparisons.
 - PlayCanvas demo static-scene placement now accepts signed uniform scales and an
-  explicit `VITE_STATIC_GS_ROTATION_X_DEGREES` orientation correction.
+  explicit `VITE_STATIC_GS_ROTATION_X_DEGREES` orientation correction. A responsive
+  Scene position panel and `VITE_SCENE_POSITION_X/Y/Z` defaults now apply a shared world
+  offset to static and dynamic content for interactive floor alignment.
 - Standalone static SPZ-to-SOG conversion through `gs-content convert-sog`, alongside
   the existing dynamic quality-cut index conversion.
 - Strict, opt-in PlayCanvas WebGPU initialisation for GPU-sort SOG measurements. The
@@ -31,6 +36,9 @@ All notable changes to this project will be documented here. The project uses
 - PlayCanvas XR diagnostics now distinguish browser/session failures from missing WebGPU
   `XRGPUBinding`, and the demo can explicitly fall back to WebGL2 for XR with
   `VITE_PLAYCANVAS_XR_BACKEND_FALLBACK=true`.
+- Quest 3 setup documentation now records the three browser flags required by the
+  validated native WebGPU-WebXR path: WebXR/WebGPU Binding, WebXR Projection Layers, and
+  WebXR Experiments.
 - An opt-in PlayCanvas demo `XR mirror` spike can run WebGPU rendering while presenting
   the visible WebGPU canvas through a separate WebGL2 WebXR session for Quest handoff
   measurements. Mirror frames now render the WebGPU source synchronously before upload

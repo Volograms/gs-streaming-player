@@ -101,6 +101,8 @@ export class PlayCanvasGaussianRendererAdapter
   private readonly resourceMetrics = new Map<string, MutableResourceMetric>();
 
   constructor(options: PlayCanvasRendererAdapterOptions) {
+    validateOptionalNonNegativeInteger(options.splatBudget, "splatBudget");
+    validateOptionalNonNegativeInteger(options.staticLodLevel, "staticLodLevel");
     this.options = options;
     this.now = options.now ?? (() => performance.now());
   }
@@ -166,6 +168,9 @@ export class PlayCanvasGaussianRendererAdapter
         (ownsApplication ? ownedGraphicsBackend : undefined);
       if (requiredGraphicsBackend !== undefined) {
         configurePlayCanvasGraphicsBackend(application, requiredGraphicsBackend);
+      }
+      if (this.options.splatBudget !== undefined) {
+        application.scene.gsplat.splatBudget = this.options.splatBudget;
       }
       const clearColor = new Color(0.07, 0.07, 0.1, 1);
       if (
@@ -279,7 +284,10 @@ export class PlayCanvasGaussianRendererAdapter
     const xr = this.applicationValue?.xr as
       | {
           _sessionSupportCheck?: (type: string) => void;
-          once?: (name: string, callback: (available: boolean) => void) => {
+          once?: (
+            name: string,
+            callback: (available: boolean) => void,
+          ) => {
             off?: () => void;
           };
         }
@@ -551,6 +559,8 @@ export class PlayCanvasGaussianRendererAdapter
       this.activeFrame === undefined
         ? undefined
         : this.preparedFrames.get(this.activeFrame);
+    const renderedSplatCount =
+      typeof stats?.gsplats === "number" ? stats.gsplats : activeResource?.numSplats;
     return {
       ...(this.activeFrame === undefined
         ? {}
@@ -573,9 +583,7 @@ export class PlayCanvasGaussianRendererAdapter
       ...(stats === undefined || stats.renderTime < 0
         ? {}
         : { renderCallTimeMs: stats.renderTime }),
-      ...(activeResource === undefined
-        ? {}
-        : { renderedSplatCount: activeResource.numSplats }),
+      ...(renderedSplatCount === undefined ? {} : { renderedSplatCount }),
       ...(stats === undefined || stats.fps <= 0
         ? {}
         : { renderFramesPerSecond: stats.fps }),
@@ -863,7 +871,15 @@ export class PlayCanvasGaussianRendererAdapter
       throwIfAborted(options.signal);
       if (assetType === "gsplat") {
         entity = new Entity(`${object.id}-splat`, this.application);
-        entity.addComponent("gsplat", { asset, unified: true });
+        const staticLodLevel =
+          kind === "static-splat" ? this.options.staticLodLevel : undefined;
+        entity.addComponent("gsplat", {
+          asset,
+          ...(staticLodLevel === undefined
+            ? {}
+            : { lodRangeMax: staticLodLevel, lodRangeMin: staticLodLevel }),
+          unified: true,
+        });
       } else {
         entity = (asset.resource as ContainerResource).instantiateRenderEntity();
         entity.name = `${object.id}-mesh`;
@@ -1069,6 +1085,15 @@ function filenameFromUrl(url: string, fallback = "asset.bin"): string {
   const withoutQuery = url.split(/[?#]/u, 1)[0] ?? "";
   const filename = withoutQuery.split("/").pop();
   return filename === undefined || filename.length === 0 ? fallback : filename;
+}
+
+function validateOptionalNonNegativeInteger(
+  value: number | undefined,
+  name: string,
+): void {
+  if (value !== undefined && (!Number.isInteger(value) || value < 0)) {
+    throw new Error(`${name} must be a non-negative integer.`);
+  }
 }
 
 function installOrbitControls(

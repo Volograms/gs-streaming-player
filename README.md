@@ -70,7 +70,10 @@ VITE_HOST=0.0.0.0
 
 Start the Babylon XR demo with `pnpm dev:babylon` and open `https://YOUR-LAN-IP:4175/`
 from the headset. The PlayCanvas SOG demo uses `pnpm dev:playcanvas` and port 4177. The
-Spark demo supports the same `VITE_HTTPS` and `VITE_HOST` settings on port 4173.
+Spark demo supports the same `VITE_HTTPS` and `VITE_HOST` settings on port 4173. Native
+WebGPU-backed WebXR on Quest Browser 146+ also requires the WebXR/WebGPU Binding, WebXR
+Projection Layers, and WebXR Experiments browser flags; see the
+[PlayCanvas Quest setup](docs/playcanvas-renderer-integration.md#native-webgpu-webxr-on-quest-browser-146).
 
 For browser tests, install Chromium once with:
 
