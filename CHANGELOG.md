@@ -10,6 +10,8 @@ All notable changes to this project will be documented here. The project uses
 - A `gs-content export-sog-lod` command that derives configurable coarse levels from one
   source scene and exports PlayCanvas's spatially chunked Streamed SOG `lod-meta.json`
   layout with bounded encoder workers.
+- PlayCanvas static-only operation when no dynamic quality index is configured, while
+  retaining renderer metrics and WebXR entry for isolated Quest scene measurements.
 - Quest-oriented PlayCanvas streaming diagnostics separating response latency,
   response-body/`ArrayBuffer` time, overlapping aggregate throughput, preparation queue
   delay, native SOG asset loading, presentation cadence, buffering episodes, and

@@ -8,6 +8,7 @@ import {
 } from "@6g-path/gaussian-renderer-playcanvas";
 import { useEffect, useRef, useState } from "react";
 
+import { resolvePlayCanvasDemoSceneMode } from "./sceneConfiguration.js";
 import { readStaticLoadDiagnostics } from "./staticLoadDiagnostics.js";
 import { createStaticSceneTransform } from "./staticSceneTransform.js";
 import { StreamingDiagnostics } from "./streamingDiagnostics.js";
@@ -57,6 +58,11 @@ interface LatestTimings {
 const minimumDynamicSplatCount = 100;
 const minimumDynamicTransferDetail = 0.25;
 const staticGsUrl = import.meta.env.VITE_STATIC_GS_URL?.trim();
+const sceneMode = resolvePlayCanvasDemoSceneMode({
+  dynamicQualityIndexUrl: import.meta.env.VITE_DYNAMIC_QUALITY_INDEX_URL,
+  staticGsUrl,
+});
+const dynamicSequenceConfigured = sceneMode === "dynamic-enabled";
 
 function positiveInteger(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
@@ -184,15 +190,15 @@ export function App() {
             `PlayCanvas selected ${graphicsBackend} because ${requestedGraphicsBackend} cannot host immersive-vr on this browser.`,
           );
         }
-        if (
-          environment.VITE_DYNAMIC_QUALITY_INDEX_URL === undefined ||
-          environment.VITE_DYNAMIC_QUALITY_INDEX_URL.trim() === ""
-        ) {
+        if (sceneMode === "unconfigured") {
           throw new Error(
-            "Configure VITE_DYNAMIC_QUALITY_INDEX_URL with the SOG v2 quality-cuts index.",
+            "Configure VITE_STATIC_GS_URL, VITE_DYNAMIC_QUALITY_INDEX_URL, or both.",
           );
         }
-        if (environment.VITE_DYNAMIC_FRAME_CODEC !== PLAYCANVAS_SOG_CODEC_ID) {
+        if (
+          dynamicSequenceConfigured &&
+          environment.VITE_DYNAMIC_FRAME_CODEC !== PLAYCANVAS_SOG_CODEC_ID
+        ) {
           throw new Error(
             `The PlayCanvas comparison demo requires VITE_DYNAMIC_FRAME_CODEC=${PLAYCANVAS_SOG_CODEC_ID}.`,
           );
@@ -247,73 +253,75 @@ export function App() {
             }
           }
         }
-        const sequence = await loadLocalDynamicSequence(environment, {
-          signal: abortController.signal,
-        });
-        if (sequence === undefined) {
-          throw new Error("The dynamic SOG sequence is not configured.");
-        }
-        const levels = collectTransferLevels(sequence.frames[0]?.qualityLevels ?? []);
-        const initialDetail =
-          levels.find(
-            ({ detailLevel, minimumPlayable }) =>
-              minimumPlayable === true &&
-              (detailLevel ?? 0) >= minimumDynamicTransferDetail,
-          )?.detailLevel ??
-          levels.find(
-            ({ detailLevel }) => (detailLevel ?? 0) >= minimumDynamicTransferDetail,
-          )?.detailLevel ??
-          levels.find(({ minimumPlayable }) => minimumPlayable)?.detailLevel ??
-          levels[0]?.detailLevel ??
-          minimumDynamicTransferDetail;
-        if (active) {
-          setQualityLevels(levels);
-          setSelectedDetail(initialDetail);
-        }
-
-        buffer = new FrameRingBuffer({
-          compressedBufferMaximumBytes,
-          futureFrameCount: Math.min(futureFrameCount, sequence.frameCount - 1),
-          loop: true,
-          maximumBasePreparationConcurrency: preparationConcurrency,
-          maximumCompressedFetchConcurrency: fetchConcurrency,
-          maximumRefinementConcurrency: 1,
-          onTrace: observeTrace,
-          previousFrameCount: sequence.frameCount > 1 ? 1 : 0,
-          presentationQualityTarget: {
-            detailLevel: initialDetail,
-            minimumSplatCount: minimumDynamicSplatCount,
-          },
-          renderer: initialisedAdapter,
-          sequence,
-        });
-        bufferRef.current = buffer;
-        unsubscribeBuffer = buffer.subscribe((snapshot) => {
+        if (dynamicSequenceConfigured) {
+          const sequence = await loadLocalDynamicSequence(environment, {
+            signal: abortController.signal,
+          });
+          if (sequence === undefined) {
+            throw new Error("The configured dynamic SOG sequence could not be loaded.");
+          }
+          const levels = collectTransferLevels(sequence.frames[0]?.qualityLevels ?? []);
+          const initialDetail =
+            levels.find(
+              ({ detailLevel, minimumPlayable }) =>
+                minimumPlayable === true &&
+                (detailLevel ?? 0) >= minimumDynamicTransferDetail,
+            )?.detailLevel ??
+            levels.find(
+              ({ detailLevel }) => (detailLevel ?? 0) >= minimumDynamicTransferDetail,
+            )?.detailLevel ??
+            levels.find(({ minimumPlayable }) => minimumPlayable)?.detailLevel ??
+            levels[0]?.detailLevel ??
+            minimumDynamicTransferDetail;
           if (active) {
-            setBufferSnapshot(snapshot);
+            setQualityLevels(levels);
+            setSelectedDetail(initialDetail);
           }
-        });
-        await buffer.initialise(0);
-        playback = new SequencePlaybackController({
-          buffer,
-          clock: playbackClock,
-          loop: true,
-          minimumReadyFrames: Math.min(2, buffer.snapshot.futureFrameCount),
-          sequence,
-        });
-        playbackRef.current = playback;
-        unsubscribePlayback = playback.subscribe((snapshot) => {
-          diagnosticCollector.observePlayback(snapshot);
-          if (!active) {
-            return;
-          }
-          setFrameIndex(snapshot.currentFrameIndex);
-          setLifecycle(snapshot.lifecycle);
-          setTargetFramesPerSecond(snapshot.targetFramesPerSecond);
-          if (snapshot.lifecycle === "ERROR") {
-            setError(errorMessage(snapshot.error));
-          }
-        });
+
+          buffer = new FrameRingBuffer({
+            compressedBufferMaximumBytes,
+            futureFrameCount: Math.min(futureFrameCount, sequence.frameCount - 1),
+            loop: true,
+            maximumBasePreparationConcurrency: preparationConcurrency,
+            maximumCompressedFetchConcurrency: fetchConcurrency,
+            maximumRefinementConcurrency: 1,
+            onTrace: observeTrace,
+            previousFrameCount: sequence.frameCount > 1 ? 1 : 0,
+            presentationQualityTarget: {
+              detailLevel: initialDetail,
+              minimumSplatCount: minimumDynamicSplatCount,
+            },
+            renderer: initialisedAdapter,
+            sequence,
+          });
+          bufferRef.current = buffer;
+          unsubscribeBuffer = buffer.subscribe((snapshot) => {
+            if (active) {
+              setBufferSnapshot(snapshot);
+            }
+          });
+          await buffer.initialise(0);
+          playback = new SequencePlaybackController({
+            buffer,
+            clock: playbackClock,
+            loop: true,
+            minimumReadyFrames: Math.min(2, buffer.snapshot.futureFrameCount),
+            sequence,
+          });
+          playbackRef.current = playback;
+          unsubscribePlayback = playback.subscribe((snapshot) => {
+            diagnosticCollector.observePlayback(snapshot);
+            if (!active) {
+              return;
+            }
+            setFrameIndex(snapshot.currentFrameIndex);
+            setLifecycle(snapshot.lifecycle);
+            setTargetFramesPerSecond(snapshot.targetFramesPerSecond);
+            if (snapshot.lifecycle === "ERROR") {
+              setError(errorMessage(snapshot.error));
+            }
+          });
+        }
 
         metricsTimer = window.setInterval(() => {
           if (!active) {
@@ -675,13 +683,22 @@ export function App() {
           <strong>{status}</strong>
         </div>
         <div className="controls">
-          <button disabled={status !== "ready"} onClick={() => step(-1)}>
+          <button
+            disabled={status !== "ready" || !dynamicSequenceConfigured}
+            onClick={() => step(-1)}
+          >
             Previous
           </button>
-          <button disabled={status !== "ready"} onClick={togglePlayback}>
+          <button
+            disabled={status !== "ready" || !dynamicSequenceConfigured}
+            onClick={togglePlayback}
+          >
             {lifecycle === "PLAYING" || lifecycle === "BUFFERING" ? "Pause" : "Play"}
           </button>
-          <button disabled={status !== "ready"} onClick={() => step(1)}>
+          <button
+            disabled={status !== "ready" || !dynamicSequenceConfigured}
+            onClick={() => step(1)}
+          >
             Next
           </button>
           <label>
@@ -725,9 +742,15 @@ export function App() {
       </section>
 
       <section className="status-grid">
-        <Metric label="Lifecycle" value={lifecycle} />
+        <Metric
+          label="Lifecycle"
+          value={dynamicSequenceConfigured ? lifecycle : "STATIC ONLY"}
+        />
         <Metric label="Static SOG" value={staticAssetStatus} />
-        <Metric label="Frame" value={`${frameIndex + 1}`} />
+        <Metric
+          label="Frame"
+          value={dynamicSequenceConfigured ? `${frameIndex + 1}` : "not configured"}
+        />
         <Metric label="Prepared ahead" value={`${readyAhead ?? 0}`} />
         <Metric
           label="Byte cache"

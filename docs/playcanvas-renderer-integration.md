@@ -135,6 +135,15 @@ PlayCanvas recognises that exact basename as its streamed octree resource. The e
 static scale and X-rotation settings apply to the resulting entity in the same way as
 they do to a bundled `.sog`.
 
+For a static-only Quest performance test, leave the dynamic index blank. The demo still
+initialises the renderer, loads the static tree, updates render diagnostics, and enables
+its normal VR entry path; dynamic playback controls remain disabled:
+
+```dotenv
+VITE_DYNAMIC_QUALITY_INDEX_URL=
+VITE_STATIC_GS_URL=/assets/static-sog-lod/lod-meta.json
+```
+
 ## Run the dedicated demo
 
 Copy the example environment and point it at the converted index:
