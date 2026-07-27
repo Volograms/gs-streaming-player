@@ -28,7 +28,8 @@ All notable changes to this project will be documented here. The project uses
   reject direct WebGPU-canvas texture uploads now fall back to a measured accelerated
   Canvas2D staging path. The bridge now feeds the ordered left/right WebXR view and
   projection matrices into PlayCanvas's native stereo path, renders a packed
-  side-by-side WebGPU frame, and routes the matching half to each WebGL XR eye.
+  side-by-side WebGPU frame at the WebGL XR layer's native per-eye viewport resolution,
+  and routes the matching region to each WebGL XR eye.
 - Native PlayCanvas SOG v2 playback through a dedicated renderer adapter and demo. The
   adapter consumes compressed SOG bytes from the player-owned cache, creates
   PlayCanvas-native assets without an expanded neutral Gaussian frame, reuses one

@@ -66,6 +66,9 @@ acceptance criteria are covered by implementation and verification.
     - [x] Replace the incorrect per-eye camera conversion with PlayCanvas-native ordered
           XR views, a packed side-by-side WebGPU stereo render, one upload, and explicit
           left/right WebGL viewport routing. Quest validation remains open.
+    - [x] Match the packed WebGPU source regions to the WebGL XR layer's native per-eye
+          viewport dimensions instead of dividing the lower-resolution desktop canvas.
+          Recheck visual artifacts and performance at the resulting resolution on Quest.
 - [ ] Run the chosen candidates on Meta Quest 3 and representative mobile Safari after
       desktop format/adapter comparisons have narrowed the device matrix.
   - [ ] Validate the Babylon streamed-splat stereo-buffer compatibility patch on both

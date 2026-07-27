@@ -15,7 +15,11 @@ import type {
   DiagnosticDistribution,
   StreamingDiagnosticsSnapshot,
 } from "./streamingDiagnostics.js";
-import type { WebglXrMirrorStats, WebglXrViewerPose } from "./webglXrMirror.js";
+import type {
+  WebglXrMirrorSourceLayout,
+  WebglXrMirrorStats,
+  WebglXrViewerPose,
+} from "./webglXrMirror.js";
 import type {
   FrameRingBufferSnapshot,
   FrameRingBufferTraceEvent,
@@ -427,6 +431,8 @@ export function App() {
       return;
     }
     const previousAutoRender = application.autoRender;
+    const originalCanvasHeight = sourceCanvas.height;
+    const originalCanvasWidth = sourceCanvas.width;
     const originalCameraPosition = cameraEntity.getPosition().clone();
     const originalCameraRotation = cameraEntity.getRotation().clone();
     const originalCameraTransform = cameraEntity.getWorldTransform().clone();
@@ -455,10 +461,17 @@ export function App() {
         sceneCamera.xrViews = originalXrViews;
         cameraEntity.setPosition(originalCameraPosition);
         cameraEntity.setRotation(originalCameraRotation);
+        application.graphicsDevice.setResolution(
+          originalCanvasWidth,
+          originalCanvasHeight,
+        );
         sourceRestored = true;
       }
     };
-    const renderSourceFrame = (pose: WebglXrViewerPose) => {
+    const renderSourceFrame = (
+      pose: WebglXrViewerPose,
+      sourceLayout: WebglXrMirrorSourceLayout,
+    ) => {
       if (!anchorInitialised) {
         viewerTransform.set(pose.transform.matrix as unknown as number[]).invert();
         anchorTransform.copy(originalCameraTransform).mul(viewerTransform);
@@ -477,19 +490,33 @@ export function App() {
           `Expected two WebXR eye views, received ${stereoViews.length}.`,
         );
       }
-      const halfWidth = Math.floor(sourceCanvas.width / 2);
+      if (
+        sourceCanvas.width !== sourceLayout.width ||
+        sourceCanvas.height !== sourceLayout.height
+      ) {
+        application.graphicsDevice.setResolution(
+          sourceLayout.width,
+          sourceLayout.height,
+        );
+      }
       for (const view of stereoViews) {
         const renderView = renderViews[view.eye as "left" | "right"];
+        const sourceView = sourceLayout.views.find(({ eye }) => eye === view.eye);
+        if (sourceView === undefined) {
+          throw new Error(
+            `No packed source viewport exists for WebXR eye ${view.eye}.`,
+          );
+        }
         eyeWorldTransform
           .copy(anchorTransform)
           .mul(xrEyeTransform.set(view.transform.matrix as unknown as number[]));
         localEyeTransform.copy(parentInverse).mul(eyeWorldTransform);
         renderView.setView(view.projectionMatrix, localEyeTransform.data);
         renderView.setViewport(
-          view.eye === "left" ? 0 : halfWidth,
-          0,
-          view.eye === "left" ? halfWidth : sourceCanvas.width - halfWidth,
-          sourceCanvas.height,
+          sourceView.x,
+          sourceView.y,
+          sourceView.width,
+          sourceView.height,
         );
       }
 

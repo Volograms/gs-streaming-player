@@ -225,9 +225,12 @@ frame, the bridge anchors the initial viewer-center pose to the existing PlayCan
 camera and supplies both ordered `left`/`right` WebXR view-to-world and projection
 matrices through PlayCanvas's native `RenderView` path. This is required for the GPU
 Gaussian projector to select its stereo variant. PlayCanvas renders both eyes into the
-left and right halves of one WebGPU canvas; the bridge uploads that packed canvas once
-and draws the matching half into each WebGL XR viewport. The original camera, XR views,
-and automatic render loop are restored when the session ends.
+left and right regions of one WebGPU canvas. The region dimensions come directly from
+the WebGL XR layer's per-eye viewports, avoiding the blur caused by splitting the normal
+desktop canvas resolution between both eyes. The bridge uploads that native-resolution
+packed canvas once and draws the matching region into each WebGL XR viewport. The
+original canvas resolution, camera, XR views, and automatic render loop are restored
+when the session ends.
 
 The source render and upload are synchronized because reading a WebGPU canvas after its
 current texture has been presented can legitimately return transparent black without a
@@ -243,6 +246,11 @@ Record `Static SOG`, `Mirror view`, `Mirror render`, `Mirror copy`, `Mirror FPS`
 stability, and headset comfort at minimum, medium, and full dynamic tiers. The bridge
 fails visibly on WebGL context loss, other texture-upload errors, missing or incomplete
 XR framebuffers, missing stereo views, and draw errors.
+
+`Mirror source` should equal the two WebGL eye viewport widths combined by their maximum
+height. A substantially larger source than the initial 1178 x 620 desktop canvas is
+expected and makes the render/copy timings representative of the actual headset
+resolution.
 
 The first successful Quest 3 handoff used the `canvas-2d` fallback at 1178 x 620. A
 captured sample reported a 9.4 ms `Mirror copy`, 1.4 ms `Mirror render`, and 24.5

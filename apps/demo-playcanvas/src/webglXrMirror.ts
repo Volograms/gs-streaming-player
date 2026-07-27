@@ -15,7 +15,24 @@ export interface WebglXrMirrorOptions {
   onEnd?: () => void;
   onError?: (error: unknown) => void;
   onStats?: (stats: WebglXrMirrorStats) => void;
-  renderSourceFrame?: (pose: WebglXrViewerPose) => void;
+  renderSourceFrame?: (
+    pose: WebglXrViewerPose,
+    layout: WebglXrMirrorSourceLayout,
+  ) => void;
+}
+
+export interface WebglXrMirrorSourceLayout {
+  readonly height: number;
+  readonly views: readonly WebglXrMirrorSourceView[];
+  readonly width: number;
+}
+
+export interface WebglXrMirrorSourceView {
+  readonly eye: "left" | "right";
+  readonly height: number;
+  readonly width: number;
+  readonly x: number;
+  readonly y: number;
 }
 
 export interface WebglXrMirrorView {
@@ -224,8 +241,9 @@ export class WebglXrMirrorPresenter {
       gl.bindVertexArray(this.vertexArray ?? null);
       gl.activeTexture(gl.TEXTURE0);
 
+      const sourceLayout = createSourceLayout(pose, layer);
       const sourceRenderStartedAt = performance.now();
-      this.options.renderSourceFrame?.(pose);
+      this.options.renderSourceFrame?.(pose, sourceLayout);
       sourceRenderMs = performance.now() - sourceRenderStartedAt;
 
       const uploadStartedAt = performance.now();
@@ -241,9 +259,22 @@ export class WebglXrMirrorPresenter {
         const uploadAndDrawStartedAt = performance.now();
         gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
         gl.bindTexture(gl.TEXTURE_2D, texture);
-        const stereoEye = view.eye === "left" || view.eye === "right";
-        gl.uniform2f(this.uvScaleUniform!, stereoEye ? 0.5 : 1, 1);
-        gl.uniform2f(this.uvOffsetUniform!, view.eye === "right" ? 0.5 : 0, 0);
+        const sourceView = sourceLayout.views.find(({ eye }) => eye === view.eye);
+        if (sourceView === undefined) {
+          throw new Error(
+            `No packed source viewport exists for WebXR eye ${view.eye}.`,
+          );
+        }
+        gl.uniform2f(
+          this.uvScaleUniform!,
+          sourceView.width / sourceLayout.width,
+          sourceView.height / sourceLayout.height,
+        );
+        gl.uniform2f(
+          this.uvOffsetUniform!,
+          sourceView.x / sourceLayout.width,
+          sourceView.y / sourceLayout.height,
+        );
         gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         uploadAndDrawMs += performance.now() - uploadAndDrawStartedAt;
@@ -428,6 +459,37 @@ export class WebglXrMirrorPresenter {
     this.session = undefined;
     this.options.onEnd?.();
   }
+}
+
+function createSourceLayout(
+  pose: WebglXrViewerPose,
+  layer: XrWebGLLayerLike,
+): WebglXrMirrorSourceLayout {
+  const sourceViews: WebglXrMirrorSourceView[] = [];
+  let packedWidth = 0;
+  let packedHeight = 0;
+  for (const eye of ["left", "right"] as const) {
+    const view = pose.views.find((candidate) => candidate.eye === eye);
+    const viewport = view === undefined ? null : layer.getViewport(view);
+    if (viewport === null) {
+      continue;
+    }
+    sourceViews.push({
+      eye,
+      height: viewport.height,
+      width: viewport.width,
+      x: packedWidth,
+      y: 0,
+    });
+    packedWidth += viewport.width;
+    packedHeight = Math.max(packedHeight, viewport.height);
+  }
+  if (sourceViews.length !== 2 || packedWidth <= 0 || packedHeight <= 0) {
+    throw new Error(
+      `Expected two valid WebXR eye viewports, received ${sourceViews.length}.`,
+    );
+  }
+  return { height: packedHeight, views: sourceViews, width: packedWidth };
 }
 
 async function requestImmersiveVrSession(xr: {
