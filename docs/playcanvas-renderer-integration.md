@@ -218,7 +218,12 @@ VITE_PLAYCANVAS_XR_BACKEND_FALLBACK=false
 VITE_PLAYCANVAS_XR_MIRROR=true
 VITE_STATIC_GS_URL=/assets/YOUR_STATIC_ENVIRONMENT.sog
 VITE_STATIC_GS_SCALE=1
+VITE_STATIC_GS_ROTATION_X_DEGREES=0
 ```
+
+`VITE_STATIC_GS_SCALE` is a signed uniform scale, so values such as `-2` are passed
+through to the PlayCanvas entity. Use `VITE_STATIC_GS_ROTATION_X_DEGREES=180` when an
+asset needs an explicit upside-down orientation correction without changing handedness.
 
 This adds an `XR mirror` button. It starts a separate WebGL2 WebXR session. For each XR
 frame, the bridge anchors the initial viewer-center pose to the existing PlayCanvas

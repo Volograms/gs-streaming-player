@@ -182,8 +182,8 @@ bottleneck and real 30 fps validation.
 
 - [ ] E03-T01 — Complete visual alignment validation for the composed static GS, dynamic
       GS, and mesh scene. The real assets now load and switch together, and independent
-      static-scene and dynamic-actor scale controls are available for calibration; final
-      origin and floor alignment still require visual confirmation.
+      static-scene scale/X-rotation and dynamic-actor scale controls are available for
+      calibration; final origin and floor alignment still require visual confirmation.
 - [ ] E03-T04 — Validate dynamic alpha and background masking behaviour.
 - [ ] E03-T05 — Measure dynamic switching performance. An opt-in monotonic playback
       trace now separates Spark resource initialisation, metadata, root-page readiness,

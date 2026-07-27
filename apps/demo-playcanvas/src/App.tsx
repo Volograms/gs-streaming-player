@@ -9,6 +9,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { readStaticLoadDiagnostics } from "./staticLoadDiagnostics.js";
+import { createStaticSceneTransform } from "./staticSceneTransform.js";
 import { StreamingDiagnostics } from "./streamingDiagnostics.js";
 import { WebglXrMirrorPresenter } from "./webglXrMirror.js";
 import { XrPlaybackClock } from "./xrPlaybackClock.js";
@@ -62,11 +63,6 @@ function positiveInteger(value: string | undefined, fallback: number): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function positiveNumber(value: string | undefined, fallback: number): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
 const compressedBufferMaximumBytes =
   positiveInteger(import.meta.env.VITE_DYNAMIC_COMPRESSED_BUFFER_MB, 200) * 1_000_000;
 const preparationConcurrency = positiveInteger(
@@ -84,7 +80,10 @@ const futureFrameCount = positiveInteger(
 const xrBackendFallbackEnabled =
   import.meta.env.VITE_PLAYCANVAS_XR_BACKEND_FALLBACK === "true";
 const xrMirrorEnabled = import.meta.env.VITE_PLAYCANVAS_XR_MIRROR === "true";
-const staticGsScale = positiveNumber(import.meta.env.VITE_STATIC_GS_SCALE, 1);
+const staticGsTransform = createStaticSceneTransform({
+  rotationXDegrees: import.meta.env.VITE_STATIC_GS_ROTATION_X_DEGREES,
+  scale: import.meta.env.VITE_STATIC_GS_SCALE,
+});
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -216,17 +215,9 @@ export function App() {
             await initialisedAdapter.loadStaticObject(
               {
                 id: "demo-static-sog",
-                ...(staticGsScale === 1
+                ...(staticGsTransform === undefined
                   ? {}
-                  : {
-                      transform: {
-                        scale: {
-                          x: staticGsScale,
-                          y: staticGsScale,
-                          z: staticGsScale,
-                        },
-                      },
-                    }),
+                  : { transform: staticGsTransform }),
                 url: staticGsUrl,
               },
               {
