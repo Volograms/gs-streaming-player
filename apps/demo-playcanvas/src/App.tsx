@@ -104,15 +104,25 @@ const staticGsBaseTransform = createStaticSceneTransform({
   rotationXDegrees: import.meta.env.VITE_STATIC_GS_ROTATION_X_DEGREES,
   scale: import.meta.env.VITE_STATIC_GS_SCALE,
 });
-const configuredScenePosition = parseScenePosition({
-  x: import.meta.env.VITE_SCENE_POSITION_X,
-  y: import.meta.env.VITE_SCENE_POSITION_Y,
-  z: import.meta.env.VITE_SCENE_POSITION_Z,
+const configuredStaticGsPosition = parseScenePosition({
+  x: import.meta.env.VITE_STATIC_GS_POSITION_X,
+  y: import.meta.env.VITE_STATIC_GS_POSITION_Y,
+  z: import.meta.env.VITE_STATIC_GS_POSITION_Z,
 });
-const configuredScenePositionInputs = scenePositionInputs(configuredScenePosition);
+const configuredDynamicGsPosition = parseScenePosition({
+  x: import.meta.env.VITE_DYNAMIC_GS_POSITION_X,
+  y: import.meta.env.VITE_DYNAMIC_GS_POSITION_Y,
+  z: import.meta.env.VITE_DYNAMIC_GS_POSITION_Z,
+});
+const configuredStaticGsPositionInputs = scenePositionInputs(
+  configuredStaticGsPosition,
+);
+const configuredDynamicGsPositionInputs = scenePositionInputs(
+  configuredDynamicGsPosition,
+);
 const staticGsTransform = withScenePosition(
   staticGsBaseTransform,
-  configuredScenePosition,
+  configuredStaticGsPosition,
 );
 
 export function App() {
@@ -137,8 +147,11 @@ export function App() {
   );
   const [rendererRuntime, setRendererRuntime] =
     useState<PlayCanvasRendererRuntimeInfo>();
-  const [scenePosition, setScenePosition] = useState<ScenePositionInputs>(
-    configuredScenePositionInputs,
+  const [staticGsPosition, setStaticGsPosition] = useState<ScenePositionInputs>(
+    configuredStaticGsPositionInputs,
+  );
+  const [dynamicGsPosition, setDynamicGsPosition] = useState<ScenePositionInputs>(
+    configuredDynamicGsPositionInputs,
   );
   const [selectedDetail, setSelectedDetail] = useState(0.25);
   const [staticAssetStatus, setStaticAssetStatus] = useState<StaticAssetStatus>(
@@ -347,7 +360,7 @@ export function App() {
           });
           bufferRef.current = buffer;
           buffer.setTransform(
-            withScenePosition(sequence.transform, configuredScenePosition),
+            withScenePosition(sequence.transform, configuredDynamicGsPosition),
           );
           unsubscribeBuffer = buffer.subscribe((snapshot) => {
             if (active) {
@@ -456,21 +469,44 @@ export function App() {
     setSelectedDetail(detailLevel);
   }
 
-  function updateScenePosition(axis: ScenePositionAxis, value: string) {
-    const nextPosition = { ...scenePosition, [axis]: value };
-    setScenePosition(nextPosition);
+  function updateStaticGsPosition(axis: ScenePositionAxis, value: string) {
+    const nextPosition = { ...staticGsPosition, [axis]: value };
+    setStaticGsPosition(nextPosition);
+    const parsedPosition = parseScenePositionInputs(nextPosition);
+    if (parsedPosition === undefined || staticAssetStatus !== "ready") {
+      return;
+    }
+
+    try {
+      adapterRef.current?.setObjectTransform(
+        staticObjectId,
+        withScenePosition(staticGsBaseTransform, parsedPosition) ?? {},
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
+  function resetStaticGsPosition() {
+    setStaticGsPosition(configuredStaticGsPositionInputs);
+    try {
+      if (staticAssetStatus === "ready") {
+        adapterRef.current?.setObjectTransform(staticObjectId, staticGsTransform ?? {});
+      }
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
+  function updateDynamicGsPosition(axis: ScenePositionAxis, value: string) {
+    const nextPosition = { ...dynamicGsPosition, [axis]: value };
+    setDynamicGsPosition(nextPosition);
     const parsedPosition = parseScenePositionInputs(nextPosition);
     if (parsedPosition === undefined) {
       return;
     }
 
     try {
-      if (staticAssetStatus === "ready") {
-        adapterRef.current?.setObjectTransform(
-          staticObjectId,
-          withScenePosition(staticGsBaseTransform, parsedPosition) ?? {},
-        );
-      }
       bufferRef.current?.setTransform(
         withScenePosition(dynamicBaseTransformRef.current, parsedPosition),
       );
@@ -479,14 +515,11 @@ export function App() {
     }
   }
 
-  function resetScenePosition() {
-    setScenePosition(configuredScenePositionInputs);
+  function resetDynamicGsPosition() {
+    setDynamicGsPosition(configuredDynamicGsPositionInputs);
     try {
-      if (staticAssetStatus === "ready") {
-        adapterRef.current?.setObjectTransform(staticObjectId, staticGsTransform ?? {});
-      }
       bufferRef.current?.setTransform(
-        withScenePosition(dynamicBaseTransformRef.current, configuredScenePosition),
+        withScenePosition(dynamicBaseTransformRef.current, configuredDynamicGsPosition),
       );
     } catch (caught) {
       setError(errorMessage(caught));
@@ -774,33 +807,25 @@ export function App() {
           <span>PlayCanvas adapter</span>
           <strong>{status}</strong>
         </div>
-        <fieldset className="scene-position-controls" disabled={status !== "ready"}>
-          <legend>Scene position</legend>
-          <div className="scene-position-heading">
-            <span>World offset</span>
-            <button type="button" onClick={resetScenePosition}>
-              Reset
-            </button>
-          </div>
-          <div className="scene-position-grid">
-            {(["x", "y", "z"] as const).map((axis) => (
-              <label key={axis}>
-                {axis.toUpperCase()}
-                <input
-                  aria-invalid={scenePosition[axis].trim() === ""}
-                  inputMode="decimal"
-                  step="0.1"
-                  type="number"
-                  value={scenePosition[axis]}
-                  onChange={(event) =>
-                    updateScenePosition(axis, event.currentTarget.value)
-                  }
-                />
-              </label>
-            ))}
-          </div>
-          <small>Use Y to align the scene floor with world height 0.</small>
-        </fieldset>
+        <section className="scene-position-controls" aria-label="Object positions">
+          <PositionEditor
+            disabled={status !== "ready" || staticAssetStatus !== "ready"}
+            label="Static GS"
+            position={staticGsPosition}
+            onChange={updateStaticGsPosition}
+            onReset={resetStaticGsPosition}
+          />
+          <PositionEditor
+            disabled={status !== "ready" || !dynamicSequenceConfigured}
+            label="Dynamic GS"
+            position={dynamicGsPosition}
+            onChange={updateDynamicGsPosition}
+            onReset={resetDynamicGsPosition}
+          />
+          <small>
+            Independent world offsets. Use Y to align either object vertically.
+          </small>
+        </section>
         <div className="controls">
           <button
             disabled={status !== "ready" || !dynamicSequenceConfigured}
@@ -1157,6 +1182,47 @@ function Metric({ label, value }: { label: string; value: string }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  );
+}
+
+function PositionEditor({
+  disabled,
+  label,
+  position,
+  onChange,
+  onReset,
+}: {
+  disabled: boolean;
+  label: string;
+  position: ScenePositionInputs;
+  onChange: (axis: ScenePositionAxis, value: string) => void;
+  onReset: () => void;
+}) {
+  return (
+    <fieldset disabled={disabled}>
+      <legend>{label}</legend>
+      <div className="scene-position-heading">
+        <span>World offset</span>
+        <button type="button" onClick={onReset}>
+          Reset
+        </button>
+      </div>
+      <div className="scene-position-grid">
+        {(["x", "y", "z"] as const).map((axis) => (
+          <label key={axis}>
+            {axis.toUpperCase()}
+            <input
+              aria-invalid={position[axis].trim() === ""}
+              inputMode="decimal"
+              step="0.1"
+              type="number"
+              value={position[axis]}
+              onChange={(event) => onChange(axis, event.currentTarget.value)}
+            />
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }
 

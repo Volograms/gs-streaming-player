@@ -29,8 +29,9 @@ All notable changes to this project will be documented here. The project uses
   processing time for large-file delivery comparisons.
 - PlayCanvas demo static-scene placement now accepts signed uniform scales and an
   explicit `VITE_STATIC_GS_ROTATION_X_DEGREES` orientation correction. A responsive
-  Scene position panel and `VITE_SCENE_POSITION_X/Y/Z` defaults now apply a shared world
-  offset to static and dynamic content for interactive floor alignment.
+  position panel and separate `VITE_STATIC_GS_POSITION_X/Y/Z` and
+  `VITE_DYNAMIC_GS_POSITION_X/Y/Z` defaults independently place the static and dynamic
+  GS objects in the world.
 - Standalone static SPZ-to-SOG conversion through `gs-content convert-sog`, alongside
   the existing dynamic quality-cut index conversion.
 - Strict, opt-in PlayCanvas WebGPU initialisation for GPU-sort SOG measurements. The

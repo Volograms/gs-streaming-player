@@ -356,18 +356,22 @@ VITE_PLAYCANVAS_XR_MIRROR=true
 VITE_STATIC_GS_URL=/assets/YOUR_STATIC_ENVIRONMENT.sog
 VITE_STATIC_GS_SCALE=1
 VITE_STATIC_GS_ROTATION_X_DEGREES=0
-VITE_SCENE_POSITION_X=0
-VITE_SCENE_POSITION_Y=0
-VITE_SCENE_POSITION_Z=0
+VITE_STATIC_GS_POSITION_X=0
+VITE_STATIC_GS_POSITION_Y=0
+VITE_STATIC_GS_POSITION_Z=0
+VITE_DYNAMIC_GS_POSITION_X=0
+VITE_DYNAMIC_GS_POSITION_Y=0
+VITE_DYNAMIC_GS_POSITION_Z=0
 ```
 
 `VITE_STATIC_GS_SCALE` is a signed uniform scale, so values such as `-2` are passed
 through to the PlayCanvas entity. Use `VITE_STATIC_GS_ROTATION_X_DEGREES=180` when an
 asset needs an explicit upside-down orientation correction without changing handedness.
-The `VITE_SCENE_POSITION_*` values add a shared world-space offset to the static scene
-and dynamic sequence. The demo's Scene position panel applies the same offset live;
-adjust Y until the captured floor aligns with world height 0, then copy the values into
-the environment configuration when the placement should persist across reloads.
+The `VITE_STATIC_GS_POSITION_*` and `VITE_DYNAMIC_GS_POSITION_*` values add independent
+world-space offsets to the static scene and dynamic sequence. The demo exposes separate
+live controls for both objects, so adjusting the static floor alignment does not move
+the dynamic GS. Copy the final values into the environment configuration when the
+placement should persist across reloads.
 
 This adds an `XR mirror` button. It starts a separate WebGL2 WebXR session. For each XR
 frame, the bridge anchors the initial viewer-center pose to the existing PlayCanvas
