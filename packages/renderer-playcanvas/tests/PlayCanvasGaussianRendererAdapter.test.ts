@@ -64,6 +64,12 @@ describe("PlayCanvasGaussianRendererAdapter", () => {
       /minPixelSize must be a finite non-negative number/i,
     );
     expect(
+      () => new PlayCanvasGaussianRendererAdapter({ gpuTimingSampleIntervalMs: 100 }),
+    ).toThrow(/gpuTimingSampleIntervalMs must be zero or an integer of at least 250/i);
+    expect(
+      () => new PlayCanvasGaussianRendererAdapter({ gpuTimingSampleIntervalMs: 2_000 }),
+    ).not.toThrow();
+    expect(
       () => new PlayCanvasGaussianRendererAdapter({ foveationCenter: 1.1 }),
     ).toThrow(/foveationCenter must be a finite number from 0 to 1/i);
   });

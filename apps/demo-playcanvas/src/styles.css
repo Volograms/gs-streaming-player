@@ -236,6 +236,52 @@ canvas {
   border-bottom: 1px solid #31535b;
 }
 
+.gpu-timing-table-shell {
+  margin-top: 1rem;
+  overflow-x: auto;
+  border: 1px solid #31535b;
+  border-radius: 1rem;
+  background: rgb(7 24 29 / 72%);
+}
+
+.gpu-timing-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.gpu-timing-table th,
+.gpu-timing-table td {
+  padding: 0.7rem 0.8rem;
+  border-bottom: 1px solid #23464d;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.gpu-timing-table th:first-child {
+  width: 100%;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.gpu-timing-table thead th {
+  color: #70dfcd;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.gpu-timing-table tbody th {
+  color: #d7e7e9;
+  font-weight: 600;
+}
+
+.gpu-timing-table tbody tr:last-child th,
+.gpu-timing-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
 .error {
   color: #ffb9ae;
   border: 1px solid #8a453d;

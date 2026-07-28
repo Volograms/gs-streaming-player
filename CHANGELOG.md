@@ -32,6 +32,9 @@ All notable changes to this project will be documented here. The project uses
   position panel and separate `VITE_STATIC_GS_POSITION_X/Y/Z` and
   `VITE_DYNAMIC_GS_POSITION_X/Y/Z` defaults independently place the static and dynamic
   GS objects in the world.
+- Low-overhead PlayCanvas WebGPU timing samples with rolling GPU-frame and named-pass
+  p50/p95 diagnostics in the demo UI, including explicit timestamp-query capability
+  reporting and unattributed transfer time.
 - Standalone static SPZ-to-SOG conversion through `gs-content convert-sog`, alongside
   the existing dynamic quality-cut index conversion.
 - Strict, opt-in PlayCanvas WebGPU initialisation for GPU-sort SOG measurements. The

@@ -57,11 +57,12 @@ acceptance criteria are covered by implementation and verification.
   - [x] Validate native PlayCanvas WebGPU XR availability on Quest 3 after enabling the
         WebXR/WebGPU Binding, WebXR Projection Layers, and WebXR Experiments browser
         flags; the browser exposes `XRGPUBinding` and the demo enters immersive XR.
+  - [x] Add a bounded, low-overhead WebGPU timestamp sampler that reports rolling
+        GPU-frame and named-pass p50/p95 timings in the demo UI for Quest captures.
   - [ ] Capture repeated desktop and Quest 3 p50/p95 samples, including full-tier Quest
         traces and any WebGPU XR run that reports `XRGPUBinding`.
-  - [ ] Test the opt-in WebGPU-to-WebGL XR mirror spike on Quest 3. Record mirror
-        copy/draw cost, XR frame rate, visual latency, and whether mono mirroring is
-        stable enough to justify a real stereo bridge.
+  - [x] Close the obsolete WebGPU-to-WebGL XR mirror experiment after native WebGPU XR
+        became available; keep it out of current performance measurements.
     - [x] Capture the first successful Quest 3 mono handoff: the Canvas2D fallback
           displayed the dynamic 25% tier in both eyes at 1178 x 620, with a sampled 9.4
           ms copy/draw, 1.4 ms source render, and 24.5 mirror fps. The fixed mono view

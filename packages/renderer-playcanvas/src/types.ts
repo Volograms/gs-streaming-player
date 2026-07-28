@@ -1,3 +1,4 @@
+import type { RendererMetrics } from "@6g-path/gaussian-player";
 import type { Application, Entity } from "playcanvas";
 
 export type PlayCanvasGraphicsBackend = "webgl2" | "webgpu";
@@ -6,6 +7,35 @@ export interface PlayCanvasRendererRuntimeInfo {
   readonly graphicsBackend: PlayCanvasGraphicsBackend;
   readonly gaussianSort: "cpu" | "gpu";
   readonly splatCentersEnabled: boolean;
+}
+
+export type PlayCanvasGpuTimingStatus =
+  "disabled" | "ready" | "unsupported" | "waiting";
+
+export interface PlayCanvasGpuTimingDistribution {
+  readonly latestMs: number;
+  readonly maxMs: number;
+  readonly p50Ms: number;
+  readonly p95Ms: number;
+  readonly sampleCount: number;
+}
+
+export interface PlayCanvasGpuPassTiming extends PlayCanvasGpuTimingDistribution {
+  readonly name: string;
+}
+
+export interface PlayCanvasGpuTimingSnapshot {
+  readonly captureFrameCount: number;
+  readonly capturedFrameCount: number;
+  readonly frameTime?: PlayCanvasGpuTimingDistribution;
+  readonly passTimings: readonly PlayCanvasGpuPassTiming[];
+  readonly reason?: string;
+  readonly sampleIntervalMs: number;
+  readonly status: PlayCanvasGpuTimingStatus;
+}
+
+export interface PlayCanvasRendererMetrics extends RendererMetrics {
+  readonly gpuTimings: PlayCanvasGpuTimingSnapshot;
 }
 
 export type PlayCanvasXrSupportReason =
@@ -51,6 +81,11 @@ export interface PlayCanvasRendererAdapterOptions {
   foveationStrength?: number;
   /** Normalized radius at which peripheral rejection starts. PlayCanvas defaults to 0.3. */
   foveationCenter?: number;
+  /**
+   * Interval between low-overhead WebGPU timestamp-query samples. Zero or undefined
+   * disables GPU sampling. Values below 250 ms are rejected to protect frame cadence.
+   */
+  gpuTimingSampleIntervalMs?: number;
   now?: () => number;
   /**
    * Global unified-renderer splat budget. Zero disables budget balancing. Streamed

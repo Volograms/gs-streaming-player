@@ -12,6 +12,10 @@ import {
 } from "playcanvas";
 
 import {
+  DISABLED_GPU_TIMING_SNAPSHOT,
+  PlayCanvasGpuTimingSampler,
+} from "./gpuTimingSampler.js";
+import {
   configurePlayCanvasGraphicsBackend,
   queryPlayCanvasImmersiveVrSupport,
   readPlayCanvasRendererRuntimeInfo,
@@ -22,6 +26,7 @@ import type {
   PlayCanvasGraphicsBackend,
   PlayCanvasRendererAdapterOptions,
   PlayCanvasRendererContext,
+  PlayCanvasRendererMetrics,
   PlayCanvasRendererRuntimeInfo,
   PlayCanvasXrSupportInfo,
   PlayCanvasXrStartOptions,
@@ -37,7 +42,6 @@ import type {
   PreparedFrame,
   QualityDecision,
   RendererLoadOptions,
-  RendererMetrics,
   RendererObjectHandle,
   RendererObjectKind,
   RendererResourceMetrics,
@@ -85,6 +89,7 @@ export class PlayCanvasGaussianRendererAdapter
   private dynamicEntityValue: Entity | undefined;
   private failedResourceLoadCount = 0;
   private frameCommitTimeMs: number | undefined;
+  private gpuTimingSampler: PlayCanvasGpuTimingSampler | undefined;
   private initialised = false;
   private initialisation: Promise<void> | undefined;
   private readonly loadedObjects = new Map<string, LoadedObjectRecord>();
@@ -107,6 +112,7 @@ export class PlayCanvasGaussianRendererAdapter
     validateOptionalNonNegativeNumber(options.minContribution, "minContribution");
     validateOptionalNonNegativeNumber(options.foveationStrength, "foveationStrength");
     validateOptionalUnitNumber(options.foveationCenter, "foveationCenter");
+    validateGpuTimingSampleInterval(options.gpuTimingSampleIntervalMs);
     this.options = options;
     this.now = options.now ?? (() => performance.now());
   }
@@ -188,6 +194,11 @@ export class PlayCanvasGaussianRendererAdapter
       if (this.options.foveationCenter !== undefined) {
         application.scene.gsplat.foveationCenter = this.options.foveationCenter;
       }
+      this.gpuTimingSampler = new PlayCanvasGpuTimingSampler(
+        application,
+        this.options.gpuTimingSampleIntervalMs ?? 0,
+        this.now,
+      );
       const clearColor = new Color(0.07, 0.07, 0.1, 1);
       if (
         (this.options.manageResize ?? ownsApplication) &&
@@ -237,6 +248,8 @@ export class PlayCanvasGaussianRendererAdapter
         application.start();
       }
     } catch (error) {
+      this.gpuTimingSampler?.dispose();
+      this.gpuTimingSampler = undefined;
       this.orbitControlsCleanup?.();
       this.orbitControlsCleanup = undefined;
       if (ownsApplication) {
@@ -576,7 +589,8 @@ export class PlayCanvasGaussianRendererAdapter
     void decision;
   }
 
-  getMetrics(): RendererMetrics {
+  getMetrics(): PlayCanvasRendererMetrics {
+    this.gpuTimingSampler?.requestSample();
     const stats = this.applicationValue?.stats.frame;
     const activeResource =
       this.activeFrame === undefined
@@ -589,6 +603,7 @@ export class PlayCanvasGaussianRendererAdapter
         ? {}
         : { activeFrameIndex: this.activeFrame.frameIndex }),
       failedResourceLoadCount: this.failedResourceLoadCount,
+      gpuTimings: this.gpuTimingSampler?.getSnapshot() ?? DISABLED_GPU_TIMING_SNAPSHOT,
       ...(this.frameCommitTimeMs === undefined
         ? {}
         : { frameCommitTimeMs: this.frameCommitTimeMs }),
@@ -627,6 +642,8 @@ export class PlayCanvasGaussianRendererAdapter
       return;
     }
     this.disposed = true;
+    this.gpuTimingSampler?.dispose();
+    this.gpuTimingSampler = undefined;
     this.orbitControlsCleanup?.();
     this.orbitControlsCleanup = undefined;
     const disposalError = new Error("The PlayCanvas renderer adapter was disposed.");
@@ -1134,6 +1151,17 @@ function validateOptionalNonNegativeNumber(
 function validateOptionalUnitNumber(value: number | undefined, name: string): void {
   if (value !== undefined && (!Number.isFinite(value) || value < 0 || value > 1)) {
     throw new Error(`${name} must be a finite number from 0 to 1.`);
+  }
+}
+
+function validateGpuTimingSampleInterval(value: number | undefined): void {
+  if (
+    value !== undefined &&
+    (!Number.isInteger(value) || value < 0 || (value > 0 && value < 250))
+  ) {
+    throw new Error(
+      "gpuTimingSampleIntervalMs must be zero or an integer of at least 250 milliseconds.",
+    );
   }
 }
 

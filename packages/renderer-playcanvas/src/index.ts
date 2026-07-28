@@ -9,8 +9,13 @@ export { applyPlayCanvasTransform } from "./transform.js";
 export { Mat4, RenderView } from "playcanvas";
 export type {
   PlayCanvasGraphicsBackend,
+  PlayCanvasGpuPassTiming,
+  PlayCanvasGpuTimingDistribution,
+  PlayCanvasGpuTimingSnapshot,
+  PlayCanvasGpuTimingStatus,
   PlayCanvasRendererAdapterOptions,
   PlayCanvasRendererContext,
+  PlayCanvasRendererMetrics,
   PlayCanvasRendererRuntimeInfo,
   PlayCanvasXrSupportInfo,
   PlayCanvasXrSupportReason,

@@ -6,7 +6,7 @@ import {
   RenderView,
   queryPlayCanvasImmersiveVrSupport,
 } from "@6g-path/gaussian-renderer-playcanvas";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 
 import { parseGsplatRenderConfiguration } from "./gsplatRenderConfiguration.js";
 import { resolvePlayCanvasDemoSceneMode } from "./sceneConfiguration.js";
@@ -35,10 +35,12 @@ import type {
   DynamicGaussianSequence,
   GaussianQualityLevel,
   PlayerLifecycleState,
-  RendererMetrics,
 } from "@6g-path/gaussian-player";
 import type {
   PlayCanvasGraphicsBackend,
+  PlayCanvasGpuTimingDistribution,
+  PlayCanvasGpuTimingSnapshot,
+  PlayCanvasRendererMetrics,
   PlayCanvasRendererRuntimeInfo,
 } from "@6g-path/gaussian-renderer-playcanvas";
 
@@ -83,6 +85,19 @@ function positiveInteger(value: string | undefined, fallback: number): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function gpuTimingSampleInterval(value: string | undefined): number {
+  if (value === undefined || value.trim() === "") {
+    return 2_000;
+  }
+  const parsed = Number(value);
+  if (Number.isInteger(parsed) && (parsed === 0 || parsed >= 250)) {
+    return parsed;
+  }
+  throw new Error(
+    "VITE_PLAYCANVAS_GPU_TIMING_INTERVAL_MS must be zero or an integer of at least 250.",
+  );
+}
+
 const compressedBufferMaximumBytes =
   positiveInteger(import.meta.env.VITE_DYNAMIC_COMPRESSED_BUFFER_MB, 200) * 1_000_000;
 const preparationConcurrency = positiveInteger(
@@ -100,6 +115,9 @@ const futureFrameCount = positiveInteger(
 const xrBackendFallbackEnabled =
   import.meta.env.VITE_PLAYCANVAS_XR_BACKEND_FALLBACK === "true";
 const xrMirrorEnabled = import.meta.env.VITE_PLAYCANVAS_XR_MIRROR === "true";
+const gpuTimingSampleIntervalMs = gpuTimingSampleInterval(
+  import.meta.env.VITE_PLAYCANVAS_GPU_TIMING_INTERVAL_MS,
+);
 const staticGsBaseTransform = createStaticSceneTransform({
   rotationXDegrees: import.meta.env.VITE_STATIC_GS_ROTATION_X_DEGREES,
   scale: import.meta.env.VITE_STATIC_GS_SCALE,
@@ -141,7 +159,7 @@ export function App() {
   const [lifecycle, setLifecycle] = useState<PlayerLifecycleState>("IDLE");
   const [mirrorActive, setMirrorActive] = useState(false);
   const [mirrorStats, setMirrorStats] = useState<WebglXrMirrorStats>();
-  const [metrics, setMetrics] = useState<RendererMetrics>();
+  const [metrics, setMetrics] = useState<PlayCanvasRendererMetrics>();
   const [qualityLevels, setQualityLevels] = useState<readonly GaussianQualityLevel[]>(
     [],
   );
@@ -260,6 +278,7 @@ export function App() {
 
         const initialisedAdapter = new PlayCanvasGaussianRendererAdapter({
           canvas: targetCanvas,
+          gpuTimingSampleIntervalMs,
           graphicsBackend,
           ...gsplatRenderConfiguration,
           ...(staticLodConfiguration.splatBudget === undefined
@@ -789,6 +808,7 @@ export function App() {
     streamingDiagnostics?.aggregateFetchMbps === undefined
       ? undefined
       : streamingDiagnostics.aggregateFetchMbps / requiredPayloadMbps;
+  const gpuTimings = metrics?.gpuTimings;
 
   return (
     <main>
@@ -989,6 +1009,8 @@ export function App() {
         ) : null}
       </section>
 
+      <GpuTimingPanel snapshot={gpuTimings} />
+
       {staticGsUrl === undefined || staticGsUrl.length === 0 ? null : (
         <>
           <div className="diagnostic-heading">
@@ -1185,6 +1207,68 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
+const GpuTimingPanel = memo(function GpuTimingPanel({
+  snapshot,
+}: {
+  snapshot: PlayCanvasGpuTimingSnapshot | undefined;
+}) {
+  return (
+    <>
+      <div className="diagnostic-heading">
+        <h2>GPU timing sampler</h2>
+        <p>
+          WebGPU timestamps on two frames per sampling interval; rolling p50 / p95 over
+          the latest 60 captured frames. Passes are ordered by p95 GPU time.
+        </p>
+      </div>
+      <section className="status-grid" aria-label="GPU timing summary">
+        <Metric label="GPU timing" value={formatGpuTimingStatus(snapshot)} />
+        <Metric
+          label="GPU frame p50 / p95"
+          value={formatGpuTimingDistribution(snapshot?.frameTime)}
+        />
+        <Metric
+          label="GPU frame latest / max"
+          value={formatGpuTimingLatestMax(snapshot?.frameTime)}
+        />
+        <Metric
+          label="Captured frames"
+          value={`${snapshot?.capturedFrameCount ?? 0}`}
+        />
+        <Metric label="Sampling" value={formatGpuSampling(snapshot)} />
+      </section>
+      {snapshot === undefined || snapshot.passTimings.length === 0 ? null : (
+        <div className="gpu-timing-table-shell">
+          <table className="gpu-timing-table">
+            <thead>
+              <tr>
+                <th scope="col">GPU pass</th>
+                <th scope="col">Latest</th>
+                <th scope="col">p50</th>
+                <th scope="col">p95</th>
+                <th scope="col">Max</th>
+                <th scope="col">Samples</th>
+              </tr>
+            </thead>
+            <tbody>
+              {snapshot.passTimings.map((pass) => (
+                <tr key={pass.name}>
+                  <th scope="row">{pass.name}</th>
+                  <td>{pass.latestMs.toFixed(2)} ms</td>
+                  <td>{pass.p50Ms.toFixed(2)} ms</td>
+                  <td>{pass.p95Ms.toFixed(2)} ms</td>
+                  <td>{pass.maxMs.toFixed(2)} ms</td>
+                  <td>{pass.sampleCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+});
+
 function PositionEditor({
   disabled,
   label,
@@ -1290,6 +1374,46 @@ function formatBoolean(value: boolean | undefined): string {
 
 function formatDuration(value: number | undefined): string {
   return value === undefined ? "waiting" : `${value.toFixed(1)} ms`;
+}
+
+function formatGpuTimingDistribution(
+  distribution: PlayCanvasGpuTimingDistribution | undefined,
+): string {
+  return distribution === undefined
+    ? "waiting"
+    : `${distribution.p50Ms.toFixed(2)} / ${distribution.p95Ms.toFixed(2)} ms`;
+}
+
+function formatGpuTimingLatestMax(
+  distribution: PlayCanvasGpuTimingDistribution | undefined,
+): string {
+  return distribution === undefined
+    ? "waiting"
+    : `${distribution.latestMs.toFixed(2)} / ${distribution.maxMs.toFixed(2)} ms`;
+}
+
+function formatGpuTimingStatus(
+  snapshot: PlayCanvasGpuTimingSnapshot | undefined,
+): string {
+  if (snapshot === undefined) {
+    return "initialising";
+  }
+  if (snapshot.status === "unsupported") {
+    return snapshot.reason ?? "unsupported";
+  }
+  return snapshot.status;
+}
+
+function formatGpuSampling(snapshot: PlayCanvasGpuTimingSnapshot | undefined): string {
+  if (snapshot === undefined) {
+    return "initialising";
+  }
+  if (snapshot.sampleIntervalMs === 0) {
+    return "off";
+  }
+  return `${snapshot.captureFrameCount} frames / ${(
+    snapshot.sampleIntervalMs / 1_000
+  ).toFixed(1)} s`;
 }
 
 function formatRate(value: number | undefined): string {

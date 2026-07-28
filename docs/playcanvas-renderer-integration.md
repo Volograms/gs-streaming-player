@@ -202,6 +202,25 @@ central radius. Start with `MIN_PIXEL_SIZE` values 2, 3, and 4 while holding the
 pose fixed, then add foveation for XR. These settings are global to the unified static
 and dynamic scene and trade peripheral/fine detail for frame time.
 
+The PlayCanvas demo enables a low-overhead WebGPU timing sampler by default:
+
+```dotenv
+VITE_PLAYCANVAS_GPU_TIMING_INTERVAL_MS=2000
+```
+
+The sampler enables PlayCanvas GPU timestamp queries for two consecutive frames per
+interval and disables them for all other frames. It keeps a bounded rolling window of 60
+captured frames and exposes the GPU-frame p50/p95 plus named render/compute pass latest,
+p50, p95, maximum, and sample counts in the UI. Sampling two frames avoids phase-locking
+to the alternating 30 fps SOG presentation work while timestamp and readback overhead
+remains off for the other frames. Set the value to `0` to disable GPU sampling; non-zero
+values below 250 ms are rejected.
+
+The browser and GPU must expose WebGPU's `timestamp-query` feature. When it is absent,
+the UI reports the capability as unsupported instead of substituting CPU submission
+time. `Unattributed / transfers` is the measured GPU-frame span not covered by named
+render or compute passes, including inter-pass gaps and copy commands.
+
 `GS buffer copy` reports the percentage of PlayCanvas's unified work buffer uploaded in
 the latest frame. It should settle at 0% while playback is paused. A spike when a new
 dynamic SOG frame is presented identifies asset-placement upload cost separately from
