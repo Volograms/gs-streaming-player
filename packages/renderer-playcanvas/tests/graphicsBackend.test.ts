@@ -23,6 +23,9 @@ function createApplication(
     graphicsDevice: {
       deviceType: graphicsBackend,
     },
+    xr: {
+      fixedFoveation: null,
+    },
     scene: {
       gsplat: {
         get currentRenderer() {
@@ -34,8 +37,9 @@ function createApplication(
         set renderer(value: number) {
           requestedRenderer = value;
           currentRenderer =
-            value === GSPLAT_RENDERER_RASTER_GPU_SORT
-              ? GSPLAT_RENDERER_RASTER_GPU_SORT
+            value === GSPLAT_RENDERER_RASTER_GPU_SORT ||
+            value === GSPLAT_RENDERER_RASTER_CPU_SORT
+              ? value
               : initialRenderer;
         },
       },
@@ -60,6 +64,7 @@ describe("PlayCanvas graphics backend configuration", () => {
       gaussianSort: "gpu",
       graphicsBackend: "webgpu",
       splatCentersEnabled: false,
+      xrFixedFoveation: null,
     });
   });
 
@@ -72,6 +77,29 @@ describe("PlayCanvas graphics backend configuration", () => {
     expect(application.scene.gsplatCentersEnabled).toBe(true);
   });
 
+  it("allows the CPU-sort renderer to run on WebGPU for comparison", () => {
+    const application = createApplication("webgpu", GSPLAT_RENDERER_RASTER_GPU_SORT);
+
+    const runtime = configurePlayCanvasGraphicsBackend(application, "webgpu", "cpu");
+
+    expect(application.scene.gsplat.renderer).toBe(GSPLAT_RENDERER_RASTER_CPU_SORT);
+    expect(application.scene.gsplatCentersEnabled).toBe(true);
+    expect(runtime).toEqual({
+      gaussianSort: "cpu",
+      graphicsBackend: "webgpu",
+      splatCentersEnabled: true,
+      xrFixedFoveation: null,
+    });
+  });
+
+  it("rejects GPU sorting on WebGL2", () => {
+    const application = createApplication("webgl2", GSPLAT_RENDERER_RASTER_CPU_SORT);
+
+    expect(() =>
+      configurePlayCanvasGraphicsBackend(application, "webgl2", "gpu"),
+    ).toThrow(/GPU Gaussian sorting requires WebGPU/i);
+  });
+
   it("reports the WebGL CPU-sort baseline", () => {
     const application = createApplication("webgl2", GSPLAT_RENDERER_RASTER_CPU_SORT);
 
@@ -79,6 +107,7 @@ describe("PlayCanvas graphics backend configuration", () => {
       gaussianSort: "cpu",
       graphicsBackend: "webgl2",
       splatCentersEnabled: true,
+      xrFixedFoveation: null,
     });
   });
 

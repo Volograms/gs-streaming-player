@@ -7,9 +7,11 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
-- PlayCanvas Quest tuning controls for pre-sort minimum pixel size, minimum projected
-  contribution, and peripheral foveation, plus unified GSplat work-buffer copy
-  diagnostics that separate frame replacement uploads from steady-state sorting.
+- PlayCanvas Quest tuning controls for pre-sort minimum pixel size and projected
+  contribution, forward alpha clipping, splat-level and XR fixed foveation, plus an
+  explicit WebGPU CPU-sort A/B mode. Diagnostics report the selected sorter, retained
+  CPU centers, accepted XR foveation, and unified GSplat work-buffer copies separately
+  from steady-state sorting.
 
 - A `gs-content export-sog-lod` command that derives configurable coarse levels from one
   source scene and exports PlayCanvas's spatially chunked Streamed SOG `lod-meta.json`

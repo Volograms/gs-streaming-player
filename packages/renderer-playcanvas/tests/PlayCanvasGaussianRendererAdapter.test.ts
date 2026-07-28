@@ -72,6 +72,38 @@ describe("PlayCanvasGaussianRendererAdapter", () => {
     expect(
       () => new PlayCanvasGaussianRendererAdapter({ foveationCenter: 1.1 }),
     ).toThrow(/foveationCenter must be a finite number from 0 to 1/i);
+    expect(
+      () => new PlayCanvasGaussianRendererAdapter({ alphaClipForward: -0.1 }),
+    ).toThrow(/alphaClipForward must be a finite number from 0 to 1/i);
+    expect(
+      () => new PlayCanvasGaussianRendererAdapter({ xrFixedFoveation: 1.1 }),
+    ).toThrow(/xrFixedFoveation must be a finite number from 0 to 1/i);
+  });
+
+  it("applies configured fixed foveation after XR starts", async () => {
+    const adapter = new PlayCanvasGaussianRendererAdapter({ xrFixedFoveation: 0.75 });
+    const xr = { active: false, fixedFoveation: null as number | null };
+    const startXr = vi.fn(
+      (
+        _type: string,
+        _spaceType: string,
+        options: { callback: (error: Error | null) => void },
+      ) => {
+        xr.active = true;
+        options.callback(null);
+      },
+    );
+    Object.assign(adapter as unknown as Record<string, unknown>, {
+      applicationValue: { xr },
+      cameraEntityValue: { camera: { startXr } },
+      initialised: true,
+      waitForXrAvailability: vi.fn(async () => true),
+    });
+
+    await adapter.startXr();
+
+    expect(startXr).toHaveBeenCalledOnce();
+    expect(xr.fixedFoveation).toBe(0.75);
   });
 
   it("requires a canvas when it owns the application", async () => {

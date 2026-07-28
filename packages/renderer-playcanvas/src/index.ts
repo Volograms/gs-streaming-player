@@ -9,6 +9,7 @@ export { applyPlayCanvasTransform } from "./transform.js";
 export { Mat4, RenderView } from "playcanvas";
 export type {
   PlayCanvasGraphicsBackend,
+  PlayCanvasGaussianSortMode,
   PlayCanvasGpuPassTiming,
   PlayCanvasGpuTimingDistribution,
   PlayCanvasGpuTimingSnapshot,

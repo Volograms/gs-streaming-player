@@ -18,6 +18,7 @@ import { StreamingDiagnostics } from "./streamingDiagnostics.js";
 import { WebglXrMirrorPresenter } from "./webglXrMirror.js";
 import { XrPlaybackClock } from "./xrPlaybackClock.js";
 
+import type { GsplatRenderConfiguration } from "./gsplatRenderConfiguration.js";
 import type { ScenePosition } from "./scenePosition.js";
 import type { StaticLoadDiagnostics } from "./staticLoadDiagnostics.js";
 import type {
@@ -118,6 +119,15 @@ const xrMirrorEnabled = import.meta.env.VITE_PLAYCANVAS_XR_MIRROR === "true";
 const gpuTimingSampleIntervalMs = gpuTimingSampleInterval(
   import.meta.env.VITE_PLAYCANVAS_GPU_TIMING_INTERVAL_MS,
 );
+const gsplatRenderEnvironmentConfiguration = {
+  alphaClipForward: import.meta.env.VITE_PLAYCANVAS_GSPLAT_ALPHA_CLIP_FORWARD,
+  foveationCenter: import.meta.env.VITE_PLAYCANVAS_GSPLAT_FOVEATION_CENTER,
+  foveationStrength: import.meta.env.VITE_PLAYCANVAS_GSPLAT_FOVEATION_STRENGTH,
+  gaussianSort: import.meta.env.VITE_PLAYCANVAS_GSPLAT_SORT,
+  minContribution: import.meta.env.VITE_PLAYCANVAS_GSPLAT_MIN_CONTRIBUTION,
+  minPixelSize: import.meta.env.VITE_PLAYCANVAS_GSPLAT_MIN_PIXEL_SIZE,
+  xrFixedFoveation: import.meta.env.VITE_PLAYCANVAS_XR_FIXED_FOVEATION,
+};
 const staticGsBaseTransform = createStaticSceneTransform({
   rotationXDegrees: import.meta.env.VITE_STATIC_GS_ROTATION_X_DEGREES,
   scale: import.meta.env.VITE_STATIC_GS_SCALE,
@@ -165,6 +175,8 @@ export function App() {
   );
   const [rendererRuntime, setRendererRuntime] =
     useState<PlayCanvasRendererRuntimeInfo>();
+  const [gsplatRenderConfiguration, setGsplatRenderConfiguration] =
+    useState<GsplatRenderConfiguration>({});
   const [staticGsPosition, setStaticGsPosition] = useState<ScenePositionInputs>(
     configuredStaticGsPositionInputs,
   );
@@ -269,18 +281,14 @@ export function App() {
           lodLevel: import.meta.env.VITE_STATIC_GS_LOD_LEVEL,
           splatBudget: import.meta.env.VITE_PLAYCANVAS_SPLAT_BUDGET,
         });
-        const gsplatRenderConfiguration = parseGsplatRenderConfiguration({
-          foveationCenter: import.meta.env.VITE_PLAYCANVAS_GSPLAT_FOVEATION_CENTER,
-          foveationStrength: import.meta.env.VITE_PLAYCANVAS_GSPLAT_FOVEATION_STRENGTH,
-          minContribution: import.meta.env.VITE_PLAYCANVAS_GSPLAT_MIN_CONTRIBUTION,
-          minPixelSize: import.meta.env.VITE_PLAYCANVAS_GSPLAT_MIN_PIXEL_SIZE,
-        });
-
+        const parsedGsplatRenderConfiguration = parseGsplatRenderConfiguration(
+          gsplatRenderEnvironmentConfiguration,
+        );
         const initialisedAdapter = new PlayCanvasGaussianRendererAdapter({
           canvas: targetCanvas,
           gpuTimingSampleIntervalMs,
           graphicsBackend,
-          ...gsplatRenderConfiguration,
+          ...parsedGsplatRenderConfiguration,
           ...(staticLodConfiguration.splatBudget === undefined
             ? {}
             : { splatBudget: staticLodConfiguration.splatBudget }),
@@ -292,6 +300,7 @@ export function App() {
         adapterRef.current = initialisedAdapter;
         await initialisedAdapter.initialise();
         if (active) {
+          setGsplatRenderConfiguration(parsedGsplatRenderConfiguration);
           setRendererRuntime(initialisedAdapter.getRuntimeInfo());
           setSplatBudget(staticLodConfiguration.splatBudget);
           setStaticLodLevel(staticLodConfiguration.lodLevel);
@@ -574,6 +583,7 @@ export function App() {
     void operation
       .then(() => {
         setXrStatus(adapter.isXrActive() ? "active" : "ready");
+        setRendererRuntime(adapter.getRuntimeInfo());
       })
       .catch((caught: unknown) => {
         setError(errorMessage(caught));
@@ -974,6 +984,32 @@ export function App() {
               : `${rendererRuntime.gaussianSort} (${
                   rendererRuntime.splatCentersEnabled ? "CPU centers" : "no CPU centers"
                 })`
+          }
+        />
+        <Metric
+          label="Forward alpha clip"
+          value={
+            gsplatRenderConfiguration.alphaClipForward === undefined
+              ? "PlayCanvas default"
+              : `${gsplatRenderConfiguration.alphaClipForward}`
+          }
+        />
+        <Metric
+          label="Splat rejection"
+          value={`${gsplatRenderConfiguration.minPixelSize ?? "default"} px / ${gsplatRenderConfiguration.minContribution ?? "default"} contribution`}
+        />
+        <Metric
+          label="Splat foveation"
+          value={`${gsplatRenderConfiguration.foveationStrength ?? 0} / center ${gsplatRenderConfiguration.foveationCenter ?? 0.3}`}
+        />
+        <Metric
+          label="XR fixed foveation"
+          value={
+            xrStatus === "active"
+              ? rendererRuntime?.xrFixedFoveation === null
+                ? "unsupported"
+                : `${rendererRuntime?.xrFixedFoveation ?? "checking"} active`
+              : `${gsplatRenderConfiguration.xrFixedFoveation ?? 0} configured`
           }
         />
         <Metric label="WebXR" value={xrStatus} />

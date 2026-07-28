@@ -2,11 +2,14 @@ import type { RendererMetrics } from "@6g-path/gaussian-player";
 import type { Application, Entity } from "playcanvas";
 
 export type PlayCanvasGraphicsBackend = "webgl2" | "webgpu";
+export type PlayCanvasGaussianSortMode = "auto" | "cpu" | "gpu";
 
 export interface PlayCanvasRendererRuntimeInfo {
   readonly graphicsBackend: PlayCanvasGraphicsBackend;
   readonly gaussianSort: "cpu" | "gpu";
   readonly splatCentersEnabled: boolean;
+  /** Active XR layer's accepted fixed-foveation value, or null outside supported XR. */
+  readonly xrFixedFoveation: number | null;
 }
 
 export type PlayCanvasGpuTimingStatus =
@@ -67,10 +70,14 @@ export interface PlayCanvasRendererAdapterOptions {
    * and Gaussian renderer settings when this is omitted.
    *
    * WebGPU is strict: initialisation fails instead of silently benchmarking
-   * PlayCanvas's WebGL2 fallback. It also selects GPU sort and disables the
-   * CPU-center data used by PlayCanvas's WebGL sort path.
+   * PlayCanvas's WebGL2 fallback.
    */
   graphicsBackend?: PlayCanvasGraphicsBackend;
+  /**
+   * Gaussian depth-sort implementation. Auto selects GPU sort on WebGPU and CPU
+   * sort on WebGL2. CPU sort remains available as an experimental WebGPU option.
+   */
+  gaussianSort?: PlayCanvasGaussianSortMode;
   /** Configure automatic canvas resolution. Defaults to true for adapter-owned applications. */
   manageResize?: boolean;
   /** Reject projected splats smaller than this screen-space radius. PlayCanvas defaults to 2. */
@@ -81,6 +88,13 @@ export interface PlayCanvasRendererAdapterOptions {
   foveationStrength?: number;
   /** Normalized radius at which peripheral rejection starts. PlayCanvas defaults to 0.3. */
   foveationCenter?: number;
+  /** Cull low-opacity splats from the forward pass. PlayCanvas defaults to 1 / 255. */
+  alphaClipForward?: number;
+  /**
+   * WebXR fixed-foveation level from 0 to 1. Applied after an immersive session
+   * starts when the browser's XR layer supports fixed foveation.
+   */
+  xrFixedFoveation?: number;
   /**
    * Interval between low-overhead WebGPU timestamp-query samples. Zero or undefined
    * disables GPU sampling. Values below 250 ms are rejected to protect frame cadence.

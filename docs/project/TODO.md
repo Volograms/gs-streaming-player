@@ -59,6 +59,8 @@ acceptance criteria are covered by implementation and verification.
         flags; the browser exposes `XRGPUBinding` and the demo enters immersive XR.
   - [x] Add a bounded, low-overhead WebGPU timestamp sampler that reports rolling
         GPU-frame and named-pass p50/p95 timings in the demo UI for Quest captures.
+  - [x] Expose forward alpha clipping, splat-level foveation, XR fixed foveation, and a
+        WebGPU CPU-sort selector for controlled Quest A/B measurements.
   - [ ] Capture repeated desktop and Quest 3 p50/p95 samples, including full-tier Quest
         traces and any WebGPU XR run that reports `XRGPUBinding`.
   - [x] Close the obsolete WebGPU-to-WebGL XR mirror experiment after native WebGPU XR

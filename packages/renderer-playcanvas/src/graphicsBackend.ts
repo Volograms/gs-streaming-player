@@ -4,6 +4,7 @@ import {
 } from "playcanvas";
 
 import type {
+  PlayCanvasGaussianSortMode,
   PlayCanvasGraphicsBackend,
   PlayCanvasRendererRuntimeInfo,
   PlayCanvasXrSupportInfo,
@@ -13,6 +14,7 @@ import type { Application } from "playcanvas";
 export function configurePlayCanvasGraphicsBackend(
   application: Application,
   requestedBackend: PlayCanvasGraphicsBackend,
+  requestedSort: PlayCanvasGaussianSortMode = "auto",
 ): PlayCanvasRendererRuntimeInfo {
   const actualBackend = readGraphicsBackend(application);
   if (actualBackend !== requestedBackend) {
@@ -21,15 +23,21 @@ export function configurePlayCanvasGraphicsBackend(
     );
   }
 
-  if (requestedBackend === "webgpu") {
-    application.scene.gsplat.renderer = GSPLAT_RENDERER_RASTER_GPU_SORT;
-    if (application.scene.gsplat.currentRenderer !== GSPLAT_RENDERER_RASTER_GPU_SORT) {
-      throw new Error(
-        "PlayCanvas WebGPU initialised without its GPU-sort Gaussian renderer.",
-      );
-    }
-    application.scene.gsplatCentersEnabled = false;
+  if (requestedSort === "gpu" && requestedBackend !== "webgpu") {
+    throw new Error("PlayCanvas GPU Gaussian sorting requires WebGPU.");
   }
+
+  const renderer =
+    requestedSort === "cpu" || requestedBackend === "webgl2"
+      ? GSPLAT_RENDERER_RASTER_CPU_SORT
+      : GSPLAT_RENDERER_RASTER_GPU_SORT;
+  application.scene.gsplat.renderer = renderer;
+  if (application.scene.gsplat.currentRenderer !== renderer) {
+    throw new Error(
+      `PlayCanvas could not select its ${renderer === GSPLAT_RENDERER_RASTER_GPU_SORT ? "GPU" : "CPU"}-sort Gaussian renderer.`,
+    );
+  }
+  application.scene.gsplatCentersEnabled = renderer === GSPLAT_RENDERER_RASTER_CPU_SORT;
 
   return readPlayCanvasRendererRuntimeInfo(application);
 }
@@ -48,6 +56,7 @@ export function readPlayCanvasRendererRuntimeInfo(
     gaussianSort: renderer === GSPLAT_RENDERER_RASTER_GPU_SORT ? "gpu" : "cpu",
     graphicsBackend: readGraphicsBackend(application),
     splatCentersEnabled: application.scene.gsplatCentersEnabled,
+    xrFixedFoveation: application.xr?.fixedFoveation ?? null,
   };
 }
 

@@ -112,6 +112,8 @@ export class PlayCanvasGaussianRendererAdapter
     validateOptionalNonNegativeNumber(options.minContribution, "minContribution");
     validateOptionalNonNegativeNumber(options.foveationStrength, "foveationStrength");
     validateOptionalUnitNumber(options.foveationCenter, "foveationCenter");
+    validateOptionalUnitNumber(options.alphaClipForward, "alphaClipForward");
+    validateOptionalUnitNumber(options.xrFixedFoveation, "xrFixedFoveation");
     validateGpuTimingSampleInterval(options.gpuTimingSampleIntervalMs);
     this.options = options;
     this.now = options.now ?? (() => performance.now());
@@ -177,7 +179,17 @@ export class PlayCanvasGaussianRendererAdapter
         this.options.graphicsBackend ??
         (ownsApplication ? ownedGraphicsBackend : undefined);
       if (requiredGraphicsBackend !== undefined) {
-        configurePlayCanvasGraphicsBackend(application, requiredGraphicsBackend);
+        configurePlayCanvasGraphicsBackend(
+          application,
+          requiredGraphicsBackend,
+          this.options.gaussianSort,
+        );
+      } else if (this.options.gaussianSort !== undefined) {
+        configurePlayCanvasGraphicsBackend(
+          application,
+          readPlayCanvasRendererRuntimeInfo(application).graphicsBackend,
+          this.options.gaussianSort,
+        );
       }
       if (this.options.splatBudget !== undefined) {
         application.scene.gsplat.splatBudget = this.options.splatBudget;
@@ -193,6 +205,9 @@ export class PlayCanvasGaussianRendererAdapter
       }
       if (this.options.foveationCenter !== undefined) {
         application.scene.gsplat.foveationCenter = this.options.foveationCenter;
+      }
+      if (this.options.alphaClipForward !== undefined) {
+        application.scene.gsplat.alphaClipForward = this.options.alphaClipForward;
       }
       this.gpuTimingSampler = new PlayCanvasGpuTimingSampler(
         application,
@@ -300,6 +315,9 @@ export class PlayCanvasGaussianRendererAdapter
         },
       });
     });
+    if (this.application.xr !== null && this.options.xrFixedFoveation !== undefined) {
+      this.application.xr.fixedFoveation = this.options.xrFixedFoveation;
+    }
   }
 
   private async waitForXrAvailability(timeoutMs = 1000): Promise<boolean> {

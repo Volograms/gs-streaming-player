@@ -192,15 +192,35 @@ WebGPU projector's rejection thresholds before changing the content format:
 ```dotenv
 VITE_PLAYCANVAS_GSPLAT_MIN_PIXEL_SIZE=4
 VITE_PLAYCANVAS_GSPLAT_MIN_CONTRIBUTION=5
+VITE_PLAYCANVAS_GSPLAT_ALPHA_CLIP_FORWARD=0.00784313725490196
 VITE_PLAYCANVAS_GSPLAT_FOVEATION_STRENGTH=8
 VITE_PLAYCANVAS_GSPLAT_FOVEATION_CENTER=0.3
+VITE_PLAYCANVAS_XR_FIXED_FOVEATION=0.5
 ```
 
 The first two settings remove sub-pixel and low-opacity/area splats before the GPU radix
 sort. Foveation progressively raises the contribution threshold outside the configured
-central radius. Start with `MIN_PIXEL_SIZE` values 2, 3, and 4 while holding the camera
-pose fixed, then add foveation for XR. These settings are global to the unified static
-and dynamic scene and trade peripheral/fine detail for frame time.
+central radius. `ALPHA_CLIP_FORWARD` removes low-opacity fragments in the forward draw;
+its default is `1 / 255`, and the example raises it to `2 / 255`. XR fixed foveation is
+applied after the immersive session starts and is independent of splat foveation. The
+diagnostics report `unsupported` if the active XR projection layer does not accept it.
+Start with `MIN_PIXEL_SIZE` values 2, 3, and 4 while holding the camera pose fixed, then
+add the two foveation controls for XR. The splat settings are global to the unified
+static and dynamic scene and trade peripheral/fine detail for frame time.
+
+WebGPU can also use PlayCanvas's asynchronous CPU sorter as an A/B experiment:
+
+```dotenv
+VITE_PLAYCANVAS_GRAPHICS_BACKEND=webgpu
+VITE_PLAYCANVAS_GSPLAT_SORT=cpu
+```
+
+`auto` selects GPU sorting on WebGPU and CPU sorting on WebGL2; `gpu` explicitly
+requires WebGPU. CPU sorting moves radix-sort work off the GPU but retains CPU splat
+centers and adds worker/ordering-transfer cost, so compare it at the same scene, pose,
+splat budget, and XR state. Select the mode before loading any SOG assets; the adapter
+does this during initialisation. The demo reports the active sort path and whether CPU
+centers are kept.
 
 The PlayCanvas demo enables a low-overhead WebGPU timing sampler by default:
 
