@@ -2,6 +2,7 @@ import {
   access,
   copyFile,
   mkdir,
+  readdir,
   readFile,
   rename,
   rm,
@@ -57,8 +58,9 @@ export interface DatasetBuildConfiguration {
     offsetSeconds?: number;
   };
   dynamic: {
-    frames: string[];
+    frames?: string[];
     id: string;
+    inputDir?: string;
     maxSh?: number;
     minimumPlayable?: string;
     outputFormat?: DynamicTierOutputFormat;
@@ -126,9 +128,7 @@ export async function buildDataset(
     );
     const configDir = dirname(configPath);
     validateOutputDirectory(outputDir, configDir);
-    const dynamicInputs = configuration.dynamic.frames.map((path) =>
-      resolveInput(path, configDir),
-    );
+    const dynamicInputs = await resolveDynamicInputs(configuration, configDir);
     const staticInputs = (configuration.staticObjects ?? []).map((object) => ({
       ...object,
       input: resolveInput(object.input, configDir),
@@ -211,7 +211,12 @@ export async function buildDataset(
         await readFile(join(dynamicDir, "quality-cuts.json"), "utf8"),
       ) as unknown,
     );
-    const manifest = createManifest(configuration, qualityIndex, audioUrl);
+    const manifest = createManifest(
+      configuration,
+      qualityIndex,
+      dynamicInputs.length,
+      audioUrl,
+    );
     await writeFile(
       join(stagingDir, "manifest.json"),
       `${JSON.stringify(manifest, null, 2)}\n`,
@@ -237,6 +242,7 @@ export async function buildDataset(
 function createManifest(
   configuration: DatasetBuildConfiguration,
   index: DynamicQualityCutIndex,
+  expectedFrameCount: number,
   audioUrl: string | undefined,
 ): GaussianSequenceManifest {
   const outputFormat = configuration.dynamic.outputFormat ?? "sog";
@@ -247,9 +253,9 @@ function createManifest(
       `Dynamic quality index format '${index.format}' does not match requested '${outputFormat}' output.`,
     );
   }
-  if (index.frames.length !== configuration.dynamic.frames.length) {
+  if (index.frames.length !== expectedFrameCount) {
     throw new Error(
-      `Dynamic quality index contains ${index.frames.length} frames; expected ${configuration.dynamic.frames.length}.`,
+      `Dynamic quality index contains ${index.frames.length} frames; expected ${expectedFrameCount}.`,
     );
   }
   const frameCount = index.frames.length;
@@ -327,18 +333,34 @@ function parseConfiguration(value: unknown): DatasetBuildConfiguration {
   if (!isRecord(value.dynamic)) {
     throw new Error("Dataset config dynamic section is required.");
   }
-  if (
-    typeof value.dynamic.id !== "string" ||
-    value.dynamic.id.trim() === "" ||
-    !Array.isArray(value.dynamic.frames) ||
-    value.dynamic.frames.length === 0 ||
-    value.dynamic.frames.some((frame) => typeof frame !== "string" || frame === "")
-  ) {
-    throw new Error(
-      "Dynamic id and at least one ordered PLY or SPZ frame are required.",
-    );
+  if (typeof value.dynamic.id !== "string" || value.dynamic.id.trim() === "") {
+    throw new Error("Dynamic id must be a non-empty string.");
   }
-  if (value.dynamic.frames.some((frame) => !/\.(?:ply|spz)$/i.test(frame as string))) {
+  const hasFrames = value.dynamic.frames !== undefined;
+  const hasInputDir = value.dynamic.inputDir !== undefined;
+  if (hasFrames === hasInputDir) {
+    throw new Error("Dynamic content requires exactly one of frames or inputDir.");
+  }
+  if (
+    hasFrames &&
+    (!Array.isArray(value.dynamic.frames) ||
+      value.dynamic.frames.length === 0 ||
+      value.dynamic.frames.some(
+        (frame) => typeof frame !== "string" || frame.trim() === "",
+      ))
+  ) {
+    throw new Error("dynamic.frames must contain at least one ordered path.");
+  }
+  if (
+    hasInputDir &&
+    (typeof value.dynamic.inputDir !== "string" || value.dynamic.inputDir.trim() === "")
+  ) {
+    throw new Error("dynamic.inputDir must be a non-empty string.");
+  }
+  if (
+    Array.isArray(value.dynamic.frames) &&
+    value.dynamic.frames.some((frame) => !/\.(?:ply|spz)$/i.test(frame as string))
+  ) {
     throw new Error("Every dynamic frame input must be a PLY or SPZ file.");
   }
   if (
@@ -434,6 +456,40 @@ async function stageAudio(inputPath: string, stagingDir: string): Promise<string
 
 function resolveInput(path: string, configDir: string): string {
   return isAbsolute(path) ? path : resolve(configDir, path);
+}
+
+async function resolveDynamicInputs(
+  configuration: DatasetBuildConfiguration,
+  configDir: string,
+): Promise<string[]> {
+  if (configuration.dynamic.frames !== undefined) {
+    return configuration.dynamic.frames.map((path) => resolveInput(path, configDir));
+  }
+
+  const configuredInputDir = configuration.dynamic.inputDir;
+  if (configuredInputDir === undefined) {
+    throw new Error("Dynamic content has no configured input source.");
+  }
+  const inputDir = resolveInput(configuredInputDir, configDir);
+  const entries = await readdir(inputDir, { withFileTypes: true });
+  const filenames = entries
+    .filter((entry) => entry.isFile() && /\.(?:ply|spz)$/i.test(entry.name))
+    .map((entry) => entry.name)
+    .sort(compareFrameFilenames);
+  if (filenames.length === 0) {
+    throw new Error(
+      `Dynamic input directory contains no top-level PLY or SPZ frames: ${inputDir}`,
+    );
+  }
+  return filenames.map((filename) => join(inputDir, filename));
+}
+
+function compareFrameFilenames(left: string, right: string): number {
+  const naturalOrder = left.localeCompare(right, "en", {
+    numeric: true,
+    sensitivity: "base",
+  });
+  return naturalOrder === 0 ? left.localeCompare(right, "en") : naturalOrder;
 }
 
 function validateOutputDirectory(outputDir: string, configDir: string): void {

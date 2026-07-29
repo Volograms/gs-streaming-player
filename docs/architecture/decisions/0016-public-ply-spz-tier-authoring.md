@@ -23,6 +23,11 @@ encodes an independently addressable bundled SOG or SPZ v4 file. SOG is the defa
 recommended web-delivery format; SPZ v4 remains available for renderer and CPU-decode
 experiments. Generated metadata records actual output splat counts and byte sizes.
 
+Build recipes normally identify a directory rather than enumerate frames. The build
+discovers top-level PLY/SPZ files in deterministic natural filename order and writes the
+expanded file list only into the generated canonical manifest. An explicit frame array
+remains available for irregular ordering; the two input forms are mutually exclusive.
+
 Persistent static sources continue to export as Streamed SOG. The existing
 `extract-rad-cuts` command, Rust helper, and RAD-to-SOG conversion commands remain
 available for legacy datasets, but `gs-content build` and `generate-tiers` do not call

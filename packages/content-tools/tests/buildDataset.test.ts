@@ -49,6 +49,82 @@ async function fixture(outputFormat: "sog" | "spz" = "sog") {
 }
 
 describe("buildDataset", () => {
+  it("discovers top-level PLY/SPZ frames from inputDir in natural filename order", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gs-content-input-dir-"));
+    const sequenceDir = join(root, "frames");
+    await mkdir(sequenceDir);
+    await writeFile(join(sequenceDir, "frame10.ply"), "ten");
+    await writeFile(join(sequenceDir, "frame2.spz"), "two");
+    await writeFile(join(sequenceDir, "frame1.ply"), "one");
+    await writeFile(join(sequenceDir, "notes.txt"), "ignored");
+    await mkdir(join(sequenceDir, "nested"));
+    await writeFile(join(sequenceDir, "nested", "frame0.ply"), "ignored");
+    const configPath = join(root, "dataset.json");
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        dynamic: {
+          id: "actor",
+          inputDir: "frames",
+          minimumPlayable: "minimum",
+          tiers: { minimum: 0.25, full: 1 },
+        },
+        frameRate: 30,
+        id: "folder-sequence",
+        version: 1,
+      }),
+    );
+    const output = createIo();
+    const inputPaths: string[][] = [];
+    const exitCode = await buildDataset(
+      {
+        configPath,
+        dryRun: false,
+        force: false,
+        outputDir: join(root, "output"),
+      },
+      output.io,
+      {
+        generateDynamicTiers: async (request) => {
+          inputPaths.push(request.inputPaths);
+          await mkdir(request.outputDir, { recursive: true });
+          await writeFile(
+            join(request.outputDir, "quality-cuts.json"),
+            JSON.stringify({
+              format: "flat-sog-quality-cuts",
+              frames: request.inputPaths.map((path, index) => ({
+                qualityLevels: [
+                  {
+                    byteSize: 100,
+                    codec: "sog-v2",
+                    detailLevel: 0.25,
+                    level: 0,
+                    minimumPlayable: true,
+                    splatCount: 25,
+                    url: `frame${index}-minimum.sog`,
+                  },
+                ],
+                sourceFile: path,
+              })),
+              version: 1,
+            }),
+          );
+          return 0;
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(output.stderr).toEqual([]);
+    expect(inputPaths).toEqual([
+      [
+        join(sequenceDir, "frame1.ply"),
+        join(sequenceDir, "frame2.spz"),
+        join(sequenceDir, "frame10.ply"),
+      ],
+    ]);
+  });
+
   it("dry-runs without invoking converters or writing output", async () => {
     const input = await fixture();
     const output = createIo();
@@ -228,5 +304,32 @@ describe("buildDataset", () => {
 
     expect(exitCode).toBe(1);
     expect(output.stderr.join("\n")).toContain("must be a PLY or SPZ");
+  });
+
+  it("rejects ambiguous dynamic input with both frames and inputDir", async () => {
+    const input = await fixture();
+    await writeFile(
+      input.configPath,
+      JSON.stringify({
+        dynamic: {
+          frames: ["inputs/frame0001.ply"],
+          id: "actor",
+          inputDir: "inputs",
+        },
+        frameRate: 30,
+        id: "ambiguous",
+        version: 1,
+      }),
+    );
+    const output = createIo();
+    const exitCode = await buildDataset(
+      { ...input, dryRun: true, force: false },
+      output.io,
+    );
+
+    expect(exitCode).toBe(1);
+    expect(output.stderr.join("\n")).toContain(
+      "requires exactly one of frames or inputDir",
+    );
   });
 });

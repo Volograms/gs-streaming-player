@@ -94,6 +94,11 @@ Use ordered PLY or SPZ frames from the reconstruction pipeline, then build deliv
 assets. SplatTransform performs public merge-based decimation for each configured tier;
 RAD is not required by this path.
 
+The build recipe can point `dynamic.inputDir` at a directory containing thousands of
+frames. The tool discovers them in natural filename order and generates the detailed
+runtime manifest; an explicit `dynamic.frames` list is only needed for irregular
+ordering.
+
 ```bash
 pnpm gs-content build dataset.json --output-dir dist/content --dry-run
 pnpm gs-content build dataset.json --output-dir dist/content

@@ -24,9 +24,11 @@ of temporal frame tiers.
 
 ## 3. Define the build
 
-Create a JSON config with `version`, dataset `id`, `frameRate`, ordered
-`dynamic.frames`, and `dynamic.tiers`. Add transforms, static sources, and audio when
-needed. Paths are resolved relative to the config file.
+Create a small JSON build recipe with `version`, dataset `id`, `frameRate`, and
+`dynamic.inputDir`. This is not the runtime manifest: the build discovers the source
+frames and generates the complete canonical `manifest.json` in the output directory. Add
+transforms, static sources, and audio when needed. Paths are resolved relative to the
+recipe.
 
 ```json
 {
@@ -35,16 +37,26 @@ needed. Paths are resolved relative to the config file.
   "frameRate": 30,
   "dynamic": {
     "id": "performer",
-    "frames": ["frames/frame-0000.ply", "frames/frame-0001.spz"],
+    "inputDir": "frames",
     "outputFormat": "sog",
-    "tiers": { "quarter": 0.25, "half": 0.5, "full": 1 },
-    "minimumPlayable": "quarter",
+    "tiers": { "preview": 0.1, "minimum": 0.25, "medium": 0.5, "full": 1 },
+    "minimumPlayable": "minimum",
     "maxSh": 0
   },
   "staticObjects": [{ "id": "stage", "input": "static/stage.ply" }],
   "audio": { "input": "audio/performance.ogg", "offsetSeconds": 0 }
 }
 ```
+
+`inputDir` is scanned non-recursively for `.ply` and `.spz` files. Files are put in
+natural filename order, so `frame2.ply` precedes `frame10.ply`. Keep only original frame
+sources in that directory and use stable frame-number filenames. For a deliberately
+irregular sequence, replace `inputDir` with an explicit `frames` array; specifying both
+is an error.
+
+The `tiers` and `minimumPlayable` fields above show the defaults and may be omitted.
+Tier names are user-defined when custom ratios are useful, but `minimumPlayable` must
+name one of them.
 
 Preview and run:
 
@@ -55,9 +67,10 @@ pnpm gs-content build dataset.json --output-dir dist/content
 
 Existing output is protected; pass `--force` only after checking the target. The build
 stages output, generates merge-decimated dynamic tiers, exports static Streamed SOG,
-copies audio, populates exact splat/byte metadata, validates the canonical manifest, and
-then promotes the result. `outputFormat` defaults to `"sog"`; use `"spz"` to produce SPZ
-v4 tiers for an experimental runtime path.
+copies audio, populates exact splat/byte metadata, generates and validates the canonical
+manifest, and then promotes the result. It does not rewrite the input recipe with file
+names. `outputFormat` defaults to `"sog"`; use `"spz"` to produce SPZ v4 tiers for an
+experimental runtime path.
 
 To generate tiers without building a complete dataset:
 
