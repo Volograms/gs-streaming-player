@@ -3,7 +3,6 @@ import { FrameRingBuffer, SequencePlaybackController } from "@6g-path/gaussian-p
 import {
   PLAYCANVAS_SOG_CODEC_ID,
   PlayCanvasGaussianRendererAdapter,
-  RenderView,
   queryPlayCanvasImmersiveVrSupport,
 } from "@6g-path/gaussian-renderer-playcanvas";
 import { memo, useEffect, useRef, useState } from "react";
@@ -15,7 +14,6 @@ import { readStaticLoadDiagnostics } from "./staticLoadDiagnostics.js";
 import { parseStaticLodConfiguration } from "./staticLodConfiguration.js";
 import { createStaticSceneTransform } from "./staticSceneTransform.js";
 import { StreamingDiagnostics } from "./streamingDiagnostics.js";
-import { WebglXrMirrorPresenter } from "./webglXrMirror.js";
 import { XrPlaybackClock } from "./xrPlaybackClock.js";
 
 import type { GsplatRenderConfiguration } from "./gsplatRenderConfiguration.js";
@@ -25,11 +23,6 @@ import type {
   DiagnosticDistribution,
   StreamingDiagnosticsSnapshot,
 } from "./streamingDiagnostics.js";
-import type {
-  WebglXrMirrorSourceLayout,
-  WebglXrMirrorStats,
-  WebglXrViewerPose,
-} from "./webglXrMirror.js";
 import type {
   FrameRingBufferSnapshot,
   FrameRingBufferTraceEvent,
@@ -115,7 +108,6 @@ const futureFrameCount = positiveInteger(
 );
 const xrBackendFallbackEnabled =
   import.meta.env.VITE_PLAYCANVAS_XR_BACKEND_FALLBACK === "true";
-const xrMirrorEnabled = import.meta.env.VITE_PLAYCANVAS_XR_MIRROR === "true";
 const gpuTimingSampleIntervalMs = gpuTimingSampleInterval(
   import.meta.env.VITE_PLAYCANVAS_GPU_TIMING_INTERVAL_MS,
 );
@@ -162,13 +154,10 @@ export function App() {
     useRef<DynamicGaussianSequence["transform"]>(undefined);
   const playbackRef = useRef<SequencePlaybackController | undefined>(undefined);
   const playbackClockRef = useRef<XrPlaybackClock | undefined>(undefined);
-  const xrMirrorRef = useRef<WebglXrMirrorPresenter | undefined>(undefined);
   const [bufferSnapshot, setBufferSnapshot] = useState<FrameRingBufferSnapshot>();
   const [error, setError] = useState<string>();
   const [frameIndex, setFrameIndex] = useState(0);
   const [lifecycle, setLifecycle] = useState<PlayerLifecycleState>("IDLE");
-  const [mirrorActive, setMirrorActive] = useState(false);
-  const [mirrorStats, setMirrorStats] = useState<WebglXrMirrorStats>();
   const [metrics, setMetrics] = useState<PlayCanvasRendererMetrics>();
   const [qualityLevels, setQualityLevels] = useState<readonly GaussianQualityLevel[]>(
     [],
@@ -482,8 +471,6 @@ export function App() {
       if (adapterRef.current === adapter) {
         adapterRef.current = undefined;
       }
-      xrMirrorRef.current?.dispose();
-      xrMirrorRef.current = undefined;
     };
   }, [xrEnabled]);
 
@@ -588,209 +575,6 @@ export function App() {
       .catch((caught: unknown) => {
         setError(errorMessage(caught));
         setXrStatus("unavailable");
-      });
-  }
-
-  function toggleXrMirror() {
-    const sourceCanvas = canvasRef.current;
-    const adapter = adapterRef.current;
-    if (sourceCanvas === null || adapter === undefined) {
-      return;
-    }
-    const activeMirror = xrMirrorRef.current;
-    if (activeMirror !== undefined && activeMirror.active) {
-      void activeMirror.end().catch((caught: unknown) => {
-        setError(errorMessage(caught));
-      });
-      return;
-    }
-
-    const application = adapter.application;
-    const playbackClock = playbackClockRef.current;
-    const cameraEntity = adapter.cameraEntity;
-    const camera = cameraEntity.camera;
-    if (camera === undefined) {
-      setError("The PlayCanvas mirror camera is unavailable.");
-      return;
-    }
-    const previousAutoRender = application.autoRender;
-    const originalCanvasHeight = sourceCanvas.height;
-    const originalCanvasWidth = sourceCanvas.width;
-    const originalResolutionMode = application.resolutionMode;
-    const originalCameraPosition = cameraEntity.getPosition().clone();
-    const originalCameraRotation = cameraEntity.getRotation().clone();
-    const originalCameraTransform = cameraEntity.getWorldTransform().clone();
-    const originalCalculateProjection = camera.calculateProjection;
-    const sceneCamera = camera.camera;
-    const originalXrViews = sceneCamera.xrViews;
-    const anchorTransform = originalCameraTransform.clone();
-    const viewerTransform = originalCameraTransform.clone();
-    const parentInverse = originalCameraTransform.clone().setIdentity();
-    const localEyeTransform = originalCameraTransform.clone();
-    const xrEyeTransform = originalCameraTransform.clone();
-    const eyeWorldTransform = originalCameraTransform.clone();
-    const viewerWorldTransform = originalCameraTransform.clone();
-    const viewerPosition = originalCameraPosition.clone();
-    const viewerRotation = originalCameraRotation.clone();
-    const renderViews = {
-      left: new RenderView(),
-      right: new RenderView(),
-    };
-    let lastXrApplicationTime: number | undefined;
-    let anchorInitialised = false;
-    let sourceRestored = false;
-    const restoreSource = () => {
-      if (!sourceRestored) {
-        application.autoRender = previousAutoRender;
-        camera.calculateProjection = originalCalculateProjection;
-        sceneCamera.xrViews = originalXrViews;
-        cameraEntity.setPosition(originalCameraPosition);
-        cameraEntity.setRotation(originalCameraRotation);
-        if (originalResolutionMode === "AUTO") {
-          application.setCanvasResolution(originalResolutionMode);
-        } else {
-          const pixelRatio = Math.min(
-            application.graphicsDevice.maxPixelRatio,
-            window.devicePixelRatio,
-          );
-          application.setCanvasResolution(
-            originalResolutionMode,
-            originalCanvasWidth / pixelRatio,
-            originalCanvasHeight / pixelRatio,
-          );
-          application.graphicsDevice.setResolution(
-            originalCanvasWidth,
-            originalCanvasHeight,
-          );
-        }
-        sourceRestored = true;
-      }
-    };
-    const renderSourceFrame = (
-      pose: WebglXrViewerPose,
-      sourceLayout: WebglXrMirrorSourceLayout,
-      time: number,
-    ) => {
-      if (!anchorInitialised) {
-        viewerTransform.set(pose.transform.matrix as unknown as number[]).invert();
-        anchorTransform.copy(originalCameraTransform).mul(viewerTransform);
-        const parent = cameraEntity.parent;
-        if (parent !== null) {
-          parentInverse.copy(parent.getWorldTransform()).invert();
-        }
-        anchorInitialised = true;
-      }
-
-      const stereoViews = pose.views.filter(
-        (view) => view.eye === "left" || view.eye === "right",
-      );
-      if (stereoViews.length !== 2) {
-        throw new Error(
-          `Expected two WebXR eye views, received ${stereoViews.length}.`,
-        );
-      }
-      if (
-        application.resolutionMode !== "FIXED" ||
-        sourceCanvas.width !== sourceLayout.width ||
-        sourceCanvas.height !== sourceLayout.height
-      ) {
-        // application.render() calls updateCanvasSize(). Keep the mirror resolution
-        // fixed or RESOLUTION_AUTO immediately shrinks the packed XR viewports back to
-        // the desktop CSS size, placing both views in one source region.
-        const pixelRatio = Math.min(
-          application.graphicsDevice.maxPixelRatio,
-          window.devicePixelRatio,
-        );
-        application.setCanvasResolution(
-          "FIXED",
-          sourceLayout.width / pixelRatio,
-          sourceLayout.height / pixelRatio,
-        );
-        application.graphicsDevice.setResolution(
-          sourceLayout.width,
-          sourceLayout.height,
-        );
-      }
-      for (const view of stereoViews) {
-        const renderView = renderViews[view.eye as "left" | "right"];
-        const sourceView = sourceLayout.views.find(({ eye }) => eye === view.eye);
-        if (sourceView === undefined) {
-          throw new Error(
-            `No packed source viewport exists for WebXR eye ${view.eye}.`,
-          );
-        }
-        eyeWorldTransform
-          .copy(anchorTransform)
-          .mul(xrEyeTransform.set(view.transform.matrix as unknown as number[]));
-        localEyeTransform.copy(parentInverse).mul(eyeWorldTransform);
-        renderView.setView(view.projectionMatrix, localEyeTransform.data);
-        renderView.setViewport(
-          sourceView.x,
-          sourceView.y,
-          sourceView.width,
-          sourceView.height,
-        );
-      }
-
-      viewerWorldTransform
-        .copy(anchorTransform)
-        .mul(xrEyeTransform.set(pose.transform.matrix as unknown as number[]));
-      viewerWorldTransform.getTranslation(viewerPosition);
-      viewerRotation.setFromMat4(viewerWorldTransform);
-      cameraEntity.setPosition(viewerPosition);
-      cameraEntity.setRotation(viewerRotation);
-      camera.calculateProjection = originalCalculateProjection;
-      sceneCamera.xrViews = [renderViews.left, renderViews.right];
-      const elapsedMs =
-        lastXrApplicationTime === undefined
-          ? 0
-          : Math.max(0, time - lastXrApplicationTime);
-      const deltaSeconds =
-        Math.min(application.maxDeltaTime, elapsedMs / 1000) * application.timeScale;
-      application.fire("frameupdate", elapsedMs);
-      application.update(deltaSeconds);
-      application.fire("framerender");
-      application.render();
-      application.renderNextFrame = false;
-      application.fire("frameend");
-      application.stats.frameEnd();
-      lastXrApplicationTime = time;
-    };
-    const nextMirror = new WebglXrMirrorPresenter(sourceCanvas, {
-      onEnd: () => {
-        playbackClock?.exitXr();
-        restoreSource();
-        if (xrMirrorRef.current === nextMirror) {
-          xrMirrorRef.current = undefined;
-        }
-        setMirrorActive(false);
-      },
-      onError: (caught) => {
-        playbackClock?.exitXr();
-        setError(errorMessage(caught));
-        setMirrorActive(false);
-      },
-      onStats: setMirrorStats,
-      onXrFrame: () => playbackClock?.tick(performance.now()),
-      renderSourceFrame,
-    });
-    xrMirrorRef.current = nextMirror;
-    application.autoRender = false;
-    playbackClock?.enterXr();
-    void nextMirror
-      .start()
-      .then(() => {
-        setMirrorActive(true);
-      })
-      .catch((caught: unknown) => {
-        playbackClock?.exitXr();
-        restoreSource();
-        nextMirror.dispose();
-        if (xrMirrorRef.current === nextMirror) {
-          xrMirrorRef.current = undefined;
-        }
-        setError(errorMessage(caught));
-        setMirrorActive(false);
       });
   }
 
@@ -901,17 +685,6 @@ export function App() {
               {xrStatus === "active" ? "Exit VR" : "Enter VR"}
             </button>
           ) : null}
-          {xrEnabled && xrMirrorEnabled ? (
-            <button
-              className="xr-button"
-              disabled={
-                status !== "ready" || rendererRuntime?.graphicsBackend !== "webgpu"
-              }
-              onClick={toggleXrMirror}
-            >
-              {mirrorActive ? "Exit mirror" : "XR mirror"}
-            </button>
-          ) : null}
         </div>
       </section>
 
@@ -1013,36 +786,6 @@ export function App() {
           }
         />
         <Metric label="WebXR" value={xrStatus} />
-        {xrMirrorEnabled ? (
-          <>
-            <Metric label="XR mirror" value={mirrorActive ? "active" : "ready"} />
-            <Metric
-              label="Mirror FPS"
-              value={formatRate(mirrorStats?.xrFramesPerSecond)}
-            />
-            <Metric
-              label="Mirror copy"
-              value={formatDuration(mirrorStats?.uploadAndDrawMs)}
-            />
-            <Metric
-              label="Mirror render"
-              value={formatDuration(mirrorStats?.sourceRenderMs)}
-            />
-            <Metric
-              label="Mirror source"
-              value={
-                mirrorStats === undefined
-                  ? "waiting"
-                  : `${mirrorStats.sourceWidth} x ${mirrorStats.sourceHeight}`
-              }
-            />
-            <Metric
-              label="Mirror upload"
-              value={mirrorStats?.uploadPath ?? "waiting"}
-            />
-            <Metric label="Mirror view" value={mirrorStats?.viewMode ?? "waiting"} />
-          </>
-        ) : null}
       </section>
 
       <GpuTimingPanel snapshot={gpuTimings} />

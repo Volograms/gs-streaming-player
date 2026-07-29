@@ -2,10 +2,18 @@
   "name": "gs-streaming-player",
   "version": "0.0.0",
   "private": true,
-  "description": "Adaptive Gaussian Splat streaming player for the 6G-PATH project",
+  "description": "Source-only Volograms 4DGS streaming player public preview",
+  "homepage": "https://volograms.github.io/gs-streaming-player/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Volograms/gs-streaming-player.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Volograms/gs-streaming-player/issues"
+  },
   "license": "MIT",
   "type": "module",
-  "packageManager": "pnpm@11.13.0",
+  "packageManager": "pnpm@11.13.1",
   "engines": {
     "node": ">=22.12.0"
   },
@@ -15,6 +23,7 @@
     "dev": "pnpm --filter @6g-path/demo dev",
     "dev:babylon": "pnpm --filter @6g-path/demo-babylon dev",
     "dev:playcanvas": "pnpm --filter @6g-path/demo-playcanvas dev",
+    "dev:showcase": "pnpm --filter @6g-path/showcase dev",
     "dev:spark": "pnpm --filter @6g-path/demo dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -24,10 +33,11 @@
     "profile:demo": "pnpm build && pnpm --filter @6g-path/demo preview --port 4174",
     "profile:babylon": "pnpm build && pnpm --filter @6g-path/demo-babylon preview --port 4176",
     "profile:playcanvas": "pnpm build && pnpm --filter @6g-path/demo-playcanvas preview --port 4178",
+    "profile:showcase": "pnpm build && pnpm --filter @6g-path/showcase preview --port 4180",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test",
-    "test:e2e:performance": "playwright test tests/e2e/playback.performance.spec.ts",
+    "test:e2e": "node scripts/run-e2e.mjs",
+    "test:e2e:performance": "node scripts/run-e2e.mjs tests/e2e/playback.performance.spec.ts",
     "typecheck": "pnpm --recursive --if-present typecheck"
   },
   "devDependencies": {

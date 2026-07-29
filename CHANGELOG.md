@@ -5,7 +5,17 @@ All notable changes to this project will be documented here. The project uses
 
 ## [Unreleased]
 
+### Removed
+
+- The abandoned WebGPU-to-WebGL XR bridge, including its runtime flag, controls,
+  metrics, and presenter. Its historical result remains in the performance record.
+
 ### Added
+
+- A source-only Volograms 4DGS public preview: `GaussianStreamingPlayer`, audio-backed
+  timing, adaptive PlayCanvas render budgets, a landing/player showcase with Quest XR
+  transport controls, the `gs-content build` dataset pipeline, Pages deployment, and
+  focused integration/content/hosting/support documentation.
 
 - PlayCanvas Quest tuning controls for pre-sort minimum pixel size and projected
   contribution, forward alpha clipping, splat-level and XR fixed foveation, plus an
@@ -49,22 +59,6 @@ All notable changes to this project will be documented here. The project uses
 - Quest 3 setup documentation now records the three browser flags required by the
   validated native WebGPU-WebXR path: WebXR/WebGPU Binding, WebXR Projection Layers, and
   WebXR Experiments.
-- An opt-in PlayCanvas demo `XR mirror` spike can run WebGPU rendering while presenting
-  the visible WebGPU canvas through a separate WebGL2 WebXR session for Quest handoff
-  measurements. Mirror frames now render the WebGPU source synchronously before upload
-  so the browser cannot return an already-presented transparent-black canvas, and WebGL
-  upload, framebuffer, draw, and context failures are reported explicitly. Browsers that
-  reject direct WebGPU-canvas texture uploads now fall back to a measured accelerated
-  Canvas2D staging path. The bridge now feeds the ordered left/right WebXR view and
-  projection matrices into PlayCanvas's native stereo path, renders a packed
-  side-by-side WebGPU frame at the WebGL XR layer's native per-eye viewport resolution,
-  and routes the matching region to each WebGL XR eye. The mirror temporarily locks
-  PlayCanvas to fixed canvas resolution so its automatic desktop resize cannot collapse
-  both native eye viewports into one texture region. Dynamic playback deadlines migrate
-  from window timers to the immersive session's animation frames while the mirror is
-  active, then return to window timers when XR ends. Each XR frame also drives the full
-  PlayCanvas update, `framerender`, render, and `frameend` lifecycle so dynamic splat
-  commits and cleanup do not wait on the suspended window animation loop.
 - Native PlayCanvas SOG v2 playback through a dedicated renderer adapter and demo. The
   adapter consumes compressed SOG bytes from the player-owned cache, creates
   PlayCanvas-native assets without an expanded neutral Gaussian frame, reuses one

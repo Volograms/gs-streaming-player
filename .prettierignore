@@ -6,6 +6,8 @@ test-results/
 pnpm-lock.yaml
 docs/project-summary.md
 AGENT.md
+AGENTS.md
+docs/architecture/analysis-1.md
 Trace-*.json
 packages/codec-spz/src/vendor/spz.js
 packages/codec-spz/src/vendor/spz.d.ts

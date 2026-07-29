@@ -1,5 +1,12 @@
 # Adaptive Gaussian Splat Streaming Player
 
+> Public-preview update (2026-07-29): the product surface is now the source-only
+> **Volograms 4DGS Streaming Player**, its `GaussianStreamingPlayer` facade, canonical
+> manifest, SOG content builder, and Pages showcase. PlayCanvas/SOG is recommended;
+> Spark/RAD and Babylon/SPZ are experimental. Later sections preserve the original
+> implementation plan as project history. See
+> [ADR 0015](architecture/decisions/0015-public-preview-product-surface.md).
+
 ## 1. Project Summary
 
 ### Project goal

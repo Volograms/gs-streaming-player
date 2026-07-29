@@ -1,3 +1,4 @@
+import { buildDataset } from "../build-dataset/buildDataset.js";
 import { runRadQualityCuts } from "../rad-cuts/runRadQualityCuts.js";
 import { convertQualityCutsToSog } from "../sog/convertQualityCutsToSog.js";
 import { exportStreamedSog } from "../sog/exportStreamedSog.js";
@@ -7,6 +8,10 @@ import {
   validateManifestFile,
 } from "../validate-manifest/validateManifestFile.js";
 
+import type {
+  BuildDatasetRequest,
+  BuildDatasetRunner,
+} from "../build-dataset/buildDataset.js";
 import type {
   RadQualityCutsRequest,
   RadQualityCutsRunner,
@@ -27,6 +32,7 @@ export interface CliIo {
 }
 
 const USAGE = `Usage:
+  pnpm gs-content build <dataset-config.json> --output-dir <dir> [--dry-run] [--force]
   pnpm gs-manifest validate <manifest.json> [--check-assets]
   pnpm gs-content extract-rad-cuts <frame.rad> [more.rad ...] --output-dir <dir> [options]
   pnpm gs-content convert-sog <quality-cuts.json|scene.spz> --output-dir <dir> [options]
@@ -55,6 +61,7 @@ Options:
   --help          Show this help.`;
 
 export interface CliDependencies {
+  buildDataset?: BuildDatasetRunner;
   convertQualityCutsToSog?: ConvertQualityCutsToSogRunner;
   exportStreamedSog?: ExportStreamedSogRunner;
   repackSpzV4?: RepackSpzV4Runner;
@@ -72,6 +79,13 @@ export async function runCli(
   }
 
   const command = args[0];
+  if (command === "build") {
+    const request = parseBuildDatasetRequest(args.slice(1), io);
+    if (request === undefined) {
+      return 2;
+    }
+    return (dependencies.buildDataset ?? buildDataset)(request, io);
+  }
   if (command === "extract-rad-cuts") {
     const request = parseRadQualityCutsRequest(args.slice(1), io);
     if (request === undefined) {
@@ -139,6 +153,60 @@ export async function runCli(
     `  ${result.manifest.dynamicSequences.length} sequence(s), ${countManifestFrames(result.manifest)} frame(s)`,
   );
   return 0;
+}
+
+function parseBuildDatasetRequest(
+  args: readonly string[],
+  io: CliIo,
+): BuildDatasetRequest | undefined {
+  const request: BuildDatasetRequest = {
+    configPath: "",
+    dryRun: false,
+    force: false,
+    outputDir: "",
+  };
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === undefined) {
+      continue;
+    }
+    if (!argument.startsWith("--")) {
+      if (request.configPath !== "") {
+        io.stderr("build accepts exactly one dataset config.");
+        io.stderr(USAGE);
+        return undefined;
+      }
+      request.configPath = argument;
+      continue;
+    }
+    if (argument === "--dry-run") {
+      request.dryRun = true;
+      continue;
+    }
+    if (argument === "--force") {
+      request.force = true;
+      continue;
+    }
+    if (argument !== "--output-dir") {
+      io.stderr(`Unknown option: ${argument}`);
+      io.stderr(USAGE);
+      return undefined;
+    }
+    const value = args[index + 1];
+    if (value === undefined || value.startsWith("--")) {
+      io.stderr("Option --output-dir requires a value.");
+      io.stderr(USAGE);
+      return undefined;
+    }
+    request.outputDir = value;
+    index += 1;
+  }
+  if (request.configPath === "" || request.outputDir === "") {
+    io.stderr("A dataset config and --output-dir are required.");
+    io.stderr(USAGE);
+    return undefined;
+  }
+  return request;
 }
 
 function parseExportStreamedSogRequest(

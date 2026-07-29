@@ -359,12 +359,11 @@ Configure the demo for strict native WebGPU-backed XR:
 ```dotenv
 VITE_PLAYCANVAS_GRAPHICS_BACKEND=webgpu
 VITE_PLAYCANVAS_XR_BACKEND_FALLBACK=false
-VITE_PLAYCANVAS_XR_MIRROR=false
 ```
 
 After loading the demo, verify that its diagnostics report `Graphics webgpu`,
 `Sort path gpu (no CPU centers)`, and `WebXR ready`. Entering VR then exercises
-PlayCanvas's native WebGPU stereo path rather than the WebGPU-to-WebGL mirror.
+PlayCanvas's native WebGPU stereo path.
 
 PlayCanvas requires the browser to expose `XRGPUBinding` before a WebGPU graphics device
 can host immersive XR. If the demo still reports `webgpu binding missing`, WebGPU page
@@ -382,89 +381,6 @@ For a useful Quest comparison:
 - record preparation/handoff cadence, renderer FPS, splat count, compressed-cache
   occupancy, and GPU/JS memory where the browser exposes it;
 - use the production profile build after functional validation.
-
-### WebGPU-to-WebGL XR mirror experiment
-
-The PlayCanvas demo includes an opt-in bridge spike for browsers where WebGPU rendering
-works but WebGPU-backed WebXR is blocked by a missing `XRGPUBinding`:
-
-```dotenv
-VITE_PLAYCANVAS_GRAPHICS_BACKEND=webgpu
-VITE_PLAYCANVAS_XR_BACKEND_FALLBACK=false
-VITE_PLAYCANVAS_XR_MIRROR=true
-VITE_STATIC_GS_URL=/assets/YOUR_STATIC_ENVIRONMENT.sog
-VITE_STATIC_GS_SCALE=1
-VITE_STATIC_GS_ROTATION_X_DEGREES=0
-VITE_STATIC_GS_POSITION_X=0
-VITE_STATIC_GS_POSITION_Y=0
-VITE_STATIC_GS_POSITION_Z=0
-VITE_DYNAMIC_GS_POSITION_X=0
-VITE_DYNAMIC_GS_POSITION_Y=0
-VITE_DYNAMIC_GS_POSITION_Z=0
-```
-
-`VITE_STATIC_GS_SCALE` is a signed uniform scale, so values such as `-2` are passed
-through to the PlayCanvas entity. Use `VITE_STATIC_GS_ROTATION_X_DEGREES=180` when an
-asset needs an explicit upside-down orientation correction without changing handedness.
-The `VITE_STATIC_GS_POSITION_*` and `VITE_DYNAMIC_GS_POSITION_*` values add independent
-world-space offsets to the static scene and dynamic sequence. The demo exposes separate
-live controls for both objects, so adjusting the static floor alignment does not move
-the dynamic GS. Copy the final values into the environment configuration when the
-placement should persist across reloads.
-
-This adds an `XR mirror` button. It starts a separate WebGL2 WebXR session. For each XR
-frame, the bridge anchors the initial viewer-center pose to the existing PlayCanvas
-camera and supplies both ordered `left`/`right` WebXR view-to-world and projection
-matrices through PlayCanvas's native `RenderView` path. This is required for the GPU
-Gaussian projector to select its stereo variant. PlayCanvas renders both eyes into the
-left and right regions of one WebGPU canvas. The region dimensions come directly from
-the WebGL XR layer's per-eye viewports, avoiding the blur caused by splitting the normal
-desktop canvas resolution between both eyes. The bridge uploads that native-resolution
-packed canvas once and draws the matching region into each WebGL XR viewport. The canvas
-stays in fixed-resolution mode during the mirror session because PlayCanvas's automatic
-desktop resize runs at the start of every render and would otherwise collapse the packed
-eye viewports back into the CSS canvas size. The original resolution mode, canvas
-resolution, camera, XR views, and automatic render loop are restored when the session
-ends.
-
-Browsers can pause or heavily throttle normal window timers and animation frames while
-an immersive session presents. The demo therefore migrates pending playback deadlines to
-an XR-aware clock when the mirror starts. Each `XRSession.requestAnimationFrame`
-services due playback work and drives PlayCanvas's update, `framerender`, render, and
-`frameend` lifecycle. The complete lifecycle is necessary because dynamic splat
-presentation commits during `prerender`, unified-splat streaming reconciles during
-`framerender`, and deferred resource release completes at `frameend`. Ending the session
-moves any remaining deadline back to a normal window timer without restarting the
-playback timeline.
-
-The source render and upload are synchronized because reading a WebGPU canvas after its
-current texture has been presented can legitimately return transparent black without a
-WebGL error. `Mirror render` reports the packed stereo source render; `Mirror copy`
-reports its single upload plus both eye draws. `Mirror view` confirms whether WebXR
-supplied a left/right stereo pair. `Mirror upload` is `direct` when the browser accepts
-the WebGPU canvas as a WebGL texture source. If that operation returns
-`INVALID_OPERATION`, the bridge switches to `canvas-2d`: the synchronized packed frame
-is first drawn into an accelerated 2D canvas and that canvas is uploaded to WebGL. The
-fallback copy remains included in `Mirror copy`.
-
-Record `Static SOG`, `Mirror view`, `Mirror render`, `Mirror copy`, `Mirror FPS`, visual
-stability, and headset comfort at minimum, medium, and full dynamic tiers. The bridge
-fails visibly on WebGL context loss, other texture-upload errors, missing or incomplete
-XR framebuffers, missing stereo views, and draw errors.
-
-`Mirror source` should equal the two WebGL eye viewport widths combined by their maximum
-height. A substantially larger source than the initial 1178 x 620 desktop canvas is
-expected and makes the render/copy timings representative of the actual headset
-resolution.
-
-The first successful Quest 3 handoff used the `canvas-2d` fallback at 1178 x 620. A
-captured sample reported a 9.4 ms `Mirror copy`, 1.4 ms `Mirror render`, and 24.5
-`Mirror FPS` while displaying the 25% dynamic tier (about 68k rendered splats) in both
-eyes. This validates image transfer, but not stereo or head tracking: the mono spike
-deliberately sends the same desktop-camera image to both eyes. The configured static SOG
-also failed to load in that run, so medium-quality and composed-scene measurements
-remain open. That measurement predates the stereo implementation and is not
-representative of the packed stereo render path.
 
 ## Current capability boundary
 

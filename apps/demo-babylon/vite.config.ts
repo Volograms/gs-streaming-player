@@ -1,6 +1,7 @@
-import react from "@vitejs/plugin-react";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+
+import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 
 const certificateDirectory = fileURLToPath(new URL("../../.cert/", import.meta.url));

@@ -47,7 +47,8 @@ type RendererStatus = "initialising" | "ready" | "unavailable";
 type StaticAssetStatus = "failed" | "loading" | "not-configured" | "ready";
 type DynamicAssetStatus = "failed" | "loading" | "not-configured" | "ready";
 
-const staticRadUrl = import.meta.env.VITE_STATIC_RAD_URL;
+const configuredStaticRadUrl = import.meta.env.VITE_STATIC_RAD_URL?.trim();
+const staticRadUrl = configuredStaticRadUrl === "" ? undefined : configuredStaticRadUrl;
 const dynamicSequenceConfigured = hasLocalDynamicSequenceConfiguration(import.meta.env);
 const dynamicFrameCodec = readLocalDynamicFrameCodec(import.meta.env);
 const preloadCompleteDynamicSequence =

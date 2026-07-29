@@ -155,6 +155,21 @@ importers:
         specifier: ^19.2.7
         version: 19.2.7(react@19.2.7)
 
+  apps/showcase:
+    dependencies:
+      '@6g-path/gaussian-player':
+        specifier: workspace:*
+        version: link:../../packages/player-core
+      '@6g-path/gaussian-renderer-playcanvas':
+        specifier: workspace:*
+        version: link:../../packages/renderer-playcanvas
+      react:
+        specifier: ^19.2.7
+        version: 19.2.7
+      react-dom:
+        specifier: ^19.2.7
+        version: 19.2.7(react@19.2.7)
+
   packages/codec-core: {}
 
   packages/codec-spz:

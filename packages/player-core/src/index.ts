@@ -75,6 +75,15 @@ export {
   type SequencePlaybackControllerOptions,
   type SequencePlaybackSnapshot,
 } from "./player/SequencePlaybackController.js";
+export {
+  GaussianStreamingPlayer,
+  type GaussianStreamingMediaElement,
+  type GaussianStreamingMediaElementFactory,
+  type GaussianStreamingPlayerBufferOptions,
+  type GaussianStreamingPlayerOptions,
+  type GaussianStreamingPlayerSnapshot,
+  type GaussianStreamingQualityMode,
+} from "./player/GaussianStreamingPlayer.js";
 export type {
   PlayerMetrics,
   QualityController,

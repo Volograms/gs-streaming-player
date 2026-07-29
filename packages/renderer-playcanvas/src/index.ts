@@ -4,9 +4,9 @@ export {
 } from "./PlayCanvasGaussianRendererAdapter.js";
 export { queryPlayCanvasImmersiveVrSupport } from "./graphicsBackend.js";
 export { applyPlayCanvasTransform } from "./transform.js";
-// Exposed for renderer-specific integrations which need to feed external XR views
-// through PlayCanvas' native stereo rendering path.
-export { Mat4, RenderView } from "playcanvas";
+// Exposed for renderer-specific integrations that build native world-space XR UI.
+export { Color, Entity, StandardMaterial, Texture, Vec3 } from "playcanvas";
+export type { XrInput, XrInputSource } from "playcanvas";
 export type {
   PlayCanvasGraphicsBackend,
   PlayCanvasGaussianSortMode,

@@ -4,19 +4,19 @@ The player separates time, policy, rendering, telemetry, and application UI so e
 evolve independently.
 
 ```text
-Demo application
+Showcase / host application
        |
        v
-GaussianSequencePlayer (player-core)
+GaussianStreamingPlayer facade (player-core)
   |          |             |          |
   v          v             v          v
 Byte cache  Codec       Renderer    Quality / telemetry
             decoder     adapter     policies
                          |
                          v
-                    Spark + Three.js
-                    Babylon.js
-                    PlayCanvas
+                    PlayCanvas + SOG (recommended)
+                    Spark + RAD (experimental)
+                    Babylon.js + SPZ (experimental)
 ```
 
 `player-core` owns playback time, frame selection, buffering, scheduling, and events. It
@@ -44,9 +44,11 @@ client-measured transfer and buffer signals because its Wi-Fi last hop provides 
 actionable 6G telemetry; the provider boundary remains available for a future testbed
 that exposes end-to-end client telemetry.
 
-The demo is an integration client, not an owner of playback state. It may use React for
-presentation, but all state transitions and scheduling remain in the
-framework-independent packages.
+The public facade owns the complete runtime lifecycle: manifest loading, one selected
+dynamic sequence, static and mesh loading, codecs, compressed caching, buffering,
+adaptive quality, playback/audio synchronization, cancellation, and disposal. The
+showcase is an integration client, not an owner of playback state. Its React UI and the
+three experimental diagnostic demos remain outside the framework-independent packages.
 
 ## Initial package dependency direction
 

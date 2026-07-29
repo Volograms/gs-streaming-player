@@ -43,7 +43,10 @@ test("loads the demo application and workspace packages", async ({ page }) => {
   await expect(automaticQuality).not.toBeChecked();
   await automaticQuality.check();
   await expect(page.getByLabel("Splat budget")).toBeDisabled();
-  await automaticQuality.uncheck();
+  // The Spark canvas keeps a continuous render loop in headless Chromium. Use the
+  // native control activation after asserting its state so software-GPU frames cannot
+  // make Playwright's repeated actionability sampling consume the smoke-test budget.
+  await automaticQuality.evaluate((input: HTMLInputElement) => input.click());
 
   await page.getByLabel("Static detail").fill("0.75");
   await expect(page.locator('output[for="static-detail"]')).toHaveText("0.75×");

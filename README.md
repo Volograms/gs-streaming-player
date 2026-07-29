@@ -1,123 +1,141 @@
-# Gaussian Streaming Player
+# Volograms 4DGS Streaming Player
 
-Adaptive browser player for composited Gaussian Splat content in the 6G-PATH project.
-The player is designed for persistent static splats, per-frame dynamic Gaussian
-sequences, conventional Three.js meshes, video-style buffering, and network-aware
-progressive quality. Compressed streaming, Gaussian codecs, and renderer adapters are
-independent boundaries. Spark remains the mature RAD/flat-SPZ option, Babylon.js
-consumes official Niantic SPZ v4 frames, and PlayCanvas has a native SOG v2 path for
-comparison.
+Source-only public preview of a browser player for temporal Gaussian Splat sequences,
+persistent static splats, optional meshes, audio, adaptive quality, and WebXR.
 
-The repository and content-manifest foundations are complete. The active implementation
-slice is renderer-neutral codec integration and dynamic playback measurement. See the
-[project plan](docs/project-summary.md) and the live
-[task tracker](docs/project/TODO.md).
+The recommended delivery path is **PlayCanvas + SOG v2**: WebGPU with GPU sorting when
+the browser and its XR binding support it, with a one-time WebGL2 fallback. Spark/RAD
+and Babylon/SPZ remain experimental laboratories for research and performance work.
 
-## Requirements
+> Public preview: APIs and the manifest may evolve. No dataset is distributed in this
+> repository, and no Quest frame-rate guarantee is made.
 
-- Node.js 22.12 or newer
-- Corepack with pnpm enabled
+![Volograms 4DGS showcase](docs/assets/showcase-landing.png)
 
-The pnpm version is pinned in `package.json` and should not be installed through
-Python's `pip`.
+## Run from source
+
+Requirements: Node.js 22.12 or newer and Corepack. The pinned pnpm version manages the
+workspace.
 
 ```bash
 corepack enable pnpm
-pnpm install
+pnpm install --frozen-lockfile
+pnpm dev:showcase
 ```
 
-## Common commands
+Open `http://localhost:4180/#/`. The showcase accepts an external manifest URL at
+`#/demo?manifest=https%3A%2F%2Fcdn.example.com%2Fmanifest.json`. Set
+`VITE_DEFAULT_MANIFEST_URL` in `apps/showcase/.env.local` to load a public sample by
+default. Without it, GitHub Pages publishes a functional manifest picker.
+
+## Integrate the player
+
+This preview is linked from the workspace rather than published to npm:
+
+```ts
+import { GaussianStreamingPlayer } from "@6g-path/gaussian-player";
+import { PlayCanvasGaussianRendererAdapter } from "@6g-path/gaussian-renderer-playcanvas";
+
+const renderer = new PlayCanvasGaussianRendererAdapter({
+  canvas: document.querySelector("canvas")!,
+  graphicsBackend: "webgpu",
+  gaussianSort: "auto",
+  manageResize: true,
+});
+
+const player = await GaussianStreamingPlayer.create({
+  manifest: "https://cdn.example.com/performance/manifest.json",
+  renderer,
+  loop: true,
+});
+
+const unsubscribe = player.subscribe((state) => updateUi(state));
+await player.play();
+
+// Later:
+unsubscribe();
+player.dispose();
+```
+
+The facade owns manifest loading, sequence selection, renderer setup, static and mesh
+loading, compressed caching, buffering, quality policy, audio synchronization,
+cancellation, and cleanup. It exposes play/pause, time seek, frame stepping,
+automatic/manual quality, volume/mute, subscriptions, and disposal. See the
+[integration guide](docs/integration.md).
+
+## Prepare content
+
+4DGS reconstruction is external. A producer can use a suitable reconstruction system,
+including [Apple SHARP](https://github.com/apple/ml-sharp) for per-image 3DGS PLY
+output, but must establish temporal coherence, registration, and the player transform.
+SHARP output uses an OpenCV coordinate convention.
+
+Use quality-LoD RAD as the authoring intermediate, then build delivery assets:
 
 ```bash
-pnpm dev           # Run the Spark reference demo
-pnpm dev:babylon   # Run the Babylon.js SPZ/WebXR comparison demo
-pnpm dev:playcanvas # Run the PlayCanvas SOG/WebXR comparison demo
-pnpm build         # Build every library package and the demo
-pnpm profile:demo     # Build and serve the production Spark demo
-pnpm profile:babylon  # Build and serve the production Babylon.js demo
-pnpm profile:playcanvas # Build and serve the production PlayCanvas demo
-pnpm typecheck     # Type-check every workspace package
-pnpm lint          # Run ESLint across the repository
-pnpm format:check  # Check Prettier formatting
-pnpm gs-manifest   # Run manifest content tools
-pnpm test          # Run all unit tests
-pnpm test:e2e      # Run the Chromium smoke tests
+pnpm gs-content build dataset.json --output-dir dist/content --dry-run
+pnpm gs-content build dataset.json --output-dir dist/content
 ```
 
-## HTTPS development (WebXR on a headset)
+The command creates bundled SOG tiers for dynamic frames, Streamed SOG for large static
+scenes, byte/splat metadata, and a validated canonical manifest. Existing lower-level
+commands remain available for experiments. See
+[content preparation](docs/content-preparation.md) and
+[CDN/CORS hosting](docs/hosting.md).
 
-`localhost` is a secure context in modern browsers, so desktop WebXR testing can use the
-normal development server. A headset or another device on the LAN needs HTTPS.
+## Support tiers
 
-Install `mkcert` and its local certificate authority, then, from the repository root,
-create a certificate that includes the computer's LAN IP address:
+| Path                               | Status                 | Purpose                                               |
+| ---------------------------------- | ---------------------- | ----------------------------------------------------- |
+| PlayCanvas + SOG v2                | Recommended preview    | WebGPU GPU decode/sort; WebGL2 fallback               |
+| Quality-LoD RAD                    | Authoring intermediate | Common LoD source and conversion input                |
+| Babylon.js + SPZ v4                | Experimental           | CPU-decoder comparison                                |
+| Spark + RAD or flat SPZ            | Experimental           | Diagnostics and research                              |
+| SPZ v3; dynamic paged RAD on Quest | Not a production claim | Recorded CPU/tree costs are unsuitable for the target |
+
+SOG is recommended for web delivery; Streamed SOG is intended for large spatial static
+scenes. Read [formats and support](docs/formats-and-support.md) and the factual
+[performance record](docs/project/PERFORMANCE.md).
+
+## Applications
+
+- `apps/showcase`: polished landing and Quest-oriented public player.
+- `apps/demo-playcanvas`: PlayCanvas/SOG diagnostics laboratory.
+- `apps/demo-babylon`: Babylon/SPZ diagnostics laboratory.
+- `apps/demo`: Spark/RAD diagnostics laboratory.
+
+The diagnostic apps intentionally expose tuning and measurement controls that are not
+part of the public showcase. See [experimental demos](docs/experimental-demos.md).
+
+## Workspace commands
 
 ```bash
-sudo apt install mkcert libnss3-tools
-mkcert -install
-mkdir -p .cert
-mkcert -key-file .cert/localhost-key.pem -cert-file .cert/localhost-cert.pem localhost 127.0.0.1 ::1 192.168.1.42
+pnpm dev:showcase
+pnpm typecheck
+pnpm lint
+pnpm format:check
+pnpm test
+pnpm build
+pnpm test:e2e
 ```
 
-Replace `192.168.1.42` with the IP address that the headset uses to reach this computer.
-The `.cert/` directory is ignored by Git. Copy the `mkcert` root CA to the headset and
-trust it there, then create `apps/demo-babylon/.env.local` containing:
+## Documentation
 
-```dotenv
-VITE_HTTPS=true
-VITE_HOST=0.0.0.0
-```
+- [Integration](docs/integration.md)
+- [Manifest contract](docs/manifest-format.md)
+- [Content preparation](docs/content-preparation.md)
+- [Hosting and CORS](docs/hosting.md)
+- [PlayCanvas settings](docs/playcanvas-renderer-integration.md)
+- [Quest and WebXR](docs/quest-webxr.md)
+- [Audio](docs/audio.md)
+- [Formats and support](docs/formats-and-support.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Architecture](docs/architecture.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
 
-Start the Babylon XR demo with `pnpm dev:babylon` and open `https://YOUR-LAN-IP:4175/`
-from the headset. The PlayCanvas SOG demo uses `pnpm dev:playcanvas` and port 4177. The
-Spark demo supports the same `VITE_HTTPS` and `VITE_HOST` settings on port 4173. Native
-WebGPU-backed WebXR on Quest Browser 146+ also requires the WebXR/WebGPU Binding, WebXR
-Projection Layers, and WebXR Experiments browser flags; see the
-[PlayCanvas Quest setup](docs/playcanvas-renderer-integration.md#native-webgpu-webxr-on-quest-browser-146).
+## License and acknowledgements
 
-For browser tests, install Chromium once with:
-
-```bash
-pnpm exec playwright install chromium
-```
-
-## Workspace
-
-| Path                           | Package                                 | Responsibility                                     |
-| ------------------------------ | --------------------------------------- | -------------------------------------------------- |
-| `packages/player-core`         | `@6g-path/gaussian-player`              | Renderer-independent playback contracts and engine |
-| `packages/codec-core`          | `@6g-path/gaussian-codec`               | Renderer-neutral decoded-frame and codec contracts |
-| `packages/codec-spz`           | `@6g-path/gaussian-codec-spz`           | Official Niantic SPZ v4 browser decoder            |
-| `packages/demo-support`        | `@6g-path/gaussian-demo-support`        | Shared renderer-neutral demo content configuration |
-| `packages/renderer-spark`      | `@6g-path/gaussian-renderer-spark`      | Spark and Three.js integration                     |
-| `packages/renderer-babylon`    | `@6g-path/gaussian-renderer-babylon`    | Babylon.js integration and native frame packing    |
-| `packages/renderer-playcanvas` | `@6g-path/gaussian-renderer-playcanvas` | PlayCanvas native SOG v2 and WebXR integration     |
-| `packages/telemetry-6g`        | `@6g-path/gaussian-telemetry-6g`        | Normalised 6G telemetry providers                  |
-| `packages/content-tools`       | `@6g-path/gaussian-content-tools`       | Manifest and content preparation tools             |
-| `packages/shared`              | `@6g-path/shared`                       | Small environment-neutral shared types             |
-| `apps/demo`                    | `@6g-path/demo`                         | Spark integration and diagnostics application      |
-| `apps/demo-babylon`            | `@6g-path/demo-babylon`                 | Babylon.js SPZ and optional WebXR comparison       |
-| `apps/demo-playcanvas`         | `@6g-path/demo-playcanvas`              | PlayCanvas SOG v2 and optional WebXR comparison    |
-
-The player packages do not depend on React. The demo consumes only their public package
-APIs.
-
-## Architecture
-
-Start with the [architecture overview](docs/architecture.md). Architectural rules and
-their rationale are recorded in
-[`docs/architecture/decisions`](docs/architecture/decisions).
-
-Content authors should also read the [manifest format](docs/manifest-format.md), which
-documents schema validation, URL resolution, and the validator CLI.
-
-Application developers should read the
-[Spark renderer integration guide](docs/renderer-integration.md) for lifecycle,
-ownership, loading, cancellation, and transform semantics.
-
-The [Babylon.js integration guide](docs/babylon-renderer-integration.md) documents the
-current neutral-SPZ capability, persistent-mesh handoff, dedicated demo, and WebXR
-entry.
-
-The [PlayCanvas integration guide](docs/playcanvas-renderer-integration.md) documents
-native SOG v2 preparation, conversion, the dedicated demo, and Quest/WebXR testing.
+MIT licensed. Built by Volograms with support from the 6G-PATH project. Renderer, codec,
+and authoring dependencies retain their own licenses; see
+[third-party notices](THIRD_PARTY_NOTICES.md).

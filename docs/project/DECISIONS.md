@@ -4,22 +4,23 @@ Architecture decisions are recorded as ADRs in
 [`docs/architecture/decisions`](../architecture/decisions). This file is the short index
 used during day-to-day implementation.
 
-| ADR  | Decision                                            | Status   |
-| ---- | --------------------------------------------------- | -------- |
-| 0001 | Use a pnpm workspace monorepo                       | Accepted |
-| 0002 | Isolate renderers behind a core adapter             | Accepted |
-| 0003 | Use one `.RAD` asset per dynamic frame initially    | Accepted |
-| 0004 | Inject adaptive quality policy                      | Accepted |
-| 0005 | Make the sequence manifest player-owned             | Accepted |
-| 0006 | Normalise network telemetry behind a provider       | Accepted |
-| 0007 | Keep coordinate conversion in content transforms    | Accepted |
-| 0008 | Gate presentation quality and use an absolute clock | Accepted |
-| 0009 | Export flat dynamic quality tiers from RAD trees    | Accepted |
-| 0010 | Separate compressed and decoded frame buffers       | Accepted |
-| 0011 | Separate Gaussian codecs from renderer adapters     | Accepted |
-| 0012 | Support multiple renderer adapters and demos        | Accepted |
-| 0013 | Use client-measured network state for the pilot     | Accepted |
-| 0014 | Use native PlayCanvas SOG ingestion                 | Accepted |
+| ADR  | Decision                                              | Status   |
+| ---- | ----------------------------------------------------- | -------- |
+| 0001 | Use a pnpm workspace monorepo                         | Accepted |
+| 0002 | Isolate renderers behind a core adapter               | Accepted |
+| 0003 | Use one `.RAD` asset per dynamic frame initially      | Accepted |
+| 0004 | Inject adaptive quality policy                        | Accepted |
+| 0005 | Make the sequence manifest player-owned               | Accepted |
+| 0006 | Normalise network telemetry behind a provider         | Accepted |
+| 0007 | Keep coordinate conversion in content transforms      | Accepted |
+| 0008 | Gate presentation quality and use an absolute clock   | Accepted |
+| 0009 | Export flat dynamic quality tiers from RAD trees      | Accepted |
+| 0010 | Separate compressed and decoded frame buffers         | Accepted |
+| 0011 | Separate Gaussian codecs from renderer adapters       | Accepted |
+| 0012 | Support multiple renderer adapters and demos          | Accepted |
+| 0013 | Use client-measured network state for the pilot       | Accepted |
+| 0014 | Use native PlayCanvas SOG ingestion                   | Accepted |
+| 0015 | Define the source-only public-preview product surface | Accepted |
 
 ## Working conventions
 

@@ -2,6 +2,9 @@ import { defineConfig, devices } from "@playwright/test";
 
 const devServerPort = process.env.PLAYWRIGHT_PORT ?? "4173";
 const devServerUrl = `http://127.0.0.1:${devServerPort}`;
+const reuseExistingServer =
+  process.env.PLAYWRIGHT_REUSE_SERVER === "true" || !process.env.CI;
+const externalServers = process.env.PLAYWRIGHT_EXTERNAL_SERVERS === "true";
 
 export default defineConfig({
   expect: {
@@ -18,14 +21,18 @@ export default defineConfig({
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
   },
-  webServer: {
-    command: `pnpm --filter @6g-path/demo dev --port ${devServerPort}`,
-    reuseExistingServer: !process.env.CI,
-    stderr: "pipe",
-    stdout: "ignore",
-    timeout: 120_000,
-    url: devServerUrl,
-  },
+  ...(externalServers
+    ? {}
+    : {
+        webServer: {
+          command: "node scripts/start-e2e-servers.mjs",
+          reuseExistingServer,
+          stderr: "pipe" as const,
+          stdout: "ignore" as const,
+          timeout: 120_000,
+          url: devServerUrl,
+        },
+      }),
   projects: [
     {
       name: "chromium",

@@ -35,3 +35,11 @@ export type {
   RepackSpzV4Request,
   RepackSpzV4Runner,
 } from "./spz-v4/repackSpzV4.js";
+export { buildDataset } from "./build-dataset/buildDataset.js";
+export type {
+  BuildDatasetDependencies,
+  BuildDatasetRequest,
+  BuildDatasetRunner,
+  DatasetBuildConfiguration,
+  DatasetBuildTransform,
+} from "./build-dataset/buildDataset.js";

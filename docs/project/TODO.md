@@ -4,6 +4,24 @@ This file tracks implementation against the epics in
 [`project-summary.md`](../project-summary.md). A task is checked only after its
 acceptance criteria are covered by implementation and verification.
 
+## Active release slice: Source-only public preview
+
+- [x] Add the `GaussianStreamingPlayer` facade with canonical manifest ownership,
+      adaptive buffering/quality, audio synchronization, cancellation, and disposal.
+- [x] Add the configuration-driven `gs-content build` SOG authoring workflow with
+      dry-run, overwrite protection, staged failure cleanup, metadata, and validation.
+- [x] Add the accessible Pages showcase, manifest picker, WebGPU-to-WebGL2 fallback,
+      clean transport, and room-scale controller/hand XR panel.
+- [x] Remove the abandoned XR bridge code and private raw Quest photos; retain only its
+      factual conclusion in the performance record.
+- [x] Add integration, format, content, hosting, Quest, audio, demo, troubleshooting,
+      governance, security, and contribution documentation.
+- [ ] Configure the rights-cleared public sample URL and manually accept it on Quest 3
+      with WebGPU flags, WebGL2 fallback, both controllers, hand pinch, audio, XR
+      entry/exit, and both eyes.
+- [ ] Complete the pre-publication dependency-license and full Git-history audit; a
+      history rewrite requires separate owner approval.
+
 ## Active implementation slice: Multi-renderer and multi-codec validation
 
 ### Renderer adapters and dedicated demos
@@ -63,21 +81,6 @@ acceptance criteria are covered by implementation and verification.
         WebGPU CPU-sort selector for controlled Quest A/B measurements.
   - [ ] Capture repeated desktop and Quest 3 p50/p95 samples, including full-tier Quest
         traces and any WebGPU XR run that reports `XRGPUBinding`.
-  - [x] Close the obsolete WebGPU-to-WebGL XR mirror experiment after native WebGPU XR
-        became available; keep it out of current performance measurements.
-    - [x] Capture the first successful Quest 3 mono handoff: the Canvas2D fallback
-          displayed the dynamic 25% tier in both eyes at 1178 x 620, with a sampled 9.4
-          ms copy/draw, 1.4 ms source render, and 24.5 mirror fps. The fixed mono view
-          was expected; the configured static SOG failed to load in this run.
-    - [x] Replace the incorrect per-eye camera conversion with PlayCanvas-native ordered
-          XR views, a packed side-by-side WebGPU stereo render, one upload, and explicit
-          left/right WebGL viewport routing. Quest validation remains open.
-    - [x] Match the packed WebGPU source regions to the WebGL XR layer's native per-eye
-          viewport dimensions instead of dividing the lower-resolution desktop canvas.
-          Recheck visual artifacts and performance at the resulting resolution on Quest.
-    - [x] Keep dynamic playback advancing during the mirror session by migrating its
-          absolute deadlines between window timers and XR session animation frames, and
-          drive the full PlayCanvas frame lifecycle from those XR frames.
 - [ ] Run the chosen candidates on Meta Quest 3 and representative mobile Safari after
       desktop format/adapter comparisons have narrowed the device matrix.
   - [ ] Validate the Babylon streamed-splat stereo-buffer compatibility patch on both

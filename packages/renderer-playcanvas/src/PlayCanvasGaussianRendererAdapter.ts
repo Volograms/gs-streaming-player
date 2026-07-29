@@ -604,7 +604,14 @@ export class PlayCanvasGaussianRendererAdapter
   }
 
   setRenderQuality(decision: QualityDecision): void {
-    void decision;
+    if (
+      !Number.isFinite(decision.renderSplatBudget) ||
+      decision.renderSplatBudget < 0
+    ) {
+      throw new RangeError("renderSplatBudget must be a finite non-negative number.");
+    }
+    this.application.scene.gsplat.splatBudget = Math.round(decision.renderSplatBudget);
+    this.application.renderNextFrame = true;
   }
 
   getMetrics(): PlayCanvasRendererMetrics {

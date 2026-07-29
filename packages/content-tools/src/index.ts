@@ -1,4 +1,5 @@
 export const CONTENT_TOOL_COMMANDS = [
+  "build",
   "build-manifest",
   "convert-sog",
   "export-sog-lod",

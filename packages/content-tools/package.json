@@ -1,8 +1,10 @@
 {
   "name": "@6g-path/gaussian-content-tools",
   "version": "0.0.0",
+  "private": true,
   "type": "module",
   "bin": {
+    "gs-content": "./bin/gs-manifest.mjs",
     "gs-manifest": "./bin/gs-manifest.mjs"
   },
   "files": [

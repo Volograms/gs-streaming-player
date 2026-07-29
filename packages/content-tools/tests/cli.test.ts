@@ -29,6 +29,38 @@ function createIo() {
 }
 
 describe("gs-manifest CLI", () => {
+  it("forwards config-driven dataset build options", async () => {
+    const output = createIo();
+    const requests: unknown[] = [];
+    const exitCode = await runCli(
+      [
+        "build",
+        "content/dataset.json",
+        "--output-dir",
+        "public/content",
+        "--dry-run",
+        "--force",
+      ],
+      output.io,
+      {
+        buildDataset: async (request) => {
+          requests.push(request);
+          return 0;
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(requests).toEqual([
+      {
+        configPath: "content/dataset.json",
+        dryRun: true,
+        force: true,
+        outputDir: "public/content",
+      },
+    ]);
+  });
+
   it("returns zero for a valid manifest", async () => {
     const output = createIo();
     const exitCode = await runCli(["validate", validManifestPath], output.io);
