@@ -15,7 +15,7 @@ describe("showcase", () => {
   });
 
   it("renders an accessible manifest picker when no sample is configured", () => {
-    const markup = renderToStaticMarkup(<PlayerPage />);
+    const markup = renderToStaticMarkup(<PlayerPage requestedManifestUrl="" />);
 
     expect(markup).toContain("Open a 4DGS manifest");
     expect(markup).toContain('label for="manifest-url"');

@@ -8,8 +8,9 @@ acceptance criteria are covered by implementation and verification.
 
 - [x] Add the `GaussianStreamingPlayer` facade with canonical manifest ownership,
       adaptive buffering/quality, audio synchronization, cancellation, and disposal.
-- [x] Add the configuration-driven `gs-content build` SOG authoring workflow with
-      dry-run, overwrite protection, staged failure cleanup, metadata, and validation.
+- [x] Add the configuration-driven `gs-content build` workflow from PLY/SPZ sources to
+      dynamic SOG or SPZ tiers, with dry-run, overwrite protection, staged failure
+      cleanup, exact metadata, and validation. Keep RAD extraction legacy-only.
 - [x] Add the accessible Pages showcase, manifest picker, WebGPU-to-WebGL2 fallback,
       clean transport, and room-scale controller/hand XR panel.
 - [x] Remove the abandoned XR bridge code and private raw Quest photos; retain only its
@@ -181,11 +182,22 @@ currently presented flat frame, reports its renderer-native uncompressed size, a
 compares byte ownership with synchronous zero-copy construction. Its hardware results
 will determine whether a versioned renderer-native payload is justified.
 
-The offline source path is now fixed and consumed by the runtime. Quality-LoD RAD is
-decoded once during content preparation, valid camera-independent frontiers are exported
-as flat SPZ files, and the buffer selects the smallest minimum-playable-or-better tier
-for its current network quality target. Remaining work focuses on the measured sort
-bottleneck and real 30 fps validation.
+The historical offline source path decoded quality-LoD RAD and exported flat SPZ
+frontiers. The public build now starts from ordinary PLY or SPZ frames, uses
+SplatTransform merge-decimation, and writes bundled SOG or SPZ v4 tiers. The buffer
+still selects the smallest minimum-playable-or-better tier for its current network
+quality target. Remaining work focuses on target-device validation.
+
+### Public PLY/SPZ dynamic tier authoring (2026-07-29)
+
+- [x] Accept ordered PLY and SPZ dynamic frames in `gs-content build`.
+- [x] Generate configurable merge-decimated tiers through the pinned public
+      SplatTransform package.
+- [x] Emit bundled SOG by default or SPZ v4 by explicit configuration.
+- [x] Inspect generated files and record actual splat counts, byte sizes, codecs, and
+      the minimum-playable tier.
+- [x] Retain the RAD frontier extractor as an isolated legacy command rather than a
+      dependency of the normal build.
 
 ## Parallel validation and composition work
 

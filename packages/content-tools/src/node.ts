@@ -8,6 +8,14 @@ export type {
   ManifestFileValidationResult,
   ValidateManifestFileOptions,
 } from "./validate-manifest/types.js";
+export { generateDynamicTiers } from "./dynamic-tiers/generateDynamicTiers.js";
+export type {
+  DynamicTierOutputFormat,
+  GenerateDynamicTiersDependencies,
+  GenerateDynamicTiersRequest,
+  GenerateDynamicTiersRunner,
+  SplatSourceInfo,
+} from "./dynamic-tiers/generateDynamicTiers.js";
 export { runRadQualityCuts } from "./rad-cuts/runRadQualityCuts.js";
 export type {
   RadQualityCutsRequest,

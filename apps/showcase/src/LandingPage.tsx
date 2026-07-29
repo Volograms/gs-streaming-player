@@ -6,7 +6,7 @@ const githubUrl =
 
 const supportRows = [
   ["PlayCanvas + SOG v2", "Recommended preview", "WebGPU · WebGL2 · WebXR"],
-  ["Quality-LoD RAD", "Authoring intermediate", "LOD and tier generation"],
+  ["PLY / SPZ sources", "Supported authoring", "SOG or SPZ tier generation"],
   ["Babylon.js + SPZ v4", "Experimental", "CPU decode comparison"],
   ["Spark + RAD / SPZ", "Experimental", "Research and diagnostics"],
 ] as const;
@@ -153,8 +153,8 @@ export function LandingPage() {
             <li>
               <b>02</b>
               <span>
-                <strong>Build LOD</strong>
-                <small>RAD authoring trees</small>
+                <strong>Build tiers</strong>
+                <small>Merge-decimated PLY / SPZ</small>
               </span>
             </li>
             <li>
@@ -196,9 +196,9 @@ export function LandingPage() {
               </h2>
             </div>
             <p>
-              SOG is the runtime target. RAD remains valuable as the common LOD
-              authoring source. SPZ and renderer comparisons stay available for
-              research.
+              SOG is the recommended runtime target. Public authoring starts from PLY or
+              SPZ; SPZ output, RAD legacy tools, and renderer comparisons stay available
+              for research.
             </p>
           </div>
           <div

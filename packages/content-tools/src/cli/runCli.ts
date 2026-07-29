@@ -1,4 +1,5 @@
 import { buildDataset } from "../build-dataset/buildDataset.js";
+import { generateDynamicTiers } from "../dynamic-tiers/generateDynamicTiers.js";
 import { runRadQualityCuts } from "../rad-cuts/runRadQualityCuts.js";
 import { convertQualityCutsToSog } from "../sog/convertQualityCutsToSog.js";
 import { exportStreamedSog } from "../sog/exportStreamedSog.js";
@@ -12,6 +13,10 @@ import type {
   BuildDatasetRequest,
   BuildDatasetRunner,
 } from "../build-dataset/buildDataset.js";
+import type {
+  GenerateDynamicTiersRequest,
+  GenerateDynamicTiersRunner,
+} from "../dynamic-tiers/generateDynamicTiers.js";
 import type {
   RadQualityCutsRequest,
   RadQualityCutsRunner,
@@ -33,15 +38,18 @@ export interface CliIo {
 
 const USAGE = `Usage:
   pnpm gs-content build <dataset-config.json> --output-dir <dir> [--dry-run] [--force]
+  pnpm gs-content generate-tiers <frame.ply|frame.spz> [more ...] --output-dir <dir> [options]
   pnpm gs-manifest validate <manifest.json> [--check-assets]
-  pnpm gs-content extract-rad-cuts <frame.rad> [more.rad ...] --output-dir <dir> [options]
+  pnpm gs-content extract-rad-cuts <frame.rad> [more.rad ...] --output-dir <dir> [options] # legacy
   pnpm gs-content convert-sog <quality-cuts.json|scene.spz> --output-dir <dir> [options]
   pnpm gs-content export-sog-lod <scene.sog|source> --output-dir <dir> [options]
   pnpm gs-content repack-spz-v4 <quality-cuts.json> --output-dir <dir> --spz-tools-dir <dir> [--force]
 
 Options:
   --check-assets  Verify local files and remote URLs referenced by the manifest.
-  --tiers <spec>  Ordered quality tiers as name=leaf-ratio pairs.
+  --format <sog|spz>
+                  Dynamic tier output format. Default: sog.
+  --tiers <spec>  Ordered quality tiers as name=ratio pairs.
                   Default: preview=0.10,minimum=0.25,medium=0.50,full=1.00
   --minimum-playable <name>
                   Tier marked as minimum playable. Default: minimum.
@@ -64,6 +72,7 @@ export interface CliDependencies {
   buildDataset?: BuildDatasetRunner;
   convertQualityCutsToSog?: ConvertQualityCutsToSogRunner;
   exportStreamedSog?: ExportStreamedSogRunner;
+  generateDynamicTiers?: GenerateDynamicTiersRunner;
   repackSpzV4?: RepackSpzV4Runner;
   runRadQualityCuts?: RadQualityCutsRunner;
 }
@@ -85,6 +94,13 @@ export async function runCli(
       return 2;
     }
     return (dependencies.buildDataset ?? buildDataset)(request, io);
+  }
+  if (command === "generate-tiers") {
+    const request = parseGenerateDynamicTiersRequest(args.slice(1), io);
+    if (request === undefined) {
+      return 2;
+    }
+    return (dependencies.generateDynamicTiers ?? generateDynamicTiers)(request, io);
   }
   if (command === "extract-rad-cuts") {
     const request = parseRadQualityCutsRequest(args.slice(1), io);
@@ -207,6 +223,137 @@ function parseBuildDatasetRequest(
     return undefined;
   }
   return request;
+}
+
+function parseGenerateDynamicTiersRequest(
+  args: readonly string[],
+  io: CliIo,
+): GenerateDynamicTiersRequest | undefined {
+  const request: GenerateDynamicTiersRequest = {
+    force: false,
+    inputPaths: [],
+    maxWorkers: 4,
+    minimumPlayable: "minimum",
+    outputDir: "",
+    outputFormat: "sog",
+    shIterations: 10,
+    tiers: { preview: 0.1, minimum: 0.25, medium: 0.5, full: 1 },
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === undefined) continue;
+    if (!argument.startsWith("--")) {
+      request.inputPaths.push(argument);
+      continue;
+    }
+    if (argument === "--force") {
+      request.force = true;
+      continue;
+    }
+    const value = args[index + 1];
+    if (value === undefined || value.startsWith("--")) {
+      io.stderr(`Option ${argument} requires a value.`);
+      io.stderr(USAGE);
+      return undefined;
+    }
+    index += 1;
+    switch (argument) {
+      case "--format":
+        if (value !== "sog" && value !== "spz") {
+          io.stderr("--format must be 'sog' or 'spz'.");
+          io.stderr(USAGE);
+          return undefined;
+        }
+        request.outputFormat = value;
+        break;
+      case "--max-sh": {
+        const maxSh = Number(value);
+        if (!Number.isInteger(maxSh) || maxSh < 0 || maxSh > 3) {
+          io.stderr("--max-sh must be an integer between 0 and 3.");
+          io.stderr(USAGE);
+          return undefined;
+        }
+        request.maxSh = maxSh;
+        break;
+      }
+      case "--max-workers": {
+        const maxWorkers = Number(value);
+        if (!Number.isInteger(maxWorkers) || maxWorkers < 0) {
+          io.stderr("--max-workers must be a non-negative integer.");
+          io.stderr(USAGE);
+          return undefined;
+        }
+        request.maxWorkers = maxWorkers;
+        break;
+      }
+      case "--minimum-playable":
+        request.minimumPlayable = value;
+        break;
+      case "--output-dir":
+        request.outputDir = value;
+        break;
+      case "--sh-iterations": {
+        const iterations = Number(value);
+        if (!Number.isInteger(iterations) || iterations < 0) {
+          io.stderr("--sh-iterations must be a non-negative integer.");
+          io.stderr(USAGE);
+          return undefined;
+        }
+        request.shIterations = iterations;
+        break;
+      }
+      case "--tiers": {
+        const tiers = parseTierSpec(value);
+        if (tiers === undefined) {
+          io.stderr(
+            "--tiers must contain comma-separated filesystem-safe name=ratio entries.",
+          );
+          io.stderr(USAGE);
+          return undefined;
+        }
+        request.tiers = tiers;
+        break;
+      }
+      default:
+        io.stderr(`Unknown option: ${argument}`);
+        io.stderr(USAGE);
+        return undefined;
+    }
+  }
+
+  if (request.inputPaths.length === 0 || request.outputDir === "") {
+    io.stderr("At least one PLY or SPZ input and --output-dir are required.");
+    io.stderr(USAGE);
+    return undefined;
+  }
+  if (!Object.hasOwn(request.tiers, request.minimumPlayable)) {
+    io.stderr("--minimum-playable must name one of the configured tiers.");
+    io.stderr(USAGE);
+    return undefined;
+  }
+  return request;
+}
+
+function parseTierSpec(value: string): Record<string, number> | undefined {
+  const tiers: Record<string, number> = {};
+  for (const entry of value.split(",")) {
+    const separator = entry.indexOf("=");
+    if (separator <= 0 || separator === entry.length - 1) return undefined;
+    const name = entry.slice(0, separator).trim();
+    const ratio = Number(entry.slice(separator + 1));
+    if (
+      !/^[a-zA-Z0-9_-]+$/.test(name) ||
+      Object.hasOwn(tiers, name) ||
+      !Number.isFinite(ratio) ||
+      ratio <= 0 ||
+      ratio > 1
+    ) {
+      return undefined;
+    }
+    tiers[name] = ratio;
+  }
+  return Object.keys(tiers).length === 0 ? undefined : tiers;
 }
 
 function parseExportStreamedSogRequest(

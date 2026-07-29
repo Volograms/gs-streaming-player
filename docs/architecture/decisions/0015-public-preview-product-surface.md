@@ -19,6 +19,7 @@ are deferred.
 ## Consequences
 
 Workspace packages stay private. GitHub Pages builds from source and remains useful
-without a configured sample. SOG is the delivery format, RAD the LoD authoring
-intermediate, and support claims are tiered. Experimental tuning stays out of the
-showcase. Performance records state conditions and limitations rather than guarantees.
+without a configured sample. SOG is the recommended delivery format; ordered PLY or SPZ
+frames are the public dynamic authoring inputs. RAD authoring is legacy, and support
+claims are tiered. Experimental tuning stays out of the showcase. Performance records
+state conditions and limitations rather than guarantees.

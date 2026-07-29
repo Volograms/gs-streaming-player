@@ -5,6 +5,7 @@ import { isContentToolCommand } from "../src/index.js";
 describe("isContentToolCommand", () => {
   it("recognises planned commands", () => {
     expect(isContentToolCommand("build")).toBe(true);
+    expect(isContentToolCommand("generate-tiers")).toBe(true);
     expect(isContentToolCommand("validate-sequence")).toBe(true);
     expect(isContentToolCommand("extract-rad-cuts")).toBe(true);
     expect(isContentToolCommand("convert-sog")).toBe(true);

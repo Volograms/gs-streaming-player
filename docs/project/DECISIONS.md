@@ -4,23 +4,24 @@ Architecture decisions are recorded as ADRs in
 [`docs/architecture/decisions`](../architecture/decisions). This file is the short index
 used during day-to-day implementation.
 
-| ADR  | Decision                                              | Status   |
-| ---- | ----------------------------------------------------- | -------- |
-| 0001 | Use a pnpm workspace monorepo                         | Accepted |
-| 0002 | Isolate renderers behind a core adapter               | Accepted |
-| 0003 | Use one `.RAD` asset per dynamic frame initially      | Accepted |
-| 0004 | Inject adaptive quality policy                        | Accepted |
-| 0005 | Make the sequence manifest player-owned               | Accepted |
-| 0006 | Normalise network telemetry behind a provider         | Accepted |
-| 0007 | Keep coordinate conversion in content transforms      | Accepted |
-| 0008 | Gate presentation quality and use an absolute clock   | Accepted |
-| 0009 | Export flat dynamic quality tiers from RAD trees      | Accepted |
-| 0010 | Separate compressed and decoded frame buffers         | Accepted |
-| 0011 | Separate Gaussian codecs from renderer adapters       | Accepted |
-| 0012 | Support multiple renderer adapters and demos          | Accepted |
-| 0013 | Use client-measured network state for the pilot       | Accepted |
-| 0014 | Use native PlayCanvas SOG ingestion                   | Accepted |
-| 0015 | Define the source-only public-preview product surface | Accepted |
+| ADR  | Decision                                              | Status     |
+| ---- | ----------------------------------------------------- | ---------- |
+| 0001 | Use a pnpm workspace monorepo                         | Accepted   |
+| 0002 | Isolate renderers behind a core adapter               | Accepted   |
+| 0003 | Use one `.RAD` asset per dynamic frame initially      | Accepted   |
+| 0004 | Inject adaptive quality policy                        | Accepted   |
+| 0005 | Make the sequence manifest player-owned               | Accepted   |
+| 0006 | Normalise network telemetry behind a provider         | Accepted   |
+| 0007 | Keep coordinate conversion in content transforms      | Accepted   |
+| 0008 | Gate presentation quality and use an absolute clock   | Accepted   |
+| 0009 | Export flat dynamic quality tiers from RAD trees      | Superseded |
+| 0010 | Separate compressed and decoded frame buffers         | Accepted   |
+| 0011 | Separate Gaussian codecs from renderer adapters       | Accepted   |
+| 0012 | Support multiple renderer adapters and demos          | Accepted   |
+| 0013 | Use client-measured network state for the pilot       | Accepted   |
+| 0014 | Use native PlayCanvas SOG ingestion                   | Accepted   |
+| 0015 | Define the source-only public-preview product surface | Accepted   |
+| 0016 | Generate public dynamic tiers from PLY or SPZ         | Accepted   |
 
 ## Working conventions
 
@@ -76,9 +77,9 @@ used during day-to-day implementation.
   frame.
 - Dynamic base work is queued by temporal distance, deadline, then estimated byte cost;
   preparation and refinement concurrency remain runtime-configurable policy outputs.
-- The current RAD hierarchy is an authoring source for dynamic quality tiers, not the
-  intended runtime representation. The content pipeline expands valid non-overlapping
-  frontiers and exports each as flat SPZ with manifest-compatible quality metadata.
+- The public content pipeline accepts ordered PLY or SPZ frames, uses SplatTransform
+  merge-decimation, and emits independent bundled SOG or SPZ v4 tiers with
+  manifest-compatible quality metadata. The RAD frontier extractor is legacy-only.
 - Dynamic quality is network/deadline selected rather than camera selected. Dynamic SPZ
   tiers use Spark `PackedSplats` without LoD; static scenes retain paged, camera-aware
   RAD LoD.

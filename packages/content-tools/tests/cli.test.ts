@@ -61,6 +61,84 @@ describe("gs-manifest CLI", () => {
     ]);
   });
 
+  it("forwards public PLY/SPZ tier generation options", async () => {
+    const output = createIo();
+    const requests: unknown[] = [];
+    const exitCode = await runCli(
+      [
+        "generate-tiers",
+        "frames/0001.ply",
+        "frames/0002.spz",
+        "--output-dir",
+        "generated",
+        "--format",
+        "spz",
+        "--tiers",
+        "base=0.25,full=1",
+        "--minimum-playable",
+        "base",
+        "--max-sh",
+        "1",
+        "--force",
+      ],
+      output.io,
+      {
+        generateDynamicTiers: async (request) => {
+          requests.push(request);
+          return 0;
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(requests).toEqual([
+      {
+        force: true,
+        inputPaths: ["frames/0001.ply", "frames/0002.spz"],
+        maxSh: 1,
+        maxWorkers: 4,
+        minimumPlayable: "base",
+        outputDir: "generated",
+        outputFormat: "spz",
+        shIterations: 10,
+        tiers: { base: 0.25, full: 1 },
+      },
+    ]);
+  });
+
+  it("uses recommended tier-generation defaults and rejects invalid formats", async () => {
+    const output = createIo();
+    const requests: unknown[] = [];
+    expect(
+      await runCli(
+        ["generate-tiers", "frame.ply", "--output-dir", "generated"],
+        output.io,
+        {
+          generateDynamicTiers: async (request) => {
+            requests.push(request);
+            return 0;
+          },
+        },
+      ),
+    ).toBe(0);
+    expect(requests).toEqual([
+      expect.objectContaining({
+        minimumPlayable: "minimum",
+        outputFormat: "sog",
+        tiers: { preview: 0.1, minimum: 0.25, medium: 0.5, full: 1 },
+      }),
+    ]);
+
+    const invalid = createIo();
+    expect(
+      await runCli(
+        ["generate-tiers", "frame.ply", "--output-dir", "generated", "--format", "rad"],
+        invalid.io,
+      ),
+    ).toBe(2);
+    expect(invalid.stderr.join("\n")).toContain("'sog' or 'spz'");
+  });
+
   it("returns zero for a valid manifest", async () => {
     const output = createIo();
     const exitCode = await runCli(["validate", validManifestPath], output.io);
@@ -88,7 +166,7 @@ describe("gs-manifest CLI", () => {
     expect(output.stderr.join("\n")).toContain("Usage:");
   });
 
-  it("forwards RAD quality-cut options to the extractor", async () => {
+  it("keeps the legacy RAD quality-cut command available", async () => {
     const output = createIo();
     const requests: unknown[] = [];
     const exitCode = await runCli(

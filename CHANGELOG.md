@@ -12,6 +12,11 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- Public PLY/SPZ dynamic-tier authoring through SplatTransform merge decimation. The
+  normal `gs-content build` now emits bundled SOG tiers by default or SPZ v4 tiers on
+  request, records actual output metadata, and leaves the RAD extractor as a legacy
+  command with focused tests.
+
 - Local showcase datasets can be served directly from an external directory with
   `SHOWCASE_LOCAL_DATASET_DIR`, while relative manifest paths and the existing ignored
   `public/assets` convention remain supported. The showcase now uses the Volograms

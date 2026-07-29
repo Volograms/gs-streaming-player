@@ -48,11 +48,32 @@ available:
 pnpm gs-manifest validate content/lesson.json --check-assets
 ```
 
-## Dynamic RAD quality-cut generation
+## Public dynamic tier generation
 
-Dynamic playback is moving to independent flat SPZ tiers so network/deadline policy can
-choose frame quality without running Spark's camera-driven RAD tree at runtime. Generate
-the default 10%, 25%, 50%, and 100% leaf-frontier tiers with:
+Generate complete temporal tiers directly from ordinary PLY or SPZ frame sources. SOG is
+the default output; select SPZ for the experimental CPU-decoder paths:
+
+```bash
+pnpm gs-content generate-tiers frame0040.ply frame0041.spz \
+  --output-dir generated/sequence \
+  --format sog
+
+pnpm gs-content generate-tiers frame0040.ply \
+  --output-dir generated/sequence-spz \
+  --format spz \
+  --tiers preview=0.10,minimum=0.25,medium=0.50,full=1
+```
+
+SplatTransform performs merge-based decimation into temporary PLY files before final
+encoding. Outputs are protected unless `--force` is supplied. The generated
+`quality-cuts.json` records actual output counts and bytes. This is also the dynamic
+stage used by `gs-content build`; it has no RAD or Rust dependency.
+
+## Legacy dynamic RAD quality-cut generation
+
+The earlier experimental pipeline generated independent flat SPZ tiers from RAD trees.
+It remains available to reproduce existing datasets and measurements. Generate the
+default 10%, 25%, 50%, and 100% leaf-frontier tiers with:
 
 ```bash
 pnpm gs-content extract-rad-cuts \

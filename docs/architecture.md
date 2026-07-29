@@ -64,7 +64,11 @@ player packages <--- renderer-specific demos
 ```
 
 `content-tools` consumes the versioned manifest schema owned by `player-core`. Its
-Node-only validation entry point is kept separate from browser-facing exports.
+Node-only validation entry point is kept separate from browser-facing exports. Ordered
+dynamic PLY/SPZ frames are merge-decimated by the pinned public SplatTransform tool and
+encoded as independent bundled SOG or SPZ tiers. Static sources are exported as spatial
+Streamed SOG. The older Spark/RAD tree extractor is isolated as a legacy command and is
+not a dependency of the normal dataset build.
 
 ## Decisions
 

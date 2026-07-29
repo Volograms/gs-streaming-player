@@ -90,16 +90,19 @@ including [Apple SHARP](https://github.com/apple/ml-sharp) for per-image 3DGS PL
 output, but must establish temporal coherence, registration, and the player transform.
 SHARP output uses an OpenCV coordinate convention.
 
-Use quality-LoD RAD as the authoring intermediate, then build delivery assets:
+Use ordered PLY or SPZ frames from the reconstruction pipeline, then build delivery
+assets. SplatTransform performs public merge-based decimation for each configured tier;
+RAD is not required by this path.
 
 ```bash
 pnpm gs-content build dataset.json --output-dir dist/content --dry-run
 pnpm gs-content build dataset.json --output-dir dist/content
 ```
 
-The command creates bundled SOG tiers for dynamic frames, Streamed SOG for large static
-scenes, byte/splat metadata, and a validated canonical manifest. Existing lower-level
-commands remain available for experiments. See
+The command creates bundled SOG tiers for dynamic frames by default, Streamed SOG for
+large static scenes, byte/splat metadata, and a validated canonical manifest. Set
+`dynamic.outputFormat` to `"spz"` when experimental SPZ v4 tiers are required. The old
+RAD cut extractor remains available only for reproducing legacy experiments. See
 [content preparation](docs/content-preparation.md) and
 [CDN/CORS hosting](docs/hosting.md).
 
@@ -108,9 +111,10 @@ commands remain available for experiments. See
 | Path                               | Status                 | Purpose                                               |
 | ---------------------------------- | ---------------------- | ----------------------------------------------------- |
 | PlayCanvas + SOG v2                | Recommended preview    | WebGPU GPU decode/sort; WebGL2 fallback               |
-| Quality-LoD RAD                    | Authoring intermediate | Common LoD source and conversion input                |
+| PLY or SPZ source frames           | Supported authoring    | Merge-decimated dynamic SOG or SPZ tiers              |
 | Babylon.js + SPZ v4                | Experimental           | CPU-decoder comparison                                |
 | Spark + RAD or flat SPZ            | Experimental           | Diagnostics and research                              |
+| Quality-LoD RAD                    | Legacy authoring       | Existing extractor retained for old datasets          |
 | SPZ v3; dynamic paged RAD on Quest | Not a production claim | Recorded CPU/tree costs are unsuitable for the target |
 
 SOG is recommended for web delivery; Streamed SOG is intended for large spatial static

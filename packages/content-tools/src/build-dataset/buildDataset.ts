@@ -12,13 +12,14 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 
 import { assertValidManifest } from "@6g-path/gaussian-player";
 
-import { runRadQualityCuts } from "../rad-cuts/runRadQualityCuts.js";
-import { convertQualityCutsToSog } from "../sog/convertQualityCutsToSog.js";
+import { generateDynamicTiers } from "../dynamic-tiers/generateDynamicTiers.js";
 import { exportStreamedSog } from "../sog/exportStreamedSog.js";
 
 import type { CliIo } from "../cli/runCli.js";
-import type { RadQualityCutsRunner } from "../rad-cuts/runRadQualityCuts.js";
-import type { ConvertQualityCutsToSogRunner } from "../sog/convertQualityCutsToSog.js";
+import type {
+  DynamicTierOutputFormat,
+  GenerateDynamicTiersRunner,
+} from "../dynamic-tiers/generateDynamicTiers.js";
 import type { ExportStreamedSogRunner } from "../sog/exportStreamedSog.js";
 import type {
   GaussianQualityLevel,
@@ -60,6 +61,7 @@ export interface DatasetBuildConfiguration {
     id: string;
     maxSh?: number;
     minimumPlayable?: string;
+    outputFormat?: DynamicTierOutputFormat;
     tiers?: Record<string, number>;
     transform?: DatasetBuildTransform;
   };
@@ -89,9 +91,8 @@ export interface BuildDatasetRequest {
 }
 
 export interface BuildDatasetDependencies {
-  convertQualityCutsToSog?: ConvertQualityCutsToSogRunner;
   exportStreamedSog?: ExportStreamedSogRunner;
-  runRadQualityCuts?: RadQualityCutsRunner;
+  generateDynamicTiers?: GenerateDynamicTiersRunner;
 }
 
 export type BuildDatasetRunner = (
@@ -104,13 +105,13 @@ interface QualityCutFrame {
   sourceFile: string;
 }
 
-interface SogQualityCutIndex {
-  format: "flat-sog-quality-cuts";
+interface DynamicQualityCutIndex {
+  format: "flat-sog-quality-cuts" | "flat-spz-quality-cuts";
   frames: QualityCutFrame[];
   version: 1;
 }
 
-/** Builds a complete externally hostable SOG dataset from ordered authoring inputs. */
+/** Builds an externally hostable dataset from ordered PLY or SPZ frame sources. */
 export async function buildDataset(
   request: BuildDatasetRequest,
   io: CliIo,
@@ -145,7 +146,9 @@ export async function buildDataset(
 
     if (request.dryRun) {
       io.stdout(`Dataset build plan: ${configuration.id}`);
-      io.stdout(`  ${dynamicInputs.length} dynamic RAD frame(s)`);
+      io.stdout(
+        `  ${dynamicInputs.length} dynamic PLY/SPZ frame(s) -> ${(configuration.dynamic.outputFormat ?? "sog").toUpperCase()} tiers`,
+      );
       io.stdout(`  ${staticInputs.length} static scene(s)`);
       io.stdout(`  output: ${outputDir}`);
       return 0;
@@ -157,41 +160,32 @@ export async function buildDataset(
 
     stagingDir = `${outputDir}.staging-${process.pid}-${Date.now()}`;
     await mkdir(stagingDir, { recursive: false });
-    const dynamicSpzDir = join(stagingDir, "dynamic-spz");
-    const dynamicSogDir = join(stagingDir, "dynamic");
-    const cutsExitCode = await (dependencies.runRadQualityCuts ?? runRadQualityCuts)(
+    const dynamicDir = join(stagingDir, "dynamic");
+    const dynamicExitCode = await (
+      dependencies.generateDynamicTiers ?? generateDynamicTiers
+    )(
       {
         force: false,
         inputPaths: dynamicInputs,
         ...(configuration.dynamic.maxSh === undefined
           ? {}
           : { maxSh: configuration.dynamic.maxSh }),
-        ...(configuration.dynamic.minimumPlayable === undefined
-          ? {}
-          : { minimumPlayable: configuration.dynamic.minimumPlayable }),
-        outputDir: dynamicSpzDir,
-        ...(configuration.dynamic.tiers === undefined
-          ? {}
-          : { tiers: serialiseTiers(configuration.dynamic.tiers) }),
+        maxWorkers: configuration.sog?.maxWorkers ?? 4,
+        minimumPlayable: configuration.dynamic.minimumPlayable ?? "minimum",
+        outputDir: dynamicDir,
+        outputFormat: configuration.dynamic.outputFormat ?? "sog",
+        shIterations: configuration.sog?.shIterations ?? 10,
+        tiers: configuration.dynamic.tiers ?? {
+          preview: 0.1,
+          minimum: 0.25,
+          medium: 0.5,
+          full: 1,
+        },
       },
       io,
     );
-    assertStepSucceeded("RAD quality-cut extraction", cutsExitCode);
-
+    assertStepSucceeded("dynamic quality-tier generation", dynamicExitCode);
     const sog = configuration.sog ?? {};
-    const conversionExitCode = await (
-      dependencies.convertQualityCutsToSog ?? convertQualityCutsToSog
-    )(
-      {
-        force: false,
-        indexPath: join(dynamicSpzDir, "quality-cuts.json"),
-        maxWorkers: sog.maxWorkers ?? 4,
-        outputDir: dynamicSogDir,
-        shIterations: sog.shIterations ?? 10,
-      },
-      io,
-    );
-    assertStepSucceeded("dynamic SOG conversion", conversionExitCode);
 
     for (const object of staticInputs) {
       const exitCode = await (dependencies.exportStreamedSog ?? exportStreamedSog)(
@@ -214,7 +208,7 @@ export async function buildDataset(
       audioInput === undefined ? undefined : await stageAudio(audioInput, stagingDir);
     const qualityIndex = parseQualityIndex(
       JSON.parse(
-        await readFile(join(dynamicSogDir, "quality-cuts.json"), "utf8"),
+        await readFile(join(dynamicDir, "quality-cuts.json"), "utf8"),
       ) as unknown,
     );
     const manifest = createManifest(configuration, qualityIndex, audioUrl);
@@ -222,8 +216,6 @@ export async function buildDataset(
       join(stagingDir, "manifest.json"),
       `${JSON.stringify(manifest, null, 2)}\n`,
     );
-    await rm(dynamicSpzDir, { force: true, recursive: true });
-
     if (request.force && (await exists(outputDir))) {
       await rm(outputDir, { force: true, recursive: true });
     }
@@ -244,12 +236,20 @@ export async function buildDataset(
 
 function createManifest(
   configuration: DatasetBuildConfiguration,
-  index: SogQualityCutIndex,
+  index: DynamicQualityCutIndex,
   audioUrl: string | undefined,
 ): GaussianSequenceManifest {
+  const outputFormat = configuration.dynamic.outputFormat ?? "sog";
+  const expectedIndexFormat =
+    outputFormat === "sog" ? "flat-sog-quality-cuts" : "flat-spz-quality-cuts";
+  if (index.format !== expectedIndexFormat) {
+    throw new Error(
+      `Dynamic quality index format '${index.format}' does not match requested '${outputFormat}' output.`,
+    );
+  }
   if (index.frames.length !== configuration.dynamic.frames.length) {
     throw new Error(
-      `SOG quality index contains ${index.frames.length} frames; expected ${configuration.dynamic.frames.length}.`,
+      `Dynamic quality index contains ${index.frames.length} frames; expected ${configuration.dynamic.frames.length}.`,
     );
   }
   const frameCount = index.frames.length;
@@ -284,10 +284,10 @@ function createManifest(
             qualityLevels.find(({ minimumPlayable }) => minimumPlayable)?.url ??
             qualityLevels[0]?.url;
           if (fallback === undefined) {
-            throw new Error(`Frame ${frameIndex} has no generated SOG tier URL.`);
+            throw new Error(`Frame ${frameIndex} has no generated quality-tier URL.`);
           }
           return {
-            codec: "sog-v2",
+            codec: outputFormat === "spz" ? "spz-v4" : "sog-v2",
             frameIndex,
             metadata: { sourceFile: frame.sourceFile },
             qualityLevels,
@@ -334,7 +334,55 @@ function parseConfiguration(value: unknown): DatasetBuildConfiguration {
     value.dynamic.frames.length === 0 ||
     value.dynamic.frames.some((frame) => typeof frame !== "string" || frame === "")
   ) {
-    throw new Error("Dynamic id and at least one ordered RAD frame are required.");
+    throw new Error(
+      "Dynamic id and at least one ordered PLY or SPZ frame are required.",
+    );
+  }
+  if (value.dynamic.frames.some((frame) => !/\.(?:ply|spz)$/i.test(frame as string))) {
+    throw new Error("Every dynamic frame input must be a PLY or SPZ file.");
+  }
+  if (
+    value.dynamic.outputFormat !== undefined &&
+    value.dynamic.outputFormat !== "sog" &&
+    value.dynamic.outputFormat !== "spz"
+  ) {
+    throw new Error("dynamic.outputFormat must be 'sog' or 'spz'.");
+  }
+  if (
+    value.dynamic.maxSh !== undefined &&
+    (!Number.isInteger(value.dynamic.maxSh) ||
+      (value.dynamic.maxSh as number) < 0 ||
+      (value.dynamic.maxSh as number) > 3)
+  ) {
+    throw new Error("dynamic.maxSh must be an integer between 0 and 3.");
+  }
+  const configuredTiers = value.dynamic.tiers;
+  if (
+    configuredTiers !== undefined &&
+    (!isRecord(configuredTiers) ||
+      Object.keys(configuredTiers).length === 0 ||
+      Object.entries(configuredTiers).some(
+        ([name, ratio]) =>
+          !/^[a-zA-Z0-9_-]+$/.test(name) ||
+          typeof ratio !== "number" ||
+          !Number.isFinite(ratio) ||
+          ratio <= 0 ||
+          ratio > 1,
+      ))
+  ) {
+    throw new Error(
+      "dynamic.tiers must contain filesystem-safe names and ratios above zero and at most one.",
+    );
+  }
+  const tierNames =
+    configuredTiers === undefined
+      ? ["preview", "minimum", "medium", "full"]
+      : Object.keys(configuredTiers);
+  const minimumPlayable = value.dynamic.minimumPlayable ?? "minimum";
+  if (!tierNames.includes(minimumPlayable as string)) {
+    throw new Error(
+      `dynamic.minimumPlayable '${String(minimumPlayable)}' is not present in dynamic.tiers.`,
+    );
   }
   if (
     value.staticObjects !== undefined &&
@@ -357,11 +405,12 @@ function parseConfiguration(value: unknown): DatasetBuildConfiguration {
   return value as unknown as DatasetBuildConfiguration;
 }
 
-function parseQualityIndex(value: unknown): SogQualityCutIndex {
+function parseQualityIndex(value: unknown): DynamicQualityCutIndex {
   if (
     !isRecord(value) ||
     value.version !== 1 ||
-    value.format !== "flat-sog-quality-cuts" ||
+    (value.format !== "flat-sog-quality-cuts" &&
+      value.format !== "flat-spz-quality-cuts") ||
     !Array.isArray(value.frames) ||
     value.frames.some(
       (frame) =>
@@ -370,9 +419,9 @@ function parseQualityIndex(value: unknown): SogQualityCutIndex {
         !Array.isArray(frame.qualityLevels),
     )
   ) {
-    throw new Error("Generated SOG quality index is invalid.");
+    throw new Error("Generated dynamic quality index is invalid.");
   }
-  return value as unknown as SogQualityCutIndex;
+  return value as unknown as DynamicQualityCutIndex;
 }
 
 async function stageAudio(inputPath: string, stagingDir: string): Promise<string> {
@@ -394,22 +443,6 @@ function validateOutputDirectory(outputDir: string, configDir: string): void {
   if (relative(configDir, outputDir) === "") {
     throw new Error("Output directory cannot replace the config directory.");
   }
-}
-
-function serialiseTiers(tiers: Record<string, number>): string {
-  const entries = Object.entries(tiers);
-  if (
-    entries.length === 0 ||
-    entries.some(
-      ([name, ratio]) =>
-        name.trim() === "" || !Number.isFinite(ratio) || ratio <= 0 || ratio > 1,
-    )
-  ) {
-    throw new Error(
-      "Dynamic tiers must contain names with ratios above zero and at most one.",
-    );
-  }
-  return entries.map(([name, ratio]) => `${name}=${ratio}`).join(",");
 }
 
 function assertStepSucceeded(name: string, exitCode: number): void {
