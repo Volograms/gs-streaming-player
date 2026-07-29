@@ -492,6 +492,7 @@ class HybridMediaClock implements PlaybackClock {
     fallbackClock?: PlaybackClock,
   ) {
     this.fallbackClock = fallbackClock ?? browserClock;
+    this.anchorMs = this.fallbackClock.now();
     media.preload = "auto";
     this.endedListener = () => {
       this.anchorTimelineMs = (this.media.duration + this.offsetSeconds) * 1000;

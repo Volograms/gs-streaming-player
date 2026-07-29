@@ -7,6 +7,7 @@ import type {
   GaussianRendererAdapter,
   GaussianSequenceManifest,
   GaussianStreamingMediaElement,
+  PlaybackClock,
   PreparedFrame,
   RendererMetrics,
 } from "../src/index.js";
@@ -193,6 +194,28 @@ describe("GaussianStreamingPlayer", () => {
     expect(audio.paused).toBe(true);
     player.dispose();
     expect(audio.src).toBe("");
+  });
+
+  it("anchors a paused audio clock before scheduling the first frame", async () => {
+    const audio = new FakeAudio();
+    const setTimeout = vi.fn(() => 1);
+    const clock: PlaybackClock = {
+      clearTimeout: vi.fn(),
+      now: () => 120_000,
+      setTimeout,
+    };
+    const player = await GaussianStreamingPlayer.create({
+      audioElementFactory: () => audio,
+      clock,
+      manifest: manifest(1, true),
+      renderer: renderer(),
+    });
+
+    await player.play();
+    await vi.waitFor(() => expect(setTimeout).toHaveBeenCalledOnce());
+
+    expect(setTimeout).toHaveBeenCalledWith(expect.any(Function), 1000 / 30);
+    player.dispose();
   });
 
   it("applies audio offsets without moving media time zero", async () => {
