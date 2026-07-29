@@ -172,6 +172,22 @@ describe("GaussianStreamingPlayer", () => {
     player.dispose();
   });
 
+  it("reports the selected sequence duration", async () => {
+    const source = manifest(2);
+    const shorterSequence = source.dynamicSequences[1]!;
+    shorterSequence.frameCount = 2;
+    shorterSequence.frames = shorterSequence.frames.slice(0, 2);
+    const player = await GaussianStreamingPlayer.create({
+      manifest: source,
+      renderer: renderer(),
+      sequenceId: "actor-1",
+    });
+
+    expect(player.snapshot.durationSeconds).toBeCloseTo(2 / 30);
+    expect(player.snapshot.durationSeconds).toBeLessThan(source.durationSeconds);
+    player.dispose();
+  });
+
   it("reports the configured startup reserve to a custom quality controller", async () => {
     const update = vi.fn<QualityController["update"]>(() => ({
       allowStaticRefinement: false,

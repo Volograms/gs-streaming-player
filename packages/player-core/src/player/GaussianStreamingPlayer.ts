@@ -103,6 +103,7 @@ export class GaussianStreamingPlayer {
   private readonly audioClock: HybridMediaClock | undefined;
   private readonly buffer: FrameRingBuffer;
   private disposed = false;
+  private readonly durationSeconds: number;
   private readonly listeners = new Set<SnapshotListener>();
   readonly manifest: GaussianSequenceManifest;
   private readonly minimumReadyFrames: number;
@@ -130,6 +131,10 @@ export class GaussianStreamingPlayer {
   ) {
     this.manifest = manifest;
     this.sequence = sequence;
+    this.durationSeconds = Math.min(
+      manifest.durationSeconds,
+      (sequence.frames.at(-1)?.timestampSeconds ?? 0) + 1 / sequence.frameRate,
+    );
     this.renderer = renderer;
     this.buffer = buffer;
     this.playback = playback;
@@ -266,7 +271,7 @@ export class GaussianStreamingPlayer {
       currentFrameIndex: playback.currentFrameIndex,
       currentTimeSeconds: this.frameTime(playback.currentFrameIndex),
       droppedFrameCount: playback.droppedFrameCount,
-      durationSeconds: this.manifest.durationSeconds,
+      durationSeconds: this.durationSeconds,
       ...(playback.error === undefined ? {} : { error: playback.error }),
       isPlaying: playback.isPlaying,
       lifecycle: playback.lifecycle,
@@ -300,7 +305,7 @@ export class GaussianStreamingPlayer {
     if (!Number.isFinite(timeSeconds)) {
       throw new RangeError("Seek time must be finite.");
     }
-    const clamped = Math.min(Math.max(0, timeSeconds), this.manifest.durationSeconds);
+    const clamped = Math.min(Math.max(0, timeSeconds), this.durationSeconds);
     this.audioClock?.seek(clamped);
     await this.playback.seek(this.frameForTime(clamped));
   }
