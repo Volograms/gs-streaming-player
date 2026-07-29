@@ -9,6 +9,7 @@ import type {
   GaussianStreamingMediaElement,
   PlaybackClock,
   PreparedFrame,
+  QualityController,
   RendererMetrics,
 } from "../src/index.js";
 
@@ -168,6 +169,30 @@ describe("GaussianStreamingPlayer", () => {
       sequenceId: "actor-1",
     });
     expect(player.sequence.id).toBe("actor-1");
+    player.dispose();
+  });
+
+  it("reports the configured startup reserve to a custom quality controller", async () => {
+    const update = vi.fn<QualityController["update"]>(() => ({
+      allowStaticRefinement: false,
+      dynamicObjectWeights: {},
+      maximumRefinementBytes: 0,
+      renderSplatBudget: 1_000,
+      staticObjectWeight: 1,
+      targetBufferSeconds: 1,
+    }));
+    const player = await GaussianStreamingPlayer.create({
+      buffer: { futureFrameCount: 2, minimumReadyFrames: 1 },
+      manifest: manifest(),
+      qualityController: { update },
+      renderer: renderer(),
+    });
+
+    expect(update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ minimumReadyFrames: 1 }),
+      expect.any(Object),
+      expect.any(Object),
+    );
     player.dispose();
   });
 

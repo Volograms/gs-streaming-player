@@ -105,6 +105,7 @@ export class GaussianStreamingPlayer {
   private disposed = false;
   private readonly listeners = new Set<SnapshotListener>();
   readonly manifest: GaussianSequenceManifest;
+  private readonly minimumReadyFrames: number;
   private readonly playback: SequencePlaybackController;
   private playbackSnapshot: SequencePlaybackSnapshot;
   private qualityModeValue: GaussianStreamingQualityMode = { mode: "automatic" };
@@ -125,6 +126,7 @@ export class GaussianStreamingPlayer {
     playback: SequencePlaybackController,
     qualityController: QualityController,
     audioClock: HybridMediaClock | undefined,
+    minimumReadyFrames: number,
   ) {
     this.manifest = manifest;
     this.sequence = sequence;
@@ -134,6 +136,7 @@ export class GaussianStreamingPlayer {
     this.playbackSnapshot = playback.snapshot;
     this.qualityController = qualityController;
     this.audioClock = audioClock;
+    this.minimumReadyFrames = minimumReadyFrames;
     this.unsubscribeBuffer = buffer.subscribe(() => {
       this.updateAutomaticQuality();
       this.emit();
@@ -211,13 +214,14 @@ export class GaussianStreamingPlayer {
         sequence,
       });
       await buffer.initialise(0);
+      const minimumReadyFrames =
+        bufferOptions.minimumReadyFrames ??
+        Math.min(2, bufferOptions.futureFrameCount ?? DEFAULT_FUTURE_FRAMES);
       playback = new SequencePlaybackController({
         buffer,
         ...(clock === undefined ? {} : { clock }),
         loop: options.loop ?? bufferOptions.loop ?? false,
-        minimumReadyFrames:
-          bufferOptions.minimumReadyFrames ??
-          Math.min(2, bufferOptions.futureFrameCount ?? DEFAULT_FUTURE_FRAMES),
+        minimumReadyFrames,
         sequence,
       });
       const qualityController =
@@ -236,6 +240,7 @@ export class GaussianStreamingPlayer {
         playback,
         qualityController,
         audioClock,
+        minimumReadyFrames,
       );
       facadeReference.current = facade;
       facade.updateAutomaticQuality();
@@ -405,7 +410,7 @@ export class GaussianStreamingPlayer {
       currentTimeSeconds: this.frameTime(this.playbackSnapshot.currentFrameIndex),
       isPlaying: this.playbackSnapshot.isPlaying,
       lifecycle: this.playbackSnapshot.lifecycle,
-      minimumReadyFrames: 2,
+      minimumReadyFrames: this.minimumReadyFrames,
       playbackRate: 1,
     };
   }
