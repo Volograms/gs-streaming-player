@@ -58,6 +58,7 @@ export interface DatasetBuildConfiguration {
     offsetSeconds?: number;
   };
   dynamic: {
+    frameWorkers?: number;
     frames?: string[];
     id: string;
     inputDir?: string;
@@ -149,6 +150,7 @@ export async function buildDataset(
       io.stdout(
         `  ${dynamicInputs.length} dynamic PLY/SPZ frame(s) -> ${(configuration.dynamic.outputFormat ?? "sog").toUpperCase()} tiers`,
       );
+      io.stdout(`  frame workers: ${configuration.dynamic.frameWorkers ?? "auto"}`);
       io.stdout(`  ${staticInputs.length} static scene(s)`);
       io.stdout(`  output: ${outputDir}`);
       return 0;
@@ -165,6 +167,7 @@ export async function buildDataset(
       dependencies.generateDynamicTiers ?? generateDynamicTiers
     )(
       {
+        frameWorkers: configuration.dynamic.frameWorkers ?? 0,
         force: false,
         inputPaths: dynamicInputs,
         ...(configuration.dynamic.maxSh === undefined
@@ -377,6 +380,13 @@ function parseConfiguration(value: unknown): DatasetBuildConfiguration {
       (value.dynamic.maxSh as number) > 3)
   ) {
     throw new Error("dynamic.maxSh must be an integer between 0 and 3.");
+  }
+  if (
+    value.dynamic.frameWorkers !== undefined &&
+    (!Number.isInteger(value.dynamic.frameWorkers) ||
+      (value.dynamic.frameWorkers as number) < 0)
+  ) {
+    throw new Error("dynamic.frameWorkers must be a non-negative integer.");
   }
   const configuredTiers = value.dynamic.tiers;
   if (

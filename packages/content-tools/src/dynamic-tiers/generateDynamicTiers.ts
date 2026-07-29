@@ -1,5 +1,5 @@
 import { access, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { availableParallelism, tmpdir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
 
 import {
@@ -13,6 +13,7 @@ import type { SplatTransformCliRunner } from "../sog/runSplatTransformCli.js";
 export type DynamicTierOutputFormat = "sog" | "spz";
 
 export interface GenerateDynamicTiersRequest {
+  frameWorkers: number;
   force: boolean;
   inputPaths: string[];
   maxSh?: number;
@@ -61,6 +62,19 @@ interface GeneratedFrame {
   sourceFile: string;
 }
 
+interface PlannedOutput {
+  filename: string;
+  path: string;
+  ratio: number;
+  tier: string;
+}
+
+interface PlannedFrame {
+  inputPath: string;
+  outputs: PlannedOutput[];
+  sourceFormat: "ply" | "spz";
+}
+
 /** Generates flat temporal quality tiers from ordinary PLY or SPZ frame sources. */
 export async function generateDynamicTiers(
   request: GenerateDynamicTiersRequest,
@@ -91,86 +105,27 @@ export async function generateDynamicTiers(
     }
 
     await mkdir(outputDir, { recursive: true });
-    temporaryDir = await mkdtemp(join(tmpdir(), "gs-dynamic-tiers-"));
-    const frames: GeneratedFrame[] = [];
-
-    for (const [frameIndex, frame] of framePlans.entries()) {
-      const sourceInfo = await inspectSource(frame.inputPath);
-      if (!sourceInfo.gaussian || sourceInfo.numGaussians <= 0) {
-        throw new Error(`Input is not Gaussian splat data: ${frame.inputPath}`);
-      }
-      io.stdout(
-        `${basename(frame.inputPath)}: ${sourceInfo.numGaussians} source Gaussians`,
-      );
-      const qualityLevels: GeneratedQualityLevel[] = [];
-
-      for (const [level, output] of frame.outputs.entries()) {
-        let encodingInput = frame.inputPath;
-        if (output.ratio < 1) {
-          const temporaryPly = join(
-            temporaryDir,
-            `${frameIndex}-${level}-${output.tier}.ply`,
-          );
-          io.stdout(`  ${output.tier}: decimating to ${formatPercent(output.ratio)}`);
-          await runSplatTransform([
-            frame.inputPath,
-            ...(request.maxSh === undefined
-              ? []
-              : ["--filter-harmonics", String(request.maxSh)]),
-            "--decimate",
-            formatPercent(output.ratio),
-            "--scratch-dir",
-            temporaryDir,
-            temporaryPly,
-          ]);
-          await access(temporaryPly);
-          encodingInput = temporaryPly;
-        }
-
-        await mkdir(outputDir, { recursive: true });
-        io.stdout(`  ${output.tier}: writing ${request.outputFormat.toUpperCase()}`);
-        await runSplatTransform([
-          encodingInput,
-          ...(output.ratio === 1 && request.maxSh !== undefined
-            ? ["--filter-harmonics", String(request.maxSh)]
-            : []),
-          output.path,
-          ...(request.outputFormat === "sog"
-            ? [
-                "--sh-iterations",
-                String(request.shIterations),
-                "--max-workers",
-                String(request.maxWorkers),
-              ]
-            : ["--spz-version", "4"]),
-          ...(request.force ? ["--overwrite"] : []),
-        ]);
-        await access(output.path);
-        const outputInfo = await inspectSource(output.path);
-        if (!outputInfo.gaussian || outputInfo.numGaussians <= 0) {
-          throw new Error(`Generated tier is not Gaussian splat data: ${output.path}`);
-        }
-        const byteSize = (await stat(output.path)).size;
-        qualityLevels.push({
-          byteSize,
-          codec: request.outputFormat === "sog" ? "sog-v2" : "spz-v4",
-          detailLevel: outputInfo.numGaussians / sourceInfo.numGaussians,
-          level,
-          metadata: {
-            format: request.outputFormat,
-            sourceFormat: frame.sourceFormat,
-            strategy: "splat-transform-merge-decimation-v1",
-            targetRatio: output.ratio,
-            tier: output.tier,
-          },
-          minimumPlayable: output.tier === request.minimumPlayable,
-          splatCount: outputInfo.numGaussians,
-          url: output.filename,
-        });
-      }
-
-      frames.push({ qualityLevels, sourceFile: basename(frame.inputPath) });
-    }
+    const workingDir = await mkdtemp(join(tmpdir(), "gs-dynamic-tiers-"));
+    temporaryDir = workingDir;
+    const frameWorkers = resolveFrameWorkers(request);
+    io.stdout(
+      `Generating ${framePlans.length} frame(s) with ${frameWorkers} parallel frame worker(s).`,
+    );
+    const frames = await mapConcurrentOrdered(
+      framePlans,
+      frameWorkers,
+      async (frame, frameIndex) =>
+        generateFrame(
+          request,
+          frame,
+          frameIndex,
+          framePlans.length,
+          workingDir,
+          inspectSource,
+          runSplatTransform,
+          io,
+        ),
+    );
 
     await writeFile(
       indexPath,
@@ -251,6 +206,9 @@ function validateRequest(
   if (!Number.isInteger(request.maxWorkers) || request.maxWorkers < 0) {
     throw new Error("SOG max workers must be a non-negative integer.");
   }
+  if (!Number.isInteger(request.frameWorkers) || request.frameWorkers < 0) {
+    throw new Error("Frame workers must be a non-negative integer.");
+  }
   const tiers = Object.entries(request.tiers);
   if (
     tiers.length === 0 ||
@@ -280,7 +238,7 @@ function planFrames(
   outputDir: string,
   tiers: ReadonlyArray<readonly [string, number]>,
   outputFormat: DynamicTierOutputFormat,
-) {
+): PlannedFrame[] {
   const names = new Set<string>();
   return inputPaths.map((inputPath) => {
     const sourceFilename = basename(inputPath);
@@ -293,8 +251,133 @@ function planFrames(
       }
       return { filename, path: join(outputDir, filename), ratio, tier };
     });
-    return { inputPath, outputs, sourceFormat } as const;
+    return { inputPath, outputs, sourceFormat };
   });
+}
+
+async function generateFrame(
+  request: GenerateDynamicTiersRequest,
+  frame: PlannedFrame,
+  frameIndex: number,
+  frameCount: number,
+  temporaryDir: string,
+  inspectSource: (inputPath: string) => Promise<SplatSourceInfo>,
+  runSplatTransform: SplatTransformCliRunner,
+  io: CliIo,
+): Promise<GeneratedFrame> {
+  const frameLabel = `[${frameIndex + 1}/${frameCount}] ${basename(frame.inputPath)}`;
+  const sourceInfo = await inspectSource(frame.inputPath);
+  if (!sourceInfo.gaussian || sourceInfo.numGaussians <= 0) {
+    throw new Error(`Input is not Gaussian splat data: ${frame.inputPath}`);
+  }
+  io.stdout(`${frameLabel}: ${sourceInfo.numGaussians} source Gaussians`);
+  const qualityLevels: GeneratedQualityLevel[] = [];
+
+  for (const [level, output] of frame.outputs.entries()) {
+    let encodingInput = frame.inputPath;
+    if (output.ratio < 1) {
+      const temporaryPly = join(
+        temporaryDir,
+        `${frameIndex}-${level}-${output.tier}.ply`,
+      );
+      io.stdout(
+        `${frameLabel} ${output.tier}: decimating to ${formatPercent(output.ratio)}`,
+      );
+      await runSplatTransform([
+        frame.inputPath,
+        ...(request.maxSh === undefined
+          ? []
+          : ["--filter-harmonics", String(request.maxSh)]),
+        "--decimate",
+        formatPercent(output.ratio),
+        "--scratch-dir",
+        temporaryDir,
+        temporaryPly,
+      ]);
+      await access(temporaryPly);
+      encodingInput = temporaryPly;
+    }
+
+    io.stdout(
+      `${frameLabel} ${output.tier}: writing ${request.outputFormat.toUpperCase()}`,
+    );
+    await runSplatTransform([
+      encodingInput,
+      ...(output.ratio === 1 && request.maxSh !== undefined
+        ? ["--filter-harmonics", String(request.maxSh)]
+        : []),
+      output.path,
+      ...(request.outputFormat === "sog"
+        ? [
+            "--sh-iterations",
+            String(request.shIterations),
+            "--max-workers",
+            String(request.maxWorkers),
+          ]
+        : ["--spz-version", "4"]),
+      ...(request.force ? ["--overwrite"] : []),
+    ]);
+    await access(output.path);
+    const outputInfo = await inspectSource(output.path);
+    if (!outputInfo.gaussian || outputInfo.numGaussians <= 0) {
+      throw new Error(`Generated tier is not Gaussian splat data: ${output.path}`);
+    }
+    const byteSize = (await stat(output.path)).size;
+    qualityLevels.push({
+      byteSize,
+      codec: request.outputFormat === "sog" ? "sog-v2" : "spz-v4",
+      detailLevel: outputInfo.numGaussians / sourceInfo.numGaussians,
+      level,
+      metadata: {
+        format: request.outputFormat,
+        sourceFormat: frame.sourceFormat,
+        strategy: "splat-transform-merge-decimation-v1",
+        targetRatio: output.ratio,
+        tier: output.tier,
+      },
+      minimumPlayable: output.tier === request.minimumPlayable,
+      splatCount: outputInfo.numGaussians,
+      url: output.filename,
+    });
+  }
+
+  return { qualityLevels, sourceFile: basename(frame.inputPath) };
+}
+
+function resolveFrameWorkers(request: GenerateDynamicTiersRequest): number {
+  if (request.frameWorkers > 0) return request.frameWorkers;
+  const encoderWorkers =
+    request.outputFormat === "sog" ? Math.max(1, request.maxWorkers) : 1;
+  return Math.max(1, Math.min(4, Math.floor(availableParallelism() / encoderWorkers)));
+}
+
+async function mapConcurrentOrdered<Input, Output>(
+  inputs: readonly Input[],
+  concurrency: number,
+  map: (input: Input, index: number) => Promise<Output>,
+): Promise<Output[]> {
+  const outputs = new Array<Output>(inputs.length);
+  let nextIndex = 0;
+  let firstError: unknown;
+  const workers = Array.from(
+    { length: Math.min(concurrency, inputs.length) },
+    async () => {
+      while (firstError === undefined) {
+        const index = nextIndex;
+        nextIndex += 1;
+        const input = inputs[index];
+        if (input === undefined) return;
+        try {
+          outputs[index] = await map(input, index);
+        } catch (error) {
+          firstError ??= error;
+        }
+      }
+    },
+  );
+  await Promise.all(workers);
+  if (firstError !== undefined) throw firstError;
+  return outputs;
 }
 
 function formatPercent(ratio: number): string {

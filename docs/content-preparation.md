@@ -58,6 +58,34 @@ The `tiers` and `minimumPlayable` fields above show the defaults and may be omit
 Tier names are user-defined when custom ratios are useful, but `minimumPlayable` must
 name one of them.
 
+### Parallel build tuning
+
+Dynamic frames can be processed concurrently. Automatic mode is the default:
+
+```json
+{
+  "dynamic": {
+    "inputDir": "frames",
+    "frameWorkers": 0
+  },
+  "sog": {
+    "maxWorkers": 4
+  }
+}
+```
+
+`dynamic.frameWorkers` controls how many source frames are active at once. Zero chooses
+a CPU-aware value, capped at four. `sog.maxWorkers` controls worker threads inside each
+SOG encoder process, so peak encoding concurrency is approximately
+`frameWorkers × maxWorkers`. Merge decimation itself benefits from multiple active
+frames.
+
+For a high-core-count workstation, start with `frameWorkers: 2` or `4`. Reduce it to `1`
+if source frames are very large, temporary PLY traffic saturates the disk, memory
+pressure rises, or concurrent SOG compression contends for the same GPU. Tiers within a
+single frame remain sequential to bound peak memory and scratch-file usage. The
+equivalent lower-level option is `--frame-workers <n>`.
+
 Preview and run:
 
 ```bash
@@ -78,6 +106,7 @@ To generate tiers without building a complete dataset:
 pnpm gs-content generate-tiers frame-0000.ply frame-0001.spz \
   --output-dir generated/dynamic \
   --format sog \
+  --frame-workers 4 \
   --tiers preview=0.10,minimum=0.25,medium=0.50,full=1
 
 pnpm gs-content generate-tiers frame-0000.ply \

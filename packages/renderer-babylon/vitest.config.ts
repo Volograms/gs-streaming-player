@@ -1,15 +1,9 @@
-import { fileURLToPath } from "node:url";
-
 import { defineConfig } from "vitest/config";
 
+import { workspaceResolve } from "../../vitest.shared.config";
+
 export default defineConfig({
-  resolve: {
-    alias: {
-      "@6g-path/gaussian-codec-spz": fileURLToPath(
-        new URL("../codec-spz/src/index.ts", import.meta.url),
-      ),
-    },
-  },
+  resolve: workspaceResolve,
   test: {
     environment: "node",
     name: "renderer-babylon",

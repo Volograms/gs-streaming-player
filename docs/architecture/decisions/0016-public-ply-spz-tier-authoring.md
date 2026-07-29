@@ -28,6 +28,11 @@ discovers top-level PLY/SPZ files in deterministic natural filename order and wr
 expanded file list only into the generated canonical manifest. An explicit frame array
 remains available for irregular ordering; the two input forms are mutually exclusive.
 
+Tier generation uses bounded frame-level parallelism while preserving input order in
+metadata. Tiers within a frame remain sequential because parallel decimation and SOG
+compression can multiply memory, scratch-disk, and GPU pressure. Frame concurrency and
+per-SOG-encoder worker counts are independently configurable.
+
 Persistent static sources continue to export as Streamed SOG. The existing
 `extract-rad-cuts` command, Rust helper, and RAD-to-SOG conversion commands remain
 available for legacy datasets, but `gs-content build` and `generate-tiers` do not call

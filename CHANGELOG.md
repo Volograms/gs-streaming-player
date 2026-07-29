@@ -15,7 +15,8 @@ All notable changes to this project will be documented here. The project uses
 - Public PLY/SPZ dynamic-tier authoring through SplatTransform merge decimation. The
   normal `gs-content build` now emits bundled SOG tiers by default or SPZ v4 tiers on
   request, discovers large input sequences from a directory, records actual output
-  metadata, and leaves the RAD extractor as a legacy command with focused tests.
+  metadata, processes frames with bounded CPU-aware parallelism, and leaves the RAD
+  extractor as a legacy command with focused tests.
 
 - Local showcase datasets can be served directly from an external directory with
   `SHOWCASE_LOCAL_DATASET_DIR`, while relative manifest paths and the existing ignored
@@ -238,6 +239,10 @@ All notable changes to this project will be documented here. The project uses
 
 ### Fixed
 
+- Vitest now resolves every internal workspace package directly from source, so clean CI
+  checkouts can run unit tests before package build artifacts exist.
+- PlayCanvas transform tests now supply their entity's required application context,
+  avoiding misleading assertion diagnostics during otherwise successful test runs.
 - PlayCanvas playback no longer remains indefinitely in `initialising` after its first
   SOG frame becomes visible. Normal frame swaps no longer depend on the diagnostic
   `frame:ready` capture fence; the opt-in fence now matches the emitted camera component

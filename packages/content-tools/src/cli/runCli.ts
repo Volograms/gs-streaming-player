@@ -53,6 +53,8 @@ Options:
                   Default: preview=0.10,minimum=0.25,medium=0.50,full=1.00
   --minimum-playable <name>
                   Tier marked as minimum playable. Default: minimum.
+  --frame-workers <n>
+                  Frames processed concurrently; 0 chooses a CPU-aware value. Default: 0.
   --max-sh <0..3> Limit output spherical harmonics degree.
   --index <name>  Output metadata filename. Default: quality-cuts.json
   --sh-iterations <n>
@@ -230,6 +232,7 @@ function parseGenerateDynamicTiersRequest(
   io: CliIo,
 ): GenerateDynamicTiersRequest | undefined {
   const request: GenerateDynamicTiersRequest = {
+    frameWorkers: 0,
     force: false,
     inputPaths: [],
     maxWorkers: 4,
@@ -259,6 +262,16 @@ function parseGenerateDynamicTiersRequest(
     }
     index += 1;
     switch (argument) {
+      case "--frame-workers": {
+        const frameWorkers = Number(value);
+        if (!Number.isInteger(frameWorkers) || frameWorkers < 0) {
+          io.stderr("--frame-workers must be a non-negative integer.");
+          io.stderr(USAGE);
+          return undefined;
+        }
+        request.frameWorkers = frameWorkers;
+        break;
+      }
       case "--format":
         if (value !== "sog" && value !== "spz") {
           io.stderr("--format must be 'sog' or 'spz'.");

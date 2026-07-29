@@ -193,6 +193,8 @@ quality target. Remaining work focuses on target-device validation.
 - [x] Accept ordered PLY and SPZ dynamic frames in `gs-content build`.
 - [x] Discover large sequences from `dynamic.inputDir` in deterministic natural filename
       order while retaining explicit frame arrays for irregular sequences.
+- [x] Add bounded frame-parallel tier generation with CPU-aware automatic concurrency,
+      deterministic output ordering, and independent SOG encoder-worker tuning.
 - [x] Generate configurable merge-decimated tiers through the pinned public
       SplatTransform package.
 - [x] Emit bundled SOG by default or SPZ v4 by explicit configuration.

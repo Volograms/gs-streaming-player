@@ -79,6 +79,8 @@ describe("gs-manifest CLI", () => {
         "base",
         "--max-sh",
         "1",
+        "--frame-workers",
+        "3",
         "--force",
       ],
       output.io,
@@ -93,6 +95,7 @@ describe("gs-manifest CLI", () => {
     expect(exitCode).toBe(0);
     expect(requests).toEqual([
       {
+        frameWorkers: 3,
         force: true,
         inputPaths: ["frames/0001.ply", "frames/0002.spz"],
         maxSh: 1,
@@ -123,6 +126,7 @@ describe("gs-manifest CLI", () => {
     ).toBe(0);
     expect(requests).toEqual([
       expect.objectContaining({
+        frameWorkers: 0,
         minimumPlayable: "minimum",
         outputFormat: "sog",
         tiers: { preview: 0.1, minimum: 0.25, medium: 0.5, full: 1 },
@@ -137,6 +141,24 @@ describe("gs-manifest CLI", () => {
       ),
     ).toBe(2);
     expect(invalid.stderr.join("\n")).toContain("'sog' or 'spz'");
+
+    const invalidWorkers = createIo();
+    expect(
+      await runCli(
+        [
+          "generate-tiers",
+          "frame.ply",
+          "--output-dir",
+          "generated",
+          "--frame-workers",
+          "-1",
+        ],
+        invalidWorkers.io,
+      ),
+    ).toBe(2);
+    expect(invalidWorkers.stderr.join("\n")).toContain(
+      "--frame-workers must be a non-negative integer",
+    );
   });
 
   it("returns zero for a valid manifest", async () => {

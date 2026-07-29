@@ -99,6 +99,10 @@ frames. The tool discovers them in natural filename order and generates the deta
 runtime manifest; an explicit `dynamic.frames` list is only needed for irregular
 ordering.
 
+Frame generation is parallel by default using a bounded CPU-aware worker count. Set
+`dynamic.frameWorkers` in the recipe, or `--frame-workers` on `generate-tiers`, to tune
+throughput against RAM, scratch-disk, and GPU pressure.
+
 ```bash
 pnpm gs-content build dataset.json --output-dir dist/content --dry-run
 pnpm gs-content build dataset.json --output-dir dist/content

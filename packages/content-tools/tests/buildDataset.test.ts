@@ -33,6 +33,7 @@ async function fixture(outputFormat: "sog" | "spz" = "sog") {
     JSON.stringify({
       audio: { contentType: "audio/ogg", input: "inputs/track.ogg" },
       dynamic: {
+        frameWorkers: 2,
         frames: ["inputs/frame0001.ply", "inputs/frame0002.spz"],
         id: "actor",
         minimumPlayable: "minimum",
@@ -192,6 +193,7 @@ describe("buildDataset", () => {
     expect(output.stderr).toEqual([]);
     expect(requests).toEqual([
       expect.objectContaining({
+        frameWorkers: 2,
         inputPaths: [
           join(input.root, "inputs", "frame0001.ply"),
           join(input.root, "inputs", "frame0002.spz"),

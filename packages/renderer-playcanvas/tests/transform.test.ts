@@ -7,6 +7,10 @@ import {
   applyPlayCanvasTransform,
 } from "../src/index.js";
 
+import type { AppBase } from "playcanvas";
+
+const testApplication = {} as AppBase;
+
 describe("PlayCanvas renderer capability", () => {
   it("advertises only the native SOG v2 path", () => {
     const adapter = new PlayCanvasGaussianRendererAdapter({});
@@ -19,7 +23,7 @@ describe("PlayCanvas renderer capability", () => {
 
 describe("applyPlayCanvasTransform", () => {
   it("applies component transforms and resets omitted components", () => {
-    const entity = new Entity("test");
+    const entity = new Entity("test", testApplication);
 
     applyPlayCanvasTransform(entity, {
       position: { x: 1, y: 2, z: 3 },
@@ -37,7 +41,7 @@ describe("applyPlayCanvasTransform", () => {
   });
 
   it("decomposes matrix transforms", () => {
-    const entity = new Entity("test");
+    const entity = new Entity("test", testApplication);
     const matrix = new Mat4().setTRS(
       new Vec3(3, 4, 5),
       new Quat(0, 0, 0, 1),

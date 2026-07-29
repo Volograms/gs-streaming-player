@@ -55,6 +55,7 @@ describe("generateDynamicTiers", () => {
     const fake = fakeDependencies();
     const exitCode = await generateDynamicTiers(
       {
+        frameWorkers: 1,
         force: false,
         inputPaths: [input.inputPath],
         maxSh: 1,
@@ -121,6 +122,7 @@ describe("generateDynamicTiers", () => {
     const fake = fakeDependencies();
     const exitCode = await generateDynamicTiers(
       {
+        frameWorkers: 1,
         force: false,
         inputPaths: [input.inputPath],
         maxWorkers: 4,
@@ -142,6 +144,59 @@ describe("generateDynamicTiers", () => {
     expect(index).toContain('"codec": "spz-v4"');
   });
 
+  it("processes frames concurrently while preserving manifest order", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dynamic-tiers-parallel-test-"));
+    const inputPaths = ["frame1.ply", "frame2.ply", "frame3.ply"].map((name) =>
+      join(root, name),
+    );
+    await Promise.all(inputPaths.map((path) => writeFile(path, "source")));
+    const outputDir = join(root, "output");
+    const output = createIo();
+    let active = 0;
+    let maximumActive = 0;
+
+    const exitCode = await generateDynamicTiers(
+      {
+        frameWorkers: 2,
+        force: false,
+        inputPaths,
+        maxWorkers: 1,
+        minimumPlayable: "full",
+        outputDir,
+        outputFormat: "spz",
+        shIterations: 10,
+        tiers: { full: 1 },
+      },
+      output.io,
+      {
+        inspectSource: async () => ({ gaussian: true, numGaussians: 100 }),
+        runSplatTransform: async (args) => {
+          active += 1;
+          maximumActive = Math.max(maximumActive, active);
+          await new Promise((resolve) => setTimeout(resolve, 15));
+          const outputPath = [...args]
+            .reverse()
+            .find((argument) => /\.spz$/i.test(argument));
+          if (outputPath === undefined) throw new Error("missing fake output");
+          await mkdir(join(outputPath, ".."), { recursive: true });
+          await writeFile(outputPath, "generated");
+          active -= 1;
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(maximumActive).toBe(2);
+    const index = JSON.parse(
+      await readFile(join(outputDir, "quality-cuts.json"), "utf8"),
+    ) as { frames: Array<{ sourceFile: string }> };
+    expect(index.frames.map(({ sourceFile }) => sourceFile)).toEqual([
+      "frame1.ply",
+      "frame2.ply",
+      "frame3.ply",
+    ]);
+  });
+
   it("rejects RAD input on the public tier-generation path", async () => {
     const root = await mkdtemp(join(tmpdir(), "dynamic-tiers-rad-test-"));
     const inputPath = join(root, "frame.rad");
@@ -149,6 +204,7 @@ describe("generateDynamicTiers", () => {
     const output = createIo();
     const exitCode = await generateDynamicTiers(
       {
+        frameWorkers: 1,
         force: false,
         inputPaths: [inputPath],
         maxWorkers: 4,
@@ -173,6 +229,7 @@ describe("generateDynamicTiers", () => {
     const runSplatTransform = vi.fn(async () => undefined);
     const exitCode = await generateDynamicTiers(
       {
+        frameWorkers: 1,
         force: false,
         inputPaths: [input.inputPath],
         maxWorkers: 4,
