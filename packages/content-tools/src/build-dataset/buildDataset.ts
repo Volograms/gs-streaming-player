@@ -441,10 +441,13 @@ function parseConfiguration(value: unknown): DatasetBuildConfiguration {
         (object) =>
           !isRecord(object) ||
           typeof object.id !== "string" ||
+          !isSafePathSegment(object.id) ||
           typeof object.input !== "string",
       ))
   ) {
-    throw new Error("staticObjects must contain objects with id and input strings.");
+    throw new Error(
+      "staticObjects must contain objects with a path-safe id and an input string.",
+    );
   }
   if (
     value.audio !== undefined &&
@@ -453,6 +456,10 @@ function parseConfiguration(value: unknown): DatasetBuildConfiguration {
     throw new Error("audio.input must be a string when audio is configured.");
   }
   return value as unknown as DatasetBuildConfiguration;
+}
+
+function isSafePathSegment(value: string): boolean {
+  return value.trim() !== "" && value !== "." && value !== ".." && !/[\\/]/.test(value);
 }
 
 function parseQualityIndex(value: unknown): DynamicQualityCutIndex {

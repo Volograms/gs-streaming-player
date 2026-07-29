@@ -144,6 +144,30 @@ describe("buildDataset", () => {
     await expect(access(input.outputDir)).rejects.toThrow();
   });
 
+  it("rejects path-like static object ids before invoking converters", async () => {
+    const input = await fixture();
+    const configuration = JSON.parse(await readFile(input.configPath, "utf8")) as {
+      staticObjects: Array<{ id: string }>;
+    };
+    configuration.staticObjects[0]!.id = "../../scene";
+    await writeFile(input.configPath, JSON.stringify(configuration));
+    const output = createIo();
+    const exportStreamedSog = vi.fn(async () => 0);
+    const generateDynamicTiers = vi.fn(async () => 0);
+
+    const exitCode = await buildDataset(
+      { ...input, dryRun: false, force: false },
+      output.io,
+      { exportStreamedSog, generateDynamicTiers },
+    );
+
+    expect(exitCode).toBe(1);
+    expect(output.stderr.join("\n")).toContain("path-safe id");
+    expect(generateDynamicTiers).not.toHaveBeenCalled();
+    expect(exportStreamedSog).not.toHaveBeenCalled();
+    await expect(access(join(input.root, "scene"))).rejects.toThrow();
+  });
+
   it("generates tiers directly and emits a canonical validated SOG manifest", async () => {
     const input = await fixture();
     const output = createIo();
