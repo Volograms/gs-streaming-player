@@ -89,7 +89,9 @@ export interface DatasetBuildConfiguration {
 export interface BuildDatasetRequest {
   configPath: string;
   dryRun: boolean;
+  frameWorkers?: number;
   force: boolean;
+  maxWorkers?: number;
   outputDir: string;
 }
 
@@ -122,12 +124,27 @@ export async function buildDataset(
 ): Promise<number> {
   let stagingDir: string | undefined;
   try {
+    if (
+      request.frameWorkers !== undefined &&
+      (!Number.isInteger(request.frameWorkers) || request.frameWorkers < 0)
+    ) {
+      throw new Error("Build frameWorkers must be a non-negative integer.");
+    }
+    if (
+      request.maxWorkers !== undefined &&
+      (!Number.isInteger(request.maxWorkers) || request.maxWorkers < 0)
+    ) {
+      throw new Error("Build maxWorkers must be a non-negative integer.");
+    }
     const configPath = resolve(request.configPath);
     const outputDir = resolve(request.outputDir);
     const configuration = parseConfiguration(
       JSON.parse(await readFile(configPath, "utf8")) as unknown,
     );
     const configDir = dirname(configPath);
+    const frameWorkers =
+      request.frameWorkers ?? configuration.dynamic.frameWorkers ?? 0;
+    const maxWorkers = request.maxWorkers ?? configuration.sog?.maxWorkers ?? 4;
     validateOutputDirectory(outputDir, configDir);
     const dynamicInputs = await resolveDynamicInputs(configuration, configDir);
     const staticInputs = (configuration.staticObjects ?? []).map((object) => ({
@@ -150,7 +167,8 @@ export async function buildDataset(
       io.stdout(
         `  ${dynamicInputs.length} dynamic PLY/SPZ frame(s) -> ${(configuration.dynamic.outputFormat ?? "sog").toUpperCase()} tiers`,
       );
-      io.stdout(`  frame workers: ${configuration.dynamic.frameWorkers ?? "auto"}`);
+      io.stdout(`  frame workers: ${frameWorkers === 0 ? "auto" : frameWorkers}`);
+      io.stdout(`  SOG encoder workers per frame: ${maxWorkers}`);
       io.stdout(`  ${staticInputs.length} static scene(s)`);
       io.stdout(`  output: ${outputDir}`);
       return 0;
@@ -167,13 +185,13 @@ export async function buildDataset(
       dependencies.generateDynamicTiers ?? generateDynamicTiers
     )(
       {
-        frameWorkers: configuration.dynamic.frameWorkers ?? 0,
+        frameWorkers,
         force: false,
         inputPaths: dynamicInputs,
         ...(configuration.dynamic.maxSh === undefined
           ? {}
           : { maxSh: configuration.dynamic.maxSh }),
-        maxWorkers: configuration.sog?.maxWorkers ?? 4,
+        maxWorkers,
         minimumPlayable: configuration.dynamic.minimumPlayable ?? "minimum",
         outputDir: dynamicDir,
         outputFormat: configuration.dynamic.outputFormat ?? "sog",
@@ -198,7 +216,7 @@ export async function buildDataset(
           lodChunkCount: sog.lodChunkCount ?? 512,
           lodChunkExtent: sog.lodChunkExtent ?? 16,
           lodRatios: sog.lodRatios ?? [1, 0.5, 0.25, 0.1],
-          maxWorkers: sog.maxWorkers ?? 4,
+          maxWorkers,
           outputDir: join(stagingDir, "static", object.id),
           shIterations: sog.shIterations ?? 10,
         },

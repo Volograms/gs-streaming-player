@@ -38,6 +38,10 @@ describe("gs-manifest CLI", () => {
         "content/dataset.json",
         "--output-dir",
         "public/content",
+        "--frame-workers",
+        "8",
+        "--max-workers",
+        "2",
         "--dry-run",
         "--force",
       ],
@@ -55,10 +59,50 @@ describe("gs-manifest CLI", () => {
       {
         configPath: "content/dataset.json",
         dryRun: true,
+        frameWorkers: 8,
         force: true,
+        maxWorkers: 2,
         outputDir: "public/content",
       },
     ]);
+  });
+
+  it("rejects invalid build worker overrides", async () => {
+    const output = createIo();
+    const exitCode = await runCli(
+      [
+        "build",
+        "content/dataset.json",
+        "--output-dir",
+        "public/content",
+        "--frame-workers",
+        "-1",
+      ],
+      output.io,
+    );
+
+    expect(exitCode).toBe(2);
+    expect(output.stderr.join("\n")).toContain(
+      "--frame-workers must be a non-negative integer",
+    );
+
+    const invalidEncoderWorkers = createIo();
+    expect(
+      await runCli(
+        [
+          "build",
+          "content/dataset.json",
+          "--output-dir",
+          "public/content",
+          "--max-workers",
+          "many",
+        ],
+        invalidEncoderWorkers.io,
+      ),
+    ).toBe(2);
+    expect(invalidEncoderWorkers.stderr.join("\n")).toContain(
+      "--max-workers must be a non-negative integer",
+    );
   });
 
   it("forwards public PLY/SPZ tier generation options", async () => {

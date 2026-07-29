@@ -90,7 +90,9 @@ Preview and run:
 
 ```bash
 pnpm gs-content build dataset.json --output-dir dist/content --dry-run
-pnpm gs-content build dataset.json --output-dir dist/content
+pnpm gs-content build dataset.json --output-dir dist/content \
+  --frame-workers 4 \
+  --max-workers 2
 ```
 
 Existing output is protected; pass `--force` only after checking the target. The build

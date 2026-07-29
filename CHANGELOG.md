@@ -15,8 +15,9 @@ All notable changes to this project will be documented here. The project uses
 - Public PLY/SPZ dynamic-tier authoring through SplatTransform merge decimation. The
   normal `gs-content build` now emits bundled SOG tiers by default or SPZ v4 tiers on
   request, discovers large input sequences from a directory, records actual output
-  metadata, processes frames with bounded CPU-aware parallelism, and leaves the RAD
-  extractor as a legacy command with focused tests.
+  metadata, processes frames with bounded CPU-aware parallelism (configurable in the
+  recipe or via `build --frame-workers`), supports a `build --max-workers` SOG encoder
+  override, and leaves the RAD extractor as a legacy command with focused tests.
 
 - Local showcase datasets can be served directly from an external directory with
   `SHOWCASE_LOCAL_DATASET_DIR`, while relative manifest paths and the existing ignored

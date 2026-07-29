@@ -37,7 +37,7 @@ export interface CliIo {
 }
 
 const USAGE = `Usage:
-  pnpm gs-content build <dataset-config.json> --output-dir <dir> [--dry-run] [--force]
+  pnpm gs-content build <dataset-config.json> --output-dir <dir> [--frame-workers <n>] [--max-workers <n>] [--dry-run] [--force]
   pnpm gs-content generate-tiers <frame.ply|frame.spz> [more ...] --output-dir <dir> [options]
   pnpm gs-manifest validate <manifest.json> [--check-assets]
   pnpm gs-content extract-rad-cuts <frame.rad> [more.rad ...] --output-dir <dir> [options] # legacy
@@ -205,19 +205,40 @@ function parseBuildDatasetRequest(
       request.force = true;
       continue;
     }
-    if (argument !== "--output-dir") {
-      io.stderr(`Unknown option: ${argument}`);
-      io.stderr(USAGE);
-      return undefined;
-    }
     const value = args[index + 1];
     if (value === undefined || value.startsWith("--")) {
-      io.stderr("Option --output-dir requires a value.");
+      io.stderr(`Option ${argument} requires a value.`);
       io.stderr(USAGE);
       return undefined;
     }
-    request.outputDir = value;
     index += 1;
+    if (argument === "--output-dir") {
+      request.outputDir = value;
+      continue;
+    }
+    if (argument === "--frame-workers") {
+      const frameWorkers = Number(value);
+      if (!Number.isInteger(frameWorkers) || frameWorkers < 0) {
+        io.stderr("--frame-workers must be a non-negative integer.");
+        io.stderr(USAGE);
+        return undefined;
+      }
+      request.frameWorkers = frameWorkers;
+      continue;
+    }
+    if (argument === "--max-workers") {
+      const maxWorkers = Number(value);
+      if (!Number.isInteger(maxWorkers) || maxWorkers < 0) {
+        io.stderr("--max-workers must be a non-negative integer.");
+        io.stderr(USAGE);
+        return undefined;
+      }
+      request.maxWorkers = maxWorkers;
+      continue;
+    }
+    io.stderr(`Unknown option: ${argument}`);
+    io.stderr(USAGE);
+    return undefined;
   }
   if (request.configPath === "" || request.outputDir === "") {
     io.stderr("A dataset config and --output-dir are required.");

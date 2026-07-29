@@ -149,7 +149,13 @@ describe("buildDataset", () => {
     const output = createIo();
     const requests: unknown[] = [];
     const exitCode = await buildDataset(
-      { ...input, dryRun: false, force: false },
+      {
+        ...input,
+        dryRun: false,
+        force: false,
+        frameWorkers: 8,
+        maxWorkers: 2,
+      },
       output.io,
       {
         exportStreamedSog: async (request) => {
@@ -193,12 +199,13 @@ describe("buildDataset", () => {
     expect(output.stderr).toEqual([]);
     expect(requests).toEqual([
       expect.objectContaining({
-        frameWorkers: 2,
+        frameWorkers: 8,
         inputPaths: [
           join(input.root, "inputs", "frame0001.ply"),
           join(input.root, "inputs", "frame0002.spz"),
         ],
         minimumPlayable: "minimum",
+        maxWorkers: 2,
         outputFormat: "sog",
         tiers: { minimum: 0.25, full: 1 },
       }),
