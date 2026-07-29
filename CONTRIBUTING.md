@@ -7,7 +7,7 @@ supported product claim. Keep renderer dependencies out of player-core and reusa
 logic out of demo apps. Large datasets, traces, private URLs, and certificates must not
 be committed.
 
-Use Node.js 22.12+ and the pinned Corepack/pnpm version. Before a pull request, run:
+Use Node.js 22.13+ and the pinned Corepack/pnpm version. Before a pull request, run:
 
 ```bash
 pnpm typecheck

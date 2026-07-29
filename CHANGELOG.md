@@ -5,6 +5,11 @@ All notable changes to this project will be documented here. The project uses
 
 ## [Unreleased]
 
+### Changed
+
+- Raise the minimum Node.js version to 22.13 and let GitHub Pages use the current
+  Node.js 22 release so the pinned pnpm version can start successfully.
+
 ### Removed
 
 - The abandoned WebGPU-to-WebGL XR bridge, including its runtime flag, controls,
