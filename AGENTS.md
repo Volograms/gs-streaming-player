@@ -32,7 +32,7 @@ A separate demo application will integrate the library and provide:
 
 ## Toolchain
 
-- Use Node.js 22.12 or newer.
+- Use Node.js 22.13 or newer.
 - Use Corepack and the pnpm version pinned in `package.json`. Do not install pnpm through Python or pip.
 - Run commands from the repository root unless a package-specific command is more appropriate.
 

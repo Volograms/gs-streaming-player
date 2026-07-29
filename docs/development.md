@@ -2,7 +2,7 @@
 
 ## Toolchain
 
-The workspace requires Node.js 22.12 or newer and uses the exact pnpm release in the
+The workspace requires Node.js 22.13 or newer and uses the exact pnpm release in the
 root `packageManager` field. With Node installed through NVM:
 
 ```bash

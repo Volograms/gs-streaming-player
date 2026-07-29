@@ -12,7 +12,7 @@ and Babylon/SPZ remain experimental laboratories for research and performance wo
 
 ## Run from source
 
-Requirements: Node.js 22.12 or newer and Corepack. The pinned pnpm version manages the
+Requirements: Node.js 22.13 or newer and Corepack. The pinned pnpm version manages the
 workspace.
 
 ```bash
