@@ -79,6 +79,12 @@ The player uses the explicit Three.js world and transform conventions documented
 [`coordinate-system.md`](coordinate-system.md). The renderer performs no implicit axis
 conversion. A dynamic sequence transform is shared by all its frames.
 
+The canonical runtime manifest deliberately stores rotations as quaternions and scales
+as XYZ vectors. The `gs-content build` recipe also accepts the author-friendly
+`rotationDegrees: { x, y, z }` form and a scalar uniform `scale`, then normalises both
+when it generates this manifest. Configure each static object and the dynamic sequence
+independently; transforms do not need to match.
+
 ## Dynamic frames
 
 Each dynamic sequence declares its own `frameRate`, `frameCount`, and `frames`. Every

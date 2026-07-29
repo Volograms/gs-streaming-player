@@ -25,6 +25,7 @@ import type { ExportStreamedSogRunner } from "../sog/exportStreamedSog.js";
 import type {
   GaussianQualityLevel,
   GaussianSequenceManifest,
+  StaticSceneObject,
 } from "@6g-path/gaussian-player";
 
 export interface DatasetBuildTransform {
@@ -48,8 +49,13 @@ export interface DatasetBuildTransform {
   ];
   position?: { x: number; y: number; z: number };
   rotation?: { w: number; x: number; y: number; z: number };
-  scale?: { x: number; y: number; z: number };
+  /** Authoring convenience converted to a manifest quaternion at build time. */
+  rotationDegrees?: { x: number; y: number; z: number };
+  /** A number is expanded to uniform XYZ scale at build time. */
+  scale?: number | { x: number; y: number; z: number };
 }
+
+type ManifestTransform = NonNullable<StaticSceneObject["transform"]>;
 
 export interface DatasetBuildConfiguration {
   audio?: {
@@ -281,6 +287,7 @@ function createManifest(
   }
   const frameCount = index.frames.length;
   const durationSeconds = frameCount / configuration.frameRate;
+  const dynamicTransform = normaliseBuildTransform(configuration.dynamic.transform);
   return assertValidManifest({
     ...(configuration.audio === undefined || audioUrl === undefined
       ? {}
@@ -323,20 +330,21 @@ function createManifest(
           };
         }),
         id: configuration.dynamic.id,
-        ...(configuration.dynamic.transform === undefined
-          ? {}
-          : { transform: configuration.dynamic.transform }),
+        ...(dynamicTransform === undefined ? {} : { transform: dynamicTransform }),
       },
     ],
     frameCount,
     frameRate: configuration.frameRate,
     id: configuration.id,
-    staticObjects: (configuration.staticObjects ?? []).map((object) => ({
-      id: object.id,
-      ...(object.priority === undefined ? {} : { priority: object.priority }),
-      ...(object.transform === undefined ? {} : { transform: object.transform }),
-      url: `static/${encodeURIComponent(object.id)}/lod-meta.json`,
-    })),
+    staticObjects: (configuration.staticObjects ?? []).map((object) => {
+      const transform = normaliseBuildTransform(object.transform);
+      return {
+        id: object.id,
+        ...(object.priority === undefined ? {} : { priority: object.priority }),
+        ...(transform === undefined ? {} : { transform }),
+        url: `static/${encodeURIComponent(object.id)}/lod-meta.json`,
+      };
+    }),
     version: "1.0",
   });
 }
@@ -406,6 +414,7 @@ function parseConfiguration(value: unknown): DatasetBuildConfiguration {
   ) {
     throw new Error("dynamic.frameWorkers must be a non-negative integer.");
   }
+  validateBuildTransform(value.dynamic.transform, "dynamic.transform");
   const configuredTiers = value.dynamic.tiers;
   if (
     configuredTiers !== undefined &&
@@ -449,6 +458,13 @@ function parseConfiguration(value: unknown): DatasetBuildConfiguration {
       "staticObjects must contain objects with a path-safe id and an input string.",
     );
   }
+  if (Array.isArray(value.staticObjects)) {
+    value.staticObjects.forEach((object, index) => {
+      if (isRecord(object)) {
+        validateBuildTransform(object.transform, `staticObjects[${index}].transform`);
+      }
+    });
+  }
   if (
     value.audio !== undefined &&
     (!isRecord(value.audio) || typeof value.audio.input !== "string")
@@ -456,6 +472,118 @@ function parseConfiguration(value: unknown): DatasetBuildConfiguration {
     throw new Error("audio.input must be a string when audio is configured.");
   }
   return value as unknown as DatasetBuildConfiguration;
+}
+
+function validateBuildTransform(value: unknown, label: string): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    throw new Error(`${label} must be an object.`);
+  }
+  const allowedFields = new Set([
+    "matrix",
+    "position",
+    "rotation",
+    "rotationDegrees",
+    "scale",
+  ]);
+  const unknownField = Object.keys(value).find((key) => !allowedFields.has(key));
+  if (unknownField !== undefined) {
+    throw new Error(`${label} contains unknown field '${unknownField}'.`);
+  }
+  if (value.rotation !== undefined && value.rotationDegrees !== undefined) {
+    throw new Error(`${label} cannot define both rotation and rotationDegrees.`);
+  }
+  if (value.position !== undefined && !isFiniteVector3(value.position)) {
+    throw new Error(`${label}.position must contain finite x, y, and z numbers.`);
+  }
+  if (value.rotationDegrees !== undefined && !isFiniteVector3(value.rotationDegrees)) {
+    throw new Error(
+      `${label}.rotationDegrees must contain finite x, y, and z numbers.`,
+    );
+  }
+  if (value.rotation !== undefined && !isFiniteQuaternion(value.rotation)) {
+    throw new Error(`${label}.rotation must contain finite w, x, y, and z numbers.`);
+  }
+  if (
+    value.scale !== undefined &&
+    !isFiniteNumber(value.scale) &&
+    !isFiniteVector3(value.scale)
+  ) {
+    throw new Error(`${label}.scale must be a finite number or XYZ object.`);
+  }
+  if (
+    value.matrix !== undefined &&
+    (!Array.isArray(value.matrix) ||
+      value.matrix.length !== 16 ||
+      value.matrix.some((component) => !isFiniteNumber(component)))
+  ) {
+    throw new Error(`${label}.matrix must contain exactly 16 finite numbers.`);
+  }
+}
+
+function normaliseBuildTransform(
+  transform: DatasetBuildTransform | undefined,
+): ManifestTransform | undefined {
+  if (transform === undefined) return undefined;
+  const rotation =
+    transform.rotationDegrees === undefined
+      ? transform.rotation
+      : quaternionFromEulerDegrees(transform.rotationDegrees);
+  const scale =
+    typeof transform.scale === "number"
+      ? { x: transform.scale, y: transform.scale, z: transform.scale }
+      : transform.scale;
+  return {
+    ...(transform.matrix === undefined ? {} : { matrix: transform.matrix }),
+    ...(transform.position === undefined ? {} : { position: transform.position }),
+    ...(rotation === undefined ? {} : { rotation }),
+    ...(scale === undefined ? {} : { scale }),
+  };
+}
+
+/** Matches PlayCanvas Quat.setFromEulerAngles (XYZ degrees). */
+function quaternionFromEulerDegrees({ x, y, z }: { x: number; y: number; z: number }): {
+  w: number;
+  x: number;
+  y: number;
+  z: number;
+} {
+  const halfToRadians = Math.PI / 360;
+  const sx = Math.sin(x * halfToRadians);
+  const cx = Math.cos(x * halfToRadians);
+  const sy = Math.sin(y * halfToRadians);
+  const cy = Math.cos(y * halfToRadians);
+  const sz = Math.sin(z * halfToRadians);
+  const cz = Math.cos(z * halfToRadians);
+  return {
+    w: cx * cy * cz + sx * sy * sz,
+    x: sx * cy * cz - cx * sy * sz,
+    y: cx * sy * cz + sx * cy * sz,
+    z: cx * cy * sz - sx * sy * cz,
+  };
+}
+
+function isFiniteVector3(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.x) &&
+    isFiniteNumber(value.y) &&
+    isFiniteNumber(value.z)
+  );
+}
+
+function isFiniteQuaternion(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.w) &&
+    isFiniteNumber(value.x) &&
+    isFiniteNumber(value.y) &&
+    isFiniteNumber(value.z)
+  );
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function isSafePathSegment(value: string): boolean {

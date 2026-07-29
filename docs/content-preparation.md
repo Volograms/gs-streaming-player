@@ -58,6 +58,63 @@ The `tiers` and `minimumPlayable` fields above show the defaults and may be omit
 Tier names are user-defined when custom ratios are useful, but `minimumPlayable` must
 name one of them.
 
+### Place and orient objects
+
+Give the dynamic sequence and every static object its own transform in the build recipe.
+The transform on `dynamic` applies to every frame, so it is the right place to scale the
+performer, put their feet on the floor, or move them away from the scene origin.
+
+```json
+{
+  "dynamic": {
+    "id": "performer",
+    "inputDir": "frames",
+    "transform": {
+      "position": { "x": 1.2, "y": 0, "z": -0.5 },
+      "rotationDegrees": { "x": 180, "y": 0, "z": 0 },
+      "scale": 0.75
+    }
+  },
+  "staticObjects": [
+    {
+      "id": "stage",
+      "input": "static/stage.ply",
+      "transform": {
+        "position": { "x": 0, "y": -1.1, "z": 0 },
+        "rotationDegrees": { "x": 180, "y": 0, "z": 0 },
+        "scale": 4
+      }
+    }
+  ]
+}
+```
+
+`position` uses world units. `rotationDegrees` is an XYZ Euler rotation matching
+PlayCanvas and is converted to a quaternion in the generated manifest. `scale` may be a
+single uniform number or an `{ x, y, z }` object. Advanced recipes may instead provide a
+quaternion as `rotation: { w, x, y, z }`, or a 16-number `matrix`; a matrix takes
+precedence when rendered. Do not provide both rotation forms.
+
+These convenience forms belong to the input build recipe, whose `version` is `1`. They
+are not valid in the generated runtime manifest, whose `version` is `"1.0"`:
+
+| Transform        | Build recipe                                      | Runtime manifest                                 |
+| ---------------- | ------------------------------------------------- | ------------------------------------------------ |
+| 180° X rotation  | `"rotationDegrees": { "x": 180, "y": 0, "z": 0 }` | `"rotation": { "w": 0, "x": 1, "y": 0, "z": 0 }` |
+| Uniform scale 4× | `"scale": 4`                                      | `"scale": { "x": 4, "y": 4, "z": 4 }`            |
+
+For the common upside-down and mismatched-scale case, start by applying the same
+180-degree X correction to both objects. Then increase the static scale (or reduce the
+dynamic scale), adjust each Y position until the floor and feet agree, and finally tune
+X/Z placement.
+
+During rapid visual calibration, you may edit the corresponding `transform` blocks in
+the generated `manifest.json` and reload the showcase; this does not regenerate any SOG
+tiers. Runtime manifests use vector scale and quaternion rotation—for example, a
+180-degree X rotation is `{ "w": 0, "x": 1, "y": 0, "z": 0 }`. Once calibrated, copy the
+final values back into the build recipe so a future `gs-content build --force` does not
+overwrite them. The source PLY/SPZ/SOG files are never modified by transforms.
+
 ### Parallel build tuning
 
 Dynamic frames can be processed concurrently. Automatic mode is the default:

@@ -1,7 +1,9 @@
+import { ManifestLoadValidationError } from "@6g-path/gaussian-player";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { chooseShowcaseBackend } from "./backendSelection.js";
+import { describeShowcaseError } from "./describeError.js";
 import { LandingPage } from "./LandingPage.js";
 import { PlayerPage } from "./PlayerPage.js";
 
@@ -28,5 +30,26 @@ describe("showcase", () => {
       "webgl2",
     );
     expect(chooseShowcaseBackend(false, false, "available")).toBe("webgl2");
+  });
+
+  it("shows actionable manifest validation paths", () => {
+    expect(
+      describeShowcaseError(
+        new ManifestLoadValidationError([
+          {
+            code: "schema",
+            message: "must NOT have additional properties",
+            path: "/staticObjects/0/transform/rotationDegrees",
+          },
+          {
+            code: "schema",
+            message: "must be object",
+            path: "/staticObjects/0/transform/scale",
+          },
+        ]),
+      ),
+    ).toBe(
+      "Manifest validation failed: /staticObjects/0/transform/rotationDegrees: must NOT have additional properties; /staticObjects/0/transform/scale: must be object",
+    );
   });
 });

@@ -202,6 +202,8 @@ quality target. Remaining work focuses on target-device validation.
       the minimum-playable tier.
 - [x] Retain the RAD frontier extractor as an isolated legacy command rather than a
       dependency of the normal build.
+- [x] Expose dynamic transfer-tier selection in the showcase and author-friendly,
+      independent position/rotation/scale transforms in dataset build recipes.
 
 ## Parallel validation and composition work
 

@@ -39,10 +39,25 @@ async function fixture(outputFormat: "sog" | "spz" = "sog") {
         minimumPlayable: "minimum",
         outputFormat,
         tiers: { minimum: 0.25, full: 1 },
+        transform: {
+          position: { x: 1, y: 0.25, z: -2 },
+          rotationDegrees: { x: 180, y: 0, z: 0 },
+          scale: 0.75,
+        },
       },
       frameRate: 30,
       id: "public-sample",
-      staticObjects: [{ id: "room", input: "inputs/room.sog" }],
+      staticObjects: [
+        {
+          id: "room",
+          input: "inputs/room.sog",
+          transform: {
+            position: { x: 0, y: -1, z: 0 },
+            rotationDegrees: { x: 180, y: 0, z: 0 },
+            scale: 4,
+          },
+        },
+      ],
       version: 1,
     }),
   );
@@ -244,8 +259,20 @@ describe("buildDataset", () => {
           qualityLevels: Array<{ byteSize: number }>;
           url: string;
         }>;
+        transform: {
+          position: { x: number; y: number; z: number };
+          rotation: { w: number; x: number; y: number; z: number };
+          scale: { x: number; y: number; z: number };
+        };
       }>;
-      staticObjects: Array<{ url: string }>;
+      staticObjects: Array<{
+        transform: {
+          position: { x: number; y: number; z: number };
+          rotation: { w: number; x: number; y: number; z: number };
+          scale: { x: number; y: number; z: number };
+        };
+        url: string;
+      }>;
     };
     expect(manifest.audio.url).toBe("audio/track.ogg");
     expect(manifest.dynamicSequences[0]?.frames[0]).toMatchObject({
@@ -253,7 +280,18 @@ describe("buildDataset", () => {
       qualityLevels: [{ byteSize: 101 }],
       url: "dynamic/frame0001-minimum.sog",
     });
+    expect(manifest.dynamicSequences[0]?.transform).toMatchObject({
+      position: { x: 1, y: 0.25, z: -2 },
+      scale: { x: 0.75, y: 0.75, z: 0.75 },
+    });
+    expect(manifest.dynamicSequences[0]?.transform.rotation.x).toBeCloseTo(1);
+    expect(manifest.dynamicSequences[0]?.transform.rotation.w).toBeCloseTo(0);
     expect(manifest.staticObjects[0]?.url).toBe("static/room/lod-meta.json");
+    expect(manifest.staticObjects[0]?.transform).toMatchObject({
+      position: { x: 0, y: -1, z: 0 },
+      scale: { x: 4, y: 4, z: 4 },
+    });
+    expect(manifest.staticObjects[0]?.transform.rotation.x).toBeCloseTo(1);
   });
 
   it("emits an SPZ v4 manifest when dynamic.outputFormat is spz", async () => {
@@ -364,5 +402,28 @@ describe("buildDataset", () => {
     expect(output.stderr.join("\n")).toContain(
       "requires exactly one of frames or inputDir",
     );
+  });
+
+  it("rejects ambiguous degree and quaternion rotations before conversion", async () => {
+    const input = await fixture();
+    const configuration = JSON.parse(await readFile(input.configPath, "utf8")) as {
+      dynamic: { transform: Record<string, unknown> };
+    };
+    configuration.dynamic.transform.rotation = { w: 1, x: 0, y: 0, z: 0 };
+    await writeFile(input.configPath, JSON.stringify(configuration));
+    const output = createIo();
+    const generateDynamicTiers = vi.fn(async () => 0);
+
+    const exitCode = await buildDataset(
+      { ...input, dryRun: true, force: false },
+      output.io,
+      { generateDynamicTiers },
+    );
+
+    expect(exitCode).toBe(1);
+    expect(output.stderr.join("\n")).toContain(
+      "cannot define both rotation and rotationDegrees",
+    );
+    expect(generateDynamicTiers).not.toHaveBeenCalled();
   });
 });

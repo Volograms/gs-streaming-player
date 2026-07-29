@@ -12,6 +12,10 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- A compact automatic/manual dynamic quality selector in the showcase, plus independent
+  build-recipe transforms with XYZ position, degree-based Euler rotation, and uniform or
+  non-uniform scale for dynamic sequences and static objects.
+
 - Public PLY/SPZ dynamic-tier authoring through SplatTransform merge decimation. The
   normal `gs-content build` now emits bundled SOG tiers by default or SPZ v4 tiers on
   request, discovers large input sequences from a directory, records actual output

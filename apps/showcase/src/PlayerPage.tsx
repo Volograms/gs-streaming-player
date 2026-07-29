@@ -6,7 +6,9 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { chooseShowcaseBackend } from "./backendSelection.js";
+import { describeShowcaseError } from "./describeError.js";
 import { PauseIcon, PlayIcon, SoundIcon, VrIcon } from "./icons.js";
+import { collectShowcaseQualityOptions } from "./qualityOptions.js";
 import { XrTransportPanel } from "./XrTransportPanel.js";
 
 import type { GaussianStreamingPlayerSnapshot } from "@6g-path/gaussian-player";
@@ -38,6 +40,9 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
   const [error, setError] = useState<string>();
   const [backend, setBackend] = useState<PlayCanvasGraphicsBackend>();
   const [snapshot, setSnapshot] = useState<GaussianStreamingPlayerSnapshot>();
+  const [qualityOptions, setQualityOptions] = useState<
+    ReturnType<typeof collectShowcaseQualityOptions>
+  >([]);
   const [xrAvailable, setXrAvailable] = useState(false);
   const [xrActive, setXrActive] = useState(false);
 
@@ -74,6 +79,7 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
         }
         playerRef.current = result.player;
         adapterRef.current = result.adapter;
+        setQualityOptions(collectShowcaseQualityOptions(result.player.sequence));
         setBackend(result.backend);
         unsubscribe = result.player.subscribe((next) => setSnapshot({ ...next }));
         const support = await result.adapter.getXrSupportInfo();
@@ -82,7 +88,7 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
         setLoadState("ready");
       } catch (caught) {
         if (!active || abortController.signal.aborted) return;
-        setError(describeError(caught));
+        setError(describeShowcaseError(caught));
         setLoadState("error");
       }
     }
@@ -96,6 +102,7 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
       playerRef.current?.dispose();
       playerRef.current = undefined;
       adapterRef.current = undefined;
+      setQualityOptions([]);
       setXrActive(false);
     };
   }, [manifestUrl]);
@@ -104,7 +111,7 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
     const player = playerRef.current;
     if (player === undefined) return;
     if (player.snapshot.isPlaying) player.pause();
-    else void player.play().catch((caught) => setError(describeError(caught)));
+    else void player.play().catch((caught) => setError(describeShowcaseError(caught)));
   }, []);
 
   const seek = useCallback((time: number) => {
@@ -112,7 +119,7 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
     if (player === undefined) return;
     void player
       .seek(Math.min(Math.max(0, time), player.snapshot.durationSeconds))
-      .catch((caught) => setError(describeError(caught)));
+      .catch((caught) => setError(describeShowcaseError(caught)));
   }, []);
 
   async function toggleXr() {
@@ -136,7 +143,7 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
         setXrActive(true);
       }
     } catch (caught) {
-      setError(describeError(caught));
+      setError(describeShowcaseError(caught));
     }
   }
 
@@ -149,13 +156,17 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
       window.location.hash = `/demo?manifest=${encodeURIComponent(value)}`;
       setManifestUrl(value);
     } catch (caught) {
-      setError(describeError(caught));
+      setError(describeShowcaseError(caught));
       setLoadState("error");
     }
   }
 
   const currentTime = snapshot?.currentTimeSeconds ?? 0;
   const duration = snapshot?.durationSeconds ?? 0;
+  const selectedQuality =
+    snapshot?.qualityMode.mode === "manual"
+      ? String(snapshot.qualityMode.detailLevel)
+      : "automatic";
   return (
     <main className="player-page">
       <canvas
@@ -294,7 +305,34 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
               />
             </>
           ) : null}
-          <span className="quality-pill">AUTO · {formatQuality(snapshot)}</span>
+          {qualityOptions.length > 0 ? (
+            <label
+              className="quality-control"
+              title="Dynamic transfer quality. Static Streamed SOG remains camera-adaptive."
+            >
+              <select
+                aria-label="Streaming quality"
+                value={selectedQuality}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  playerRef.current?.setQualityMode(
+                    value === "automatic"
+                      ? { mode: "automatic" }
+                      : { detailLevel: Number(value), mode: "manual" },
+                  );
+                }}
+              >
+                <option value="automatic">Auto · {formatQuality(snapshot)}</option>
+                {qualityOptions.map((option) => (
+                  <option key={option.detailLevel} value={option.detailLevel}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <span className="quality-pill">AUTO · {formatQuality(snapshot)}</span>
+          )}
           {xrAvailable ? (
             <button type="button" className="xr-enter" onClick={() => void toggleXr()}>
               <VrIcon /> {xrActive ? "Exit VR" : "Enter VR"}
@@ -365,15 +403,6 @@ function validateManifestUrl(value: string): void {
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new Error("Manifest URL must use HTTP or HTTPS.");
   }
-}
-
-function describeError(error: unknown): string {
-  if (error instanceof Error) {
-    if (error.message.includes("Failed to fetch"))
-      return "The dataset could not be fetched. Check its URL, HTTPS certificate, and CORS headers.";
-    return error.message;
-  }
-  return String(error);
 }
 
 function formatTime(seconds: number): string {
