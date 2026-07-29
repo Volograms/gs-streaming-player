@@ -11,6 +11,7 @@ target/
 .env.*
 .pnpm-store/
 !.env.example
+!apps/showcase/.env.https
 .cert/
 
 # Developer-provided renderer fixtures are staged here for local smoke tests only.

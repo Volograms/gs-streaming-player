@@ -12,6 +12,10 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- A dedicated `pnpm dev:showcase:https` mode for local WebXR testing. It uses the
+  ignored mkcert key pair, binds the showcase to the LAN, enables XR, and retains local
+  dataset settings from `apps/showcase/.env.local`.
+
 - A compact automatic/manual dynamic quality selector in the showcase, plus independent
   build-recipe transforms with XYZ position, degree-based Euler rotation, and uniform or
   non-uniform scale for dynamic sequences and static objects.

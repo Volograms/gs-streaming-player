@@ -24,6 +24,7 @@
     "dev:babylon": "pnpm --filter @6g-path/demo-babylon dev",
     "dev:playcanvas": "pnpm --filter @6g-path/demo-playcanvas dev",
     "dev:showcase": "pnpm --filter @6g-path/showcase dev",
+    "dev:showcase:https": "pnpm --filter @6g-path/showcase dev:https",
     "dev:spark": "pnpm --filter @6g-path/demo dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

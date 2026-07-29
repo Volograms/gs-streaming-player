@@ -26,6 +26,17 @@ Open `http://localhost:4180/#/`. The showcase accepts an external manifest URL a
 `VITE_DEFAULT_MANIFEST_URL` in `apps/showcase/.env.local` to load a public sample by
 default. Without it, GitHub Pages publishes a functional manifest picker.
 
+For local WebXR, create the trusted certificate described in the
+[Quest/WebXR guide](docs/quest-webxr.md), then run:
+
+```bash
+pnpm dev:showcase:https
+```
+
+Open `https://localhost:4180/#/demo` on the development machine or
+`https://<development-machine-ip>:4180/#/demo` on a headset. Dataset settings from
+`.env.local` are retained in HTTPS mode.
+
 ### Use a local dataset
 
 The browser cannot load a filesystem path directly. For development, let Vite serve the

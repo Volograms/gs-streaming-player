@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc --project tsconfig.json && vite build",
     "dev": "vite",
+    "dev:https": "vite --mode https",
     "preview": "vite preview",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc --project tsconfig.json"
