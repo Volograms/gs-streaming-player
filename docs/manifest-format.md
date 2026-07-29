@@ -79,6 +79,12 @@ The player uses the explicit Three.js world and transform conventions documented
 [`coordinate-system.md`](coordinate-system.md). The renderer performs no implicit axis
 conversion. A dynamic sequence transform is shared by all its frames.
 
+The canonical runtime manifest deliberately stores rotations as quaternions and scales
+as XYZ vectors. The `gs-content build` recipe also accepts the author-friendly
+`rotationDegrees: { x, y, z }` form and a scalar uniform `scale`, then normalises both
+when it generates this manifest. Configure each static object and the dynamic sequence
+independently; transforms do not need to match.
+
 ## Dynamic frames
 
 Each dynamic sequence declares its own `frameRate`, `frameCount`, and `frames`. Every
@@ -100,9 +106,13 @@ Validation issues use JSON Pointer paths such as
 ## Quality metadata
 
 Static objects and dynamic frames may provide ordered `qualityLevels`. A level has a
-non-negative integer `level` and may provide `byteSize`, `splatCount`,
+non-negative integer `level` and may provide `codec`, `byteSize`, `splatCount`,
 `minimumPlayable`, and arbitrary metadata. Levels must be unique and ordered from lowest
-to highest, and at most one may be marked `minimumPlayable`.
+to highest, and at most one may be marked `minimumPlayable`. A dynamic frame may also
+declare a default `codec`; a selected level's codec takes precedence. Codec IDs are
+non-empty strings registered by the application, with `spz-v4` currently identifying the
+official renderer-neutral SPZ v4 decoder. Omitting it retains the legacy renderer-owned
+loading path.
 
 Quality metadata is advisory. Incomplete refinement never changes whether the manifest
 itself is structurally valid.

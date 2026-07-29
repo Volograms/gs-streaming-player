@@ -43,7 +43,10 @@ test("loads the demo application and workspace packages", async ({ page }) => {
   await expect(automaticQuality).not.toBeChecked();
   await automaticQuality.check();
   await expect(page.getByLabel("Splat budget")).toBeDisabled();
-  await automaticQuality.uncheck();
+  // The Spark canvas keeps a continuous render loop in headless Chromium. Use the
+  // native control activation after asserting its state so software-GPU frames cannot
+  // make Playwright's repeated actionability sampling consume the smoke-test budget.
+  await automaticQuality.evaluate((input: HTMLInputElement) => input.click());
 
   await page.getByLabel("Static detail").fill("0.75");
   await expect(page.locator('output[for="static-detail"]')).toHaveText("0.75×");
@@ -80,6 +83,29 @@ test("loads the demo application and workspace packages", async ({ page }) => {
     await expect(page.locator('[data-trace-type="presented"]')).toHaveCount(1, {
       timeout: 120_000,
     });
+    if (
+      process.env.VITE_DYNAMIC_FRAME_CODEC === "spz-v4" &&
+      process.env.VITE_DYNAMIC_SORT_SOURCE !== "gpu-readback" &&
+      process.env.VITE_STATIC_RAD_URL === undefined
+    ) {
+      const performanceSummary = page.getByRole("region", {
+        name: "Playback performance summary",
+      });
+      await expect
+        .poll(
+          async () => {
+            const value = await performanceSummary.getAttribute(
+              "data-performance-summary",
+            );
+            return value === null
+              ? 0
+              : ((JSON.parse(value) as { sortCpuKeys?: { count?: number } }).sortCpuKeys
+                  ?.count ?? 0);
+          },
+          { timeout: 120_000 },
+        )
+        .toBeGreaterThan(0);
+    }
     const expectedInitialWindow = new Set([
       dynamicStartFrame,
       Math.min(dynamicStartFrame + 1, dynamicEndFrame),

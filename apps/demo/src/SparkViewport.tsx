@@ -1,3 +1,5 @@
+import { GaussianFrameDecoderRegistry } from "@6g-path/gaussian-codec";
+import { SpzV4Decoder } from "@6g-path/gaussian-codec-spz";
 import {
   BufferAwareQualityController,
   ClientThroughputEstimator,
@@ -17,6 +19,7 @@ import { DynamicTransferQualityControls } from "./DynamicTransferQualityControls
 import {
   hasLocalDynamicSequenceConfiguration,
   loadLocalDynamicSequence,
+  readLocalDynamicFrameCodec,
 } from "./localDynamicSequence.js";
 import { PackedFrameMemoryBenchmarkControls } from "./PackedFrameMemoryBenchmarkControls.js";
 import { RendererMetricsOverlay } from "./RendererMetricsOverlay.js";
@@ -44,8 +47,10 @@ type RendererStatus = "initialising" | "ready" | "unavailable";
 type StaticAssetStatus = "failed" | "loading" | "not-configured" | "ready";
 type DynamicAssetStatus = "failed" | "loading" | "not-configured" | "ready";
 
-const staticRadUrl = import.meta.env.VITE_STATIC_RAD_URL;
+const configuredStaticRadUrl = import.meta.env.VITE_STATIC_RAD_URL?.trim();
+const staticRadUrl = configuredStaticRadUrl === "" ? undefined : configuredStaticRadUrl;
 const dynamicSequenceConfigured = hasLocalDynamicSequenceConfiguration(import.meta.env);
+const dynamicFrameCodec = readLocalDynamicFrameCodec(import.meta.env);
 const preloadCompleteDynamicSequence =
   import.meta.env.VITE_DYNAMIC_PRELOAD_ALL_FRAMES === "true";
 const dynamicSequenceId = "local-dynamic-sequence";
@@ -72,6 +77,14 @@ const dynamicFetchConcurrency = positiveInteger(
   import.meta.env.VITE_DYNAMIC_FETCH_CONCURRENCY,
   6,
 );
+const dynamicPackConcurrency = positiveInteger(
+  import.meta.env.VITE_DYNAMIC_PACK_CONCURRENCY,
+  4,
+);
+const dynamicSortMode =
+  import.meta.env.VITE_DYNAMIC_SORT_SOURCE === "gpu-readback"
+    ? "gpu-readback"
+    : "cpu-flat";
 const dynamicTargetBufferSeconds = positiveNumber(
   import.meta.env.VITE_DYNAMIC_TARGET_BUFFER_SECONDS,
   5,
@@ -162,9 +175,17 @@ export function SparkViewport({
     let unsubscribeBuffer: (() => void) | undefined;
     let unsubscribePlayback: (() => void) | undefined;
     const controller = new AbortController();
+    const decoderRegistry =
+      dynamicFrameCodec === "spz-v4"
+        ? new GaussianFrameDecoderRegistry([
+            new SpzV4Decoder({ maximumWorkers: dynamicDecodeConcurrency }),
+          ])
+        : undefined;
     const adapter = new SparkGaussianRendererAdapter({
       autoRender: false,
       canvas,
+      dynamicSortMode,
+      maximumPackingWorkers: dynamicPackConcurrency,
       onRenderTiming: ({
         atMs,
         displayCommitIntervalsMs,
@@ -173,6 +194,7 @@ export function SparkViewport({
         renderCallSamplesMs,
         renderIntervalSamplesMs,
         sortOrderingUploadSamplesMs,
+        sortCpuKeySamplesMs,
         sortReadbackSamplesMs,
         sortSamplesMs,
         sortWorkerSamplesMs,
@@ -186,6 +208,7 @@ export function SparkViewport({
           renderCallSamplesMs,
           renderIntervalSamplesMs,
           sortOrderingUploadSamplesMs,
+          sortCpuKeySamplesMs,
           sortReadbackSamplesMs,
           sortSamplesMs,
           sortWorkerSamplesMs,
@@ -343,6 +366,14 @@ export function SparkViewport({
           }
           const transferLevels = getDynamicTransferLevels(loadedDynamicSequence);
           const initialTransferDetail =
+            transferLevels.find(
+              ({ detailLevel, minimumPlayable }) =>
+                minimumPlayable === true &&
+                (detailLevel ?? 0) >= defaultDynamicTransferDetail,
+            )?.detailLevel ??
+            transferLevels.find(
+              ({ detailLevel }) => (detailLevel ?? 0) >= defaultDynamicTransferDetail,
+            )?.detailLevel ??
             transferLevels.find(({ minimumPlayable }) => minimumPlayable)
               ?.detailLevel ??
             transferLevels[0]?.detailLevel ??
@@ -354,6 +385,7 @@ export function SparkViewport({
           }
           qualityController = new BufferAwareQualityController({
             dynamicObjectId: loadedDynamicSequence.id,
+            minimumDynamicDetailLevel: defaultDynamicTransferDetail,
             minimumSplatCount: minimumDynamicSplatCount,
             targetBufferSeconds: dynamicTargetBufferSeconds,
           });
@@ -363,6 +395,7 @@ export function SparkViewport({
             : 10;
           const buffer = new FrameRingBuffer({
             compressedBufferMaximumBytes,
+            ...(decoderRegistry === undefined ? {} : { decoderRegistry }),
             futureFrameCount,
             loop: true,
             maximumBasePreparationConcurrency: dynamicDecodeConcurrency,
@@ -485,6 +518,7 @@ export function SparkViewport({
         adapter.renderer.setAnimationLoop(null);
       }
       adapter.dispose();
+      decoderRegistry?.dispose();
     };
   }, []);
 
@@ -714,7 +748,5 @@ function getDynamicTransferLevels(
     .sort(
       (left, right) => left.detailLevel - right.detailLevel || left.level - right.level,
     );
-  const minimumPlayableDetail =
-    levels.find(({ minimumPlayable }) => minimumPlayable)?.detailLevel ?? 0;
-  return levels.filter(({ detailLevel }) => detailLevel >= minimumPlayableDetail);
+  return levels;
 }

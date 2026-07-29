@@ -48,11 +48,32 @@ available:
 pnpm gs-manifest validate content/lesson.json --check-assets
 ```
 
-## Dynamic RAD quality-cut generation
+## Public dynamic tier generation
 
-Dynamic playback is moving to independent flat SPZ tiers so network/deadline policy can
-choose frame quality without running Spark's camera-driven RAD tree at runtime. Generate
-the default 10%, 25%, 50%, and 100% leaf-frontier tiers with:
+Generate complete temporal tiers directly from ordinary PLY or SPZ frame sources. SOG is
+the default output; select SPZ for the experimental CPU-decoder paths:
+
+```bash
+pnpm gs-content generate-tiers frame0040.ply frame0041.spz \
+  --output-dir generated/sequence \
+  --format sog
+
+pnpm gs-content generate-tiers frame0040.ply \
+  --output-dir generated/sequence-spz \
+  --format spz \
+  --tiers preview=0.10,minimum=0.25,medium=0.50,full=1
+```
+
+SplatTransform performs merge-based decimation into temporary PLY files before final
+encoding. Outputs are protected unless `--force` is supplied. The generated
+`quality-cuts.json` records actual output counts and bytes. This is also the dynamic
+stage used by `gs-content build`; it has no RAD or Rust dependency.
+
+## Legacy dynamic RAD quality-cut generation
+
+The earlier experimental pipeline generated independent flat SPZ tiers from RAD trees.
+It remains available to reproduce existing datasets and measurements. Generate the
+default 10%, 25%, 50%, and 100% leaf-frontier tiers with:
 
 ```bash
 pnpm gs-content extract-rad-cuts \
@@ -93,6 +114,58 @@ first, clears all child metadata, and applies Spark's footprint-preserving LoD-o
 conversion before SPZ encoding. The resulting files therefore load through
 `PackedSplats` as ordinary non-LoD assets.
 
+### Repacking flat tiers as official SPZ v4
+
+The original quality-cut exporter writes Spark-compatible SPZ v3. For a renderer-neutral
+decode comparison, build Niantic's official native SPZ tools at the revision pinned in
+[`packages/codec-spz/UPSTREAM.md`](../packages/codec-spz/UPSTREAM.md):
+
+```bash
+git clone https://github.com/nianticlabs/spz.git ../spz
+git -C ../spz checkout 21715c3b481380ad51809698a6ba24c9d88145b0
+cmake -G Ninja -S ../spz -B ../spz/build-native -DCMAKE_BUILD_TYPE=Release
+cmake --build ../spz/build-native
+```
+
+Re-encode every tier referenced by an existing index:
+
+```bash
+pnpm gs-content repack-spz-v4 \
+  ../sparkjs/data-ply/dynamic/rafa-pitch-cuts/quality-cuts.json \
+  --output-dir ../sparkjs/data-ply/dynamic/rafa-pitch-cuts-v4 \
+  --spz-tools-dir ../spz/build-native
+```
+
+The command uses the official `spz_to_ply` and `ply_to_spz` executables, preserves the
+relative tier filenames, validates the v4 `NGSP` header, updates byte sizes, and writes
+`codec: "spz-v4"` into the copied index. Existing outputs are protected; use `--force`
+only when intentionally replacing the generated set. The PLY intermediate means this is
+an offline compatibility path, not a lossless byte-to-byte transcode.
+
+Expose the resulting set and run the neutral v4 decoder plus Spark adapter:
+
+```bash
+ln -s /absolute/path/to/rafa-pitch-cuts-v4 \
+  apps/demo/public/assets/local-dynamic-cuts-v4
+
+VITE_DYNAMIC_FRAME_CODEC=spz-v4 \
+VITE_DYNAMIC_QUALITY_INDEX_URL=/assets/local-dynamic-cuts-v4/quality-cuts.json \
+VITE_DYNAMIC_RAD_START_FRAME=1 \
+VITE_DYNAMIC_RAD_END_FRAME=100 \
+VITE_DYNAMIC_RAD_FRAME_RATE=30 \
+pnpm dev
+```
+
+For the legacy A/B run, point back to the original v3 index and set
+`VITE_DYNAMIC_FRAME_CODEC=spark-spz-v3` (the default). Do not select `spz-v4` for v3
+files: codec choice is explicit and there is no silent cross-version fallback. The
+compressed cache and playback scheduler are identical in both runs; only decode and
+renderer preparation differ.
+
+To convert an existing flat quality-cut index to PlayCanvas's native SOG v2
+representation and run its dedicated comparison demo, see the
+[PlayCanvas SOG renderer integration guide](playcanvas-renderer-integration.md).
+
 Expose the generated directory to the local demo:
 
 ```bash
@@ -123,17 +196,41 @@ handoff so independently encoded SPZ frames are sorted correctly.
 
 Normal streaming uses two independent stages. A byte-budgeted compressed SPZ cache runs
 ahead of playback, then a twelve-frame renderer window (the current frame, one previous,
-and ten future frames) decodes resident bytes through Spark's worker pool. Network waits
-therefore do not occupy decode slots. Demo defaults are 200 MB, six concurrent fetches,
-and four concurrent frame decodes. Override them for device/network experiments:
+and ten future frames) submits resident bytes through the selected codec and renderer
+preparation path. Network waits therefore do not occupy decode slots. Neutral codec
+decoding and renderer-native packing use separate persistent worker pools. Demo defaults
+are 200 MB, six concurrent fetches, four concurrent frame decodes, and four concurrent
+Spark pack jobs. Override them for device/network experiments:
 
 ```bash
 VITE_DYNAMIC_COMPRESSED_BUFFER_MB=200 \
 VITE_DYNAMIC_FETCH_CONCURRENCY=6 \
 VITE_DYNAMIC_DECODE_CONCURRENCY=4 \
+VITE_DYNAMIC_PACK_CONCURRENCY=4 \
 VITE_DYNAMIC_TARGET_BUFFER_SECONDS=5 \
 pnpm dev
 ```
+
+The performance panel splits Spark packing into queue wait, worker conversion, result
+transfer/dispatch, and main-thread binding. Neutral attribute buffers and completed
+Spark arrays are transferred rather than cloned; a decoded frame's typed arrays should
+therefore be treated as consumed once renderer preparation begins.
+
+The demo currently enables CPU-derived sort keys for eligible flat dynamic frames. It
+retains renderer-owned centers, computes Spark's radial or directional float32 keys from
+the current camera and object transform, then uses Spark's existing worker radix sort
+and ordering upload. If another Gaussian object contributes to the same Spark mapping,
+the provider declines the request and Spark performs its normal GPU readback. Select the
+baseline explicitly for A/B measurements:
+
+```bash
+VITE_DYNAMIC_SORT_SOURCE=cpu-flat pnpm dev       # demo default
+VITE_DYNAMIC_SORT_SOURCE=gpu-readback pnpm dev   # original Spark path
+```
+
+The performance panel reports `Sort CPU keys` and `Sort GPU readback` separately. CPU
+center retention costs 13 bytes per splat (three float32 coordinates and one active-mask
+byte) for every decoded buffered frame.
 
 The viewport reports compressed resident/capacity bytes and cached/fetching frame
 counts. Automatic quality uses contiguous compressed frames ahead of playback and
@@ -173,16 +270,52 @@ submission, `Spark update` covers Spark's generator/update cycle, and `Spark sor
 measures actual sort jobs started by that cycle. `Sort GPU readback`, `Sort worker`, and
 `Sort order upload` divide that total into the depth readback, worker computation, and
 ordering-texture update stages. `Flat frame copy` measures the CPU attribute copy into
-the reusable display allocation. Samples are emitted in batches approximately every 500
-ms so measurement does not add a React update or console entry to every displayed frame.
-The viewport overlay reports the current `Dynamic cap` in splats and the number of
-capacity-growing `Reallocs`; the latter should remain stable once the largest frame seen
-so far fits the shared allocation.
+the reusable display allocation. For the neutral path, `Neutral codec decode` measures
+official SPZ v4 decompression and attribute reconstruction in its worker, while
+`Spark adapter pack` measures conversion to `PackedSplats`. `Legacy Spark SPZ decode` is
+shown separately for v3 comparisons. Samples are emitted in batches approximately every
+500 ms so measurement does not add a React update or console entry to every displayed
+frame. The viewport overlay reports the current `Dynamic cap` in splats and the number
+of capacity-growing `Reallocs`; the latter should remain stable once the largest frame
+seen so far fits the shared allocation.
 
 Record comparable hardware results in the living
 [`project/PERFORMANCE.md`](project/PERFORMANCE.md) report. It defines the stage names,
 preserves the current RAD/SPZ/fully-resident/packed-memory baselines, and provides a run
 template so content and instrumentation differences remain visible.
+
+## Babylon.js SPZ comparison demo
+
+The Babylon demo is a separate application so it does not load Spark, Three.js, or a
+second canvas into the same measurement. It uses the same SPZ v4 quality index and
+player-core buffer as the neutral Spark run:
+
+```bash
+VITE_DYNAMIC_FRAME_CODEC=spz-v4 \
+VITE_DYNAMIC_QUALITY_INDEX_URL=/assets/local-dynamic-cuts-v4/quality-cuts.json \
+VITE_DYNAMIC_RAD_START_FRAME=1 \
+VITE_DYNAMIC_RAD_END_FRAME=100 \
+VITE_DYNAMIC_RAD_FRAME_RATE=30 \
+pnpm dev:babylon
+```
+
+Babylon defaults to two decode workers, two adapter-packing workers, six fetches, ten
+future decoded frames, and the same 200 MB compressed cache. These conservative worker
+defaults are intentional for eventual mobile and Quest testing. Override them only as
+part of a recorded device experiment:
+
+```bash
+VITE_DYNAMIC_DECODE_CONCURRENCY=2 \
+VITE_DYNAMIC_PACK_CONCURRENCY=2 \
+VITE_DYNAMIC_FETCH_CONCURRENCY=6 \
+VITE_DYNAMIC_FUTURE_FRAMES=10 \
+pnpm dev:babylon
+```
+
+WebXR initialisation is enabled by default and degrades to desktop mode when
+unavailable. Set `VITE_ENABLE_XR=false` for a non-XR profile. See the
+[Babylon renderer guide](babylon-renderer-integration.md) for ownership and capability
+details.
 
 The viewport's `Packed-memory experiment` is a paused-frame diagnostic for evaluating a
 renderer-native runtime payload before defining one. Present any flat SPZ frame, pause

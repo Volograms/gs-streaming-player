@@ -1,6 +1,6 @@
 # ADR 0009: Export flat dynamic quality tiers from RAD LoD trees
 
-- Status: Accepted
+- Status: Superseded for public authoring by ADR 0016; retained as a legacy workflow
 - Date: 2026-07-16
 
 ## Context

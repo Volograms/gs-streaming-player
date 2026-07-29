@@ -1,0 +1,20 @@
+{
+  "name": "@6g-path/showcase",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --project tsconfig.json && vite build",
+    "dev": "vite",
+    "dev:https": "vite --mode https",
+    "preview": "vite preview",
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@6g-path/gaussian-player": "workspace:*",
+    "@6g-path/gaussian-renderer-playcanvas": "workspace:*",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  }
+}

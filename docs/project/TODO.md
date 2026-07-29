@@ -4,7 +4,129 @@ This file tracks implementation against the epics in
 [`project-summary.md`](../project-summary.md). A task is checked only after its
 acceptance criteria are covered by implementation and verification.
 
-## Active implementation slice: Flat dynamic quality-tier playback
+## Active release slice: Source-only public preview
+
+- [x] Add the `GaussianStreamingPlayer` facade with canonical manifest ownership,
+      adaptive buffering/quality, audio synchronization, cancellation, and disposal.
+- [x] Add the configuration-driven `gs-content build` workflow from PLY/SPZ sources to
+      dynamic SOG or SPZ tiers, with dry-run, overwrite protection, staged failure
+      cleanup, exact metadata, and validation. Keep RAD extraction legacy-only.
+- [x] Add the accessible Pages showcase, manifest picker, WebGPU-to-WebGL2 fallback,
+      clean transport, and room-scale controller/hand XR panel.
+- [x] Remove the abandoned XR bridge code and private raw Quest photos; retain only its
+      factual conclusion in the performance record.
+- [x] Add integration, format, content, hosting, Quest, audio, demo, troubleshooting,
+      governance, security, and contribution documentation.
+- [ ] Configure the rights-cleared public sample URL and manually accept it on Quest 3
+      with WebGPU flags, WebGL2 fallback, both controllers, hand pinch, audio, XR
+      entry/exit, and both eyes.
+- [ ] Complete the pre-publication dependency-license and full Git-history audit; a
+      history rewrite requires separate owner approval.
+
+## Active implementation slice: Multi-renderer and multi-codec validation
+
+### Renderer adapters and dedicated demos
+
+- [x] Record Spark, Babylon.js, and PlayCanvas as co-equal renderer-adapter targets;
+      retain Spark as a supported option rather than replacing it.
+- [x] Choose dedicated renderer demos with shared renderer-neutral integration code
+      instead of initialising multiple engines in one application.
+- [x] Add a Babylon.js adapter for neutral SPZ v4 frames, including persistent dynamic
+      mesh reuse, transforms, presentation readiness, resource ownership, and metrics.
+- [x] Add a dedicated Babylon.js SPZ demo using the existing byte cache, playback
+      controller, transfer-tier selection, and optional immersive-VR/WebXR entry.
+- [x] Stabilise Babylon frame presentation with a two-slot depth-sort-fenced handoff so
+      the old frame remains drawable until its replacement is ready; start the default
+      orbit camera from the front of the current fixture.
+- [ ] Measure the Babylon native-texture upload experiment at 25%, 50%, and 100% on
+      desktop and Quest 3. It moves Babylon's per-splat covariance expansion out of the
+      main-thread handoff; retain the documented `.splat` upload as an A/B fallback.
+- [x] Add a renderer capability for direct compressed-frame preparation and fuse SPZ v4
+      streaming decode with Babylon native-texture packing. Keep the neutral decoder as
+      the fallback for Spark, other renderers, and Babylon compatibility tests.
+- [x] Add feature-detected native half-float covariance writes to both Babylon native
+      packing paths, retaining Babylon's JavaScript converter on older browsers.
+- [ ] Measure fused versus neutral Babylon SPZ preparation at 25%, 50%, and 100%,
+      including per-stage timing, peak memory/GC, prepared-frame throughput, mesh
+      update, and presented cadence on desktop and Quest 3.
+- [ ] Compare Babylon.js and Spark using identical SPZ v4 frames, cache state, worker
+      limits, desktop hardware, and diagnostics.
+- [x] Add a PlayCanvas adapter and dedicated demo using the engine's native SOG
+      ingestion boundary. Keep SPZ out of this first comparison rather than silently
+      expanding or transcoding it at runtime.
+- [x] Add SOG v2 as a second runtime representation, including offline conversion of the
+      existing quality-cut index and explicit `sog-v2` tier metadata; keep Babylon SOG
+      support as a lower-priority follow-on.
+- [x] Validate renderer/codec capability reporting so unsupported combinations fail
+      clearly rather than silently selecting another path. Browser performance and
+      stereo validation remain part of the device task below.
+- [x] Add a strict PlayCanvas WebGPU experiment that verifies the selected backend,
+      selects GPU sort, disables WebGL CPU-center generation before SOG loading, and
+      reports the actual backend/sort path in the demo.
+- [ ] Compare PlayCanvas WebGL2 CPU sort with WebGPU GPU sort at 25%, 50%, and 100% on
+      the same desktop and Quest 3 sessions. Record SOG preparation, sort, cadence,
+      memory, and traces without reducing source quality.
+  - [x] Record the first desktop WebGPU full-tier screenshot: `webgpu`,
+        `gpu (no CPU centers)`, `Sort 0.0 ms`, `Presented tier 1`, and smooth ~59 fps
+        playback.
+  - [x] Record the first Quest 3 WebGPU medium-tier screenshot: `webgpu`,
+        `gpu (no CPU centers)`, `Sort 0.0 ms`, `Presented tier 0.5`, and acceptable but
+        slower playback.
+  - [x] Validate PlayCanvas XR on Quest 3 with the WebGL2 backend.
+  - [x] Validate native PlayCanvas WebGPU XR availability on Quest 3 after enabling the
+        WebXR/WebGPU Binding, WebXR Projection Layers, and WebXR Experiments browser
+        flags; the browser exposes `XRGPUBinding` and the demo enters immersive XR.
+  - [x] Add a bounded, low-overhead WebGPU timestamp sampler that reports rolling
+        GPU-frame and named-pass p50/p95 timings in the demo UI for Quest captures.
+  - [x] Expose forward alpha clipping, splat-level foveation, XR fixed foveation, and a
+        WebGPU CPU-sort selector for controlled Quest A/B measurements.
+  - [ ] Capture repeated desktop and Quest 3 p50/p95 samples, including full-tier Quest
+        traces and any WebGPU XR run that reports `XRGPUBinding`.
+- [ ] Run the chosen candidates on Meta Quest 3 and representative mobile Safari after
+      desktop format/adapter comparisons have narrowed the device matrix.
+  - [ ] Validate the Babylon streamed-splat stereo-buffer compatibility patch on both
+        Quest 3 eyes during paused and continuous playback.
+
+### Pilot network adaptation
+
+- [x] Re-scope the final 6G epic: the pilot uses client-measured fetch throughput,
+      latency, compressed-buffer state, stalls, and renderer capacity because its Wi-Fi
+      last hop exposes no useful 6G-specific client telemetry.
+- [ ] Calibrate safety margin and hysteresis for the expected sub-500-Mbps pilot path,
+      using bytes per frame rather than splat count as the transfer constraint.
+- [ ] Validate the generic adaptive policy over the 6G-testbed-plus-Wi-Fi path and
+      document that it is client-measured rather than telemetry-assisted.
+- [ ] Retain the normalised 6G telemetry provider as a deferred extension point without
+      making it a pilot completion dependency.
+
+## Previous implementation slice: Flat dynamic quality-tier playback
+
+### Renderer-neutral codec boundary and SPZ v4 comparison
+
+- [x] Add a renderer-neutral decoded Gaussian frame contract and codec registry without
+      adding Spark or Three.js types to `player-core`.
+- [x] Integrate Niantic's official SPZ v4 streaming decoder in a persistent browser
+      worker pool and transfer decoded attribute buffers without cloning them back to
+      the main thread.
+- [x] Add a Spark renderer conversion layer that packs neutral attributes into
+      `PackedSplats`, keeping the renderer-native representation outside the codec.
+- [x] Keep legacy Spark SPZ v3 and neutral SPZ v4 as explicit, non-fallback demo paths
+      for clean A/B tests and later legacy removal.
+- [x] Split diagnostics into neutral codec decode, Spark adapter packing, and legacy
+      Spark SPZ decode timings.
+- [x] Move neutral-to-Spark packing into a persistent renderer-owned worker pool using
+      transferable input/output buffers, a synchronous non-browser fallback, bounded
+      concurrency, and separate queue/worker/transfer/main-bind timings.
+- [x] Add an experimental flat-frame CPU sort-key provider that retains decoded centers,
+      mirrors Spark's camera metric, reuses Spark's radix-sort worker and ordering
+      upload, and automatically falls back to GPU readback for mixed Gaussian mappings.
+- [x] Add an offline command that repacks the existing flat quality-cut index with the
+      official SPZ v4 native tools and marks every output tier with `codec: "spz-v4"`.
+- [ ] Measure v3 versus v4 throughput, worker utilisation, intermediate memory, and
+      end-to-end 30 fps stability on the same hardware and tier set.
+- [x] Add SOG v2 and a PlayCanvas renderer adapter through the existing compressed-byte
+      and playback boundaries. Quest validation and comparative measurements remain in
+      the active implementation slice above.
 
 - [x] Integrate flat SPZ dynamic frames through Spark `PackedSplats` with LoD disabled,
       while retaining the existing paged RAD path for static scenes.
@@ -60,18 +182,39 @@ currently presented flat frame, reports its renderer-native uncompressed size, a
 compares byte ownership with synchronous zero-copy construction. Its hardware results
 will determine whether a versioned renderer-native payload is justified.
 
-The offline source path is now fixed and consumed by the runtime. Quality-LoD RAD is
-decoded once during content preparation, valid camera-independent frontiers are exported
-as flat SPZ files, and the buffer selects the smallest minimum-playable-or-better tier
-for its current network quality target. Remaining work focuses on the measured sort
-bottleneck and real 30 fps validation.
+The historical offline source path decoded quality-LoD RAD and exported flat SPZ
+frontiers. The public build now starts from ordinary PLY or SPZ frames, uses
+SplatTransform merge-decimation, and writes bundled SOG or SPZ v4 tiers. The buffer
+still selects the smallest minimum-playable-or-better tier for its current network
+quality target. Remaining work focuses on target-device validation.
+
+### Public PLY/SPZ dynamic tier authoring (2026-07-29)
+
+- [x] Accept ordered PLY and SPZ dynamic frames in `gs-content build`.
+- [x] Discover large sequences from `dynamic.inputDir` in deterministic natural filename
+      order while retaining explicit frame arrays for irregular sequences.
+- [x] Add bounded frame-parallel tier generation with CPU-aware automatic concurrency,
+      deterministic output ordering, and independent SOG encoder-worker tuning.
+- [x] Generate configurable merge-decimated tiers through the pinned public
+      SplatTransform package.
+- [x] Emit bundled SOG by default or SPZ v4 by explicit configuration.
+- [x] Inspect generated files and record actual splat counts, byte sizes, codecs, and
+      the minimum-playable tier.
+- [x] Retain the RAD frontier extractor as an isolated legacy command rather than a
+      dependency of the normal build.
+- [x] Expose dynamic transfer-tier selection in the showcase and author-friendly,
+      independent position/rotation/scale transforms in dataset build recipes.
 
 ## Parallel validation and composition work
 
 - [ ] E03-T01 — Complete visual alignment validation for the composed static GS, dynamic
       GS, and mesh scene. The real assets now load and switch together, and independent
-      static-scene and dynamic-actor scale controls are available for calibration; final
-      origin and floor alignment still require visual confirmation.
+      static-scene scale/X-rotation and dynamic-actor scale controls are available for
+      calibration. The PlayCanvas demo also exposes independent live XYZ world offsets
+      for its static and dynamic GS objects. A content-tool command now derives true
+      multi-resolution static Streamed SOG trees for PlayCanvas spatial refinement and
+      culling; final offset values and Quest tree-granularity validation still require
+      visual confirmation.
 - [ ] E03-T04 — Validate dynamic alpha and background masking behaviour.
 - [ ] E03-T05 — Measure dynamic switching performance. An opt-in monotonic playback
       trace now separates Spark resource initialisation, metadata, root-page readiness,

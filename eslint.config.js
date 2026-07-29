@@ -13,6 +13,7 @@ export default tseslint.config(
       "**/dist/**",
       "**/node_modules/**",
       "playwright-report/**",
+      "packages/codec-spz/src/vendor/**",
       "test-results/**",
     ],
   },
@@ -45,7 +46,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["apps/demo/**/*.{ts,tsx}"],
+    files: ["apps/**/*.{ts,tsx}"],
     languageOptions: {
       globals: globals.browser,
     },

@@ -10,12 +10,18 @@ export interface TimingDistribution {
 
 export interface FrameTimingSummary {
   basePreparation: TimingDistribution;
+  codecDecode: TimingDistribution;
   compressedFetch: TimingDistribution;
   compressedFetchThroughputBps?: number;
   displayCommitCadence: TimingDistribution;
   displayCommitFramesPerSecond?: number;
   estimatedBaseThroughputBps?: number;
   flatFrameCopy: TimingDistribution;
+  flatPack: TimingDistribution;
+  flatPackBind: TimingDistribution;
+  flatPackQueue: TimingDistribution;
+  flatPackTransfer: TimingDistribution;
+  flatPackWorker: TimingDistribution;
   flatDecode: TimingDistribution;
   handoff: TimingDistribution;
   minimumRenderable: TimingDistribution;
@@ -26,6 +32,7 @@ export interface FrameTimingSummary {
   renderCall: TimingDistribution;
   sampleCount: number;
   sort: TimingDistribution;
+  sortCpuKeys: TimingDistribution;
   sortOrderingUpload: TimingDistribution;
   sortReadback: TimingDistribution;
   sortWorker: TimingDistribution;
@@ -61,11 +68,17 @@ export function summariseFrameTimings(
   events: readonly Readonly<FrameRingBufferTraceEvent>[],
 ): FrameTimingSummary {
   const basePreparation: number[] = [];
+  const codecDecode: number[] = [];
   const compressedFetch: number[] = [];
   const compressedFetchThroughputSamples: number[] = [];
   const displayCommitIntervals: number[] = [];
   const handoff: number[] = [];
   const flatFrameCopy: number[] = [];
+  const flatPack: number[] = [];
+  const flatPackBind: number[] = [];
+  const flatPackQueue: number[] = [];
+  const flatPackTransfer: number[] = [];
+  const flatPackWorker: number[] = [];
   const flatDecode: number[] = [];
   const minimumRenderable: number[] = [];
   const presentationWait: number[] = [];
@@ -74,6 +87,7 @@ export function summariseFrameTimings(
   const renderCall: number[] = [];
   const renderIntervals: number[] = [];
   const sort: number[] = [];
+  const sortCpuKeys: number[] = [];
   const sortOrderingUpload: number[] = [];
   const sortReadback: number[] = [];
   const sortWorker: number[] = [];
@@ -88,6 +102,9 @@ export function summariseFrameTimings(
     if (event.type === "base-ready" && event.durationMs !== undefined) {
       basePreparation.push(event.durationMs);
     }
+    if (event.type === "codec-decode-ready" && event.durationMs !== undefined) {
+      codecDecode.push(event.durationMs);
+    }
     if (event.type === "compressed-fetch-ready" && event.durationMs !== undefined) {
       compressedFetch.push(event.durationMs);
       if (event.loadedBytes !== undefined && event.durationMs > 0) {
@@ -95,6 +112,21 @@ export function summariseFrameTimings(
           (event.loadedBytes * 8_000) / event.durationMs,
         );
       }
+    }
+    if (event.type === "renderer-phase" && event.stageDurationMs !== undefined) {
+      const target =
+        event.phase === "flat-pack"
+          ? flatPack
+          : event.phase === "flat-pack-bind"
+            ? flatPackBind
+            : event.phase === "flat-pack-queue"
+              ? flatPackQueue
+              : event.phase === "flat-pack-transfer"
+                ? flatPackTransfer
+                : event.phase === "flat-pack-worker"
+                  ? flatPackWorker
+                  : undefined;
+      target?.push(event.stageDurationMs);
     }
     if (
       event.type === "renderer-phase" &&
@@ -140,6 +172,7 @@ export function summariseFrameTimings(
         ...(event.renderIntervalSamplesMs ?? []).filter((duration) => duration > 0),
       );
       sort.push(...(event.sortSamplesMs ?? []));
+      sortCpuKeys.push(...(event.sortCpuKeySamplesMs ?? []));
       sortOrderingUpload.push(...(event.sortOrderingUploadSamplesMs ?? []));
       sortReadback.push(...(event.sortReadbackSamplesMs ?? []));
       sortWorker.push(...(event.sortWorkerSamplesMs ?? []));
@@ -169,6 +202,7 @@ export function summariseFrameTimings(
 
   return {
     basePreparation: distribution(basePreparation),
+    codecDecode: distribution(codecDecode),
     compressedFetch: distribution(compressedFetch),
     ...(estimatedBaseThroughputBps === undefined
       ? {}
@@ -179,6 +213,11 @@ export function summariseFrameTimings(
       ? {}
       : { displayCommitFramesPerSecond: 1_000 / meanDisplayCommitInterval }),
     flatFrameCopy: distribution(flatFrameCopy),
+    flatPack: distribution(flatPack),
+    flatPackBind: distribution(flatPackBind),
+    flatPackQueue: distribution(flatPackQueue),
+    flatPackTransfer: distribution(flatPackTransfer),
+    flatPackWorker: distribution(flatPackWorker),
     flatDecode: distribution(flatDecode),
     handoff: distribution(handoff),
     minimumRenderable: distribution(minimumRenderable),
@@ -189,6 +228,7 @@ export function summariseFrameTimings(
     renderCall: distribution(renderCall),
     sampleCount: basePreparation.length,
     sort: distribution(sort),
+    sortCpuKeys: distribution(sortCpuKeys),
     sortOrderingUpload: distribution(sortOrderingUpload),
     sortReadback: distribution(sortReadback),
     sortWorker: distribution(sortWorker),

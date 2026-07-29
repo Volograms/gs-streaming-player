@@ -1,0 +1,21 @@
+{
+  "name": "@6g-path/demo-babylon",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --project tsconfig.json && vite build",
+    "dev": "vite",
+    "preview": "vite preview",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@6g-path/gaussian-codec": "workspace:*",
+    "@6g-path/gaussian-codec-spz": "workspace:*",
+    "@6g-path/gaussian-demo-support": "workspace:*",
+    "@6g-path/gaussian-player": "workspace:*",
+    "@6g-path/gaussian-renderer-babylon": "workspace:*",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  }
+}

@@ -5,8 +5,139 @@ All notable changes to this project will be documented here. The project uses
 
 ## [Unreleased]
 
+### Removed
+
+- The abandoned WebGPU-to-WebGL XR bridge, including its runtime flag, controls,
+  metrics, and presenter. Its historical result remains in the performance record.
+
 ### Added
 
+- A dedicated `pnpm dev:showcase:https` mode for local WebXR testing. It uses the
+  ignored mkcert key pair, binds the showcase to the LAN, enables XR, and retains local
+  dataset settings from `apps/showcase/.env.local`.
+
+- A compact automatic/manual dynamic quality selector in the showcase, plus independent
+  build-recipe transforms with XYZ position, degree-based Euler rotation, and uniform or
+  non-uniform scale for dynamic sequences and static objects.
+
+- Public PLY/SPZ dynamic-tier authoring through SplatTransform merge decimation. The
+  normal `gs-content build` now emits bundled SOG tiers by default or SPZ v4 tiers on
+  request, discovers large input sequences from a directory, records actual output
+  metadata, processes frames with bounded CPU-aware parallelism (configurable in the
+  recipe or via `build --frame-workers`), supports a `build --max-workers` SOG encoder
+  override, and leaves the RAD extractor as a legacy command with focused tests.
+
+- Local showcase datasets can be served directly from an external directory with
+  `SHOWCASE_LOCAL_DATASET_DIR`, while relative manifest paths and the existing ignored
+  `public/assets` convention remain supported. The showcase now uses the Volograms
+  black, pink, violet, and blue visual palette.
+
+- A source-only Volograms 4DGS public preview: `GaussianStreamingPlayer`, audio-backed
+  timing, adaptive PlayCanvas render budgets, a landing/player showcase with Quest XR
+  transport controls, the `gs-content build` dataset pipeline, Pages deployment, and
+  focused integration/content/hosting/support documentation.
+
+- PlayCanvas Quest tuning controls for pre-sort minimum pixel size and projected
+  contribution, forward alpha clipping, splat-level and XR fixed foveation, plus an
+  explicit WebGPU CPU-sort A/B mode. Diagnostics report the selected sorter, retained
+  CPU centers, accepted XR foveation, and unified GSplat work-buffer copies separately
+  from steady-state sorting.
+
+- A `gs-content export-sog-lod` command that derives configurable coarse levels from one
+  source scene and exports PlayCanvas's spatially chunked Streamed SOG `lod-meta.json`
+  layout with bounded encoder workers.
+- PlayCanvas static-only operation when no dynamic quality index is configured, while
+  retaining renderer metrics and WebXR entry for isolated Quest scene measurements.
+- PlayCanvas Streamed SOG benchmark controls for a pinned static LOD level or global
+  splat budget, with the diagnostics reporting the unified renderer's actual splat
+  count.
+- Quest-oriented PlayCanvas streaming diagnostics separating response latency,
+  response-body/`ArrayBuffer` time, overlapping aggregate throughput, preparation queue
+  delay, native SOG asset loading, presentation cadence, buffering episodes, and
+  main-thread event-loop pressure with bounded rolling samples. Browser Resource Timing
+  also reports the negotiated network protocol and connection setup/reuse.
+- A one-shot PlayCanvas static-SOG load benchmark reporting payload and wire sizes,
+  response and body timing, effective throughput, cache status, protocol, and native
+  processing time for large-file delivery comparisons.
+- PlayCanvas demo static-scene placement now accepts signed uniform scales and an
+  explicit `VITE_STATIC_GS_ROTATION_X_DEGREES` orientation correction. A responsive
+  position panel and separate `VITE_STATIC_GS_POSITION_X/Y/Z` and
+  `VITE_DYNAMIC_GS_POSITION_X/Y/Z` defaults independently place the static and dynamic
+  GS objects in the world.
+- Low-overhead PlayCanvas WebGPU timing samples with rolling GPU-frame and named-pass
+  p50/p95 diagnostics in the demo UI, including explicit timestamp-query capability
+  reporting and unattributed transfer time.
+- Standalone static SPZ-to-SOG conversion through `gs-content convert-sog`, alongside
+  the existing dynamic quality-cut index conversion.
+- Strict, opt-in PlayCanvas WebGPU initialisation for GPU-sort SOG measurements. The
+  adapter rejects silent WebGL2 fallback, selects PlayCanvas's GPU Gaussian sorter,
+  disables CPU-center generation before asset loading, and exposes the actual graphics
+  backend and sort path in the PlayCanvas demo diagnostics.
+- PlayCanvas XR diagnostics now distinguish browser/session failures from missing WebGPU
+  `XRGPUBinding`, and the demo can explicitly fall back to WebGL2 for XR with
+  `VITE_PLAYCANVAS_XR_BACKEND_FALLBACK=true`.
+- Quest 3 setup documentation now records the three browser flags required by the
+  validated native WebGPU-WebXR path: WebXR/WebGPU Binding, WebXR Projection Layers, and
+  WebXR Experiments.
+- Native PlayCanvas SOG v2 playback through a dedicated renderer adapter and demo. The
+  adapter consumes compressed SOG bytes from the player-owned cache, creates
+  PlayCanvas-native assets without an expanded neutral Gaussian frame, reuses one
+  persistent dynamic entity, and exposes optional immersive-VR entry for Quest testing.
+- Offline conversion of existing flat SPZ quality-cut indexes into explicitly tagged SOG
+  v2 frame tiers for the PlayCanvas comparison path. The selected tier detail and
+  splat-count metadata are preserved; runtime fallback or transcoding is not used.
+- Feature-detected native `Float16Array` covariance encoding in Babylon's native-texture
+  packers, with the existing Babylon truncating converter retained for older runtimes.
+  The native path writes through a shared view of the final `Uint16Array` texture bytes
+  and avoids six JavaScript table conversions per splat.
+- Fused Babylon SPZ v4 preparation: player-core can now route supported compressed
+  frames directly to an adapter, and Babylon's packing worker streams decoded chunks
+  into final center, covariance, RGBA, and SH texture arrays. The neutral Float32 frame
+  and second worker handoff are bypassed without changing tier, splat count, SH, or the
+  existing neutral fallback. Codec-internal allocation, copy, WASM, attribute-write, and
+  result-transfer timing phases are also exposed for A/B profiling.
+- Use a 25% dynamic-transfer floor in the comparison demos and their adaptive policy,
+  while retaining 10% preview cuts in the manual controls for diagnostic comparisons.
+- Experimental Babylon direct native-texture packing for neutral SPZ frames. Covariance
+  expansion now runs in the renderer-owned packing worker and the adapter submits the
+  resulting texture layout to Babylon's existing sort/upload path, avoiding
+  `updateDataAsync()`'s per-splat main-thread conversion. Set
+  `VITE_BABYLON_NATIVE_TEXTURE_PACKING=false` for the documented `.splat` fallback and
+  A/B measurements; transfer tier and source quality are unchanged.
+- Register Babylon.js pointer-selection, near-interaction, hand-tracking, ray, and
+  instanced-mesh side effects so the default WebXR experience can initialise its
+  controller interactions; stop requesting unrelated AR-only optional features for the
+  immersive-VR demo.
+- Patch Babylon.js Gaussian splat depth-sort publication so a completed streamed-frame
+  ordering updates every per-camera instance buffer, preventing one XR eye from
+  retaining stale or zero indices while the other eye displays the frame.
+- Babylon.js renderer adapter for neutral SPZ v4 frames, with worker-based conversion to
+  Babylon's native splat memory, two persistent front/back `GaussianSplattingMesh`
+  slots, depth-sort-fenced asynchronous handoff, transforms, resource metrics, and
+  explicit RAD rejection.
+- Dedicated Babylon.js SPZ comparison demo sharing content configuration, byte caching,
+  tier selection, decoded lookahead, and playback with the Spark demo while owning its
+  engine, controls, diagnostics, and optional immersive-VR WebXR experience.
+- Renderer-neutral demo-support package plus architectural decisions retaining Spark as
+  a supported adapter, using dedicated per-engine demos, and re-scoping the pilot to
+  client-measured testbed/Wi-Fi adaptation.
+- Asynchronous renderer presentation support in player-core so a frame is not published
+  as presented before a renderer-native mesh update completes.
+- Renderer-neutral Gaussian codec contracts and registry, separating opaque compressed
+  byte buffering from decoding and renderer-native packing.
+- Official Niantic SPZ v4 worker decoder with persistent concurrency, transferable
+  attribute arrays, pinned vendored WASM, and an explicit `spz-v4` content codec ID.
+- Spark adapter packing from neutral Gaussian attributes into `PackedSplats`, with
+  separate codec-decode and renderer-pack performance diagnostics.
+- Persistent Spark-owned frame-packing workers with transferable neutral inputs and
+  renderer-native outputs, independent packing concurrency, cancellation-safe worker
+  replacement, and queue/worker/transfer/main-bind diagnostics.
+- Opt-in Spark CPU sort keys for sole-source flat dynamic frames, retaining neutral
+  centers through packing, preserving Spark's worker radix sort and ordering upload,
+  reporting CPU-key time separately, and falling back to GPU readback for mixed splat
+  mappings.
+- Explicit `spark-spz-v3`/`spz-v4` demo selection for clean A/B testing, plus a content
+  command that repacks existing flat quality tiers through the official SPZ v4 tools.
 - Initial product and implementation plan.
 - Milestone M0 pnpm workspace with independently buildable player, Spark renderer,
   telemetry, content-tool, shared, and demo packages.
@@ -117,6 +248,18 @@ All notable changes to this project will be documented here. The project uses
 
 ### Fixed
 
+- Vitest now resolves every internal workspace package directly from source, so clean CI
+  checkouts can run unit tests before package build artifacts exist.
+- PlayCanvas transform tests now supply their entity's required application context,
+  avoiding misleading assertion diagnostics during otherwise successful test runs.
+- PlayCanvas playback no longer remains indefinitely in `initialising` after its first
+  SOG frame becomes visible. Normal frame swaps no longer depend on the diagnostic
+  `frame:ready` capture fence; the opt-in fence now matches the emitted camera component
+  correctly and has a finite timeout.
+- Babylon frame changes no longer overwrite the visible Gaussian mesh while its
+  replacement textures and first valid depth ordering are pending. The adapter swaps two
+  persistent mesh slots atomically at a render boundary, and its default orbit camera
+  now starts on the front side of the current dynamic fixture.
 - Compressed-frame prefetch now binds the browser `fetch` implementation to the global
   receiver, preventing `Illegal invocation` failures when the byte cache starts its
   forward network plan.

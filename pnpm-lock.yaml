@@ -5,7 +5,8 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@sparkjsdev/spark@2.1.0': b65f77f35232b8e17bdc72a074b455caed918c92dc8ffddff41829bd897db6ff
+  '@babylonjs/core@9.17.0': 0fbb9dd141c3be5b3842448541df237339181f75d5f0a6009031f909b777db77
+  '@sparkjsdev/spark@2.1.0': beed064d4b2527b4ae517fc33e4295a748225a3a2fc5dd859d50ef37286e4f3c
 
 importers:
 
@@ -74,9 +75,18 @@ importers:
 
   apps/demo:
     dependencies:
+      '@6g-path/gaussian-codec':
+        specifier: workspace:*
+        version: link:../../packages/codec-core
+      '@6g-path/gaussian-codec-spz':
+        specifier: workspace:*
+        version: link:../../packages/codec-spz
       '@6g-path/gaussian-content-tools':
         specifier: workspace:*
         version: link:../../packages/content-tools
+      '@6g-path/gaussian-demo-support':
+        specifier: workspace:*
+        version: link:../../packages/demo-support
       '@6g-path/gaussian-player':
         specifier: workspace:*
         version: link:../../packages/player-core
@@ -103,14 +113,94 @@ importers:
         specifier: 0.180.0
         version: 0.180.0
 
+  apps/demo-babylon:
+    dependencies:
+      '@6g-path/gaussian-codec':
+        specifier: workspace:*
+        version: link:../../packages/codec-core
+      '@6g-path/gaussian-codec-spz':
+        specifier: workspace:*
+        version: link:../../packages/codec-spz
+      '@6g-path/gaussian-demo-support':
+        specifier: workspace:*
+        version: link:../../packages/demo-support
+      '@6g-path/gaussian-player':
+        specifier: workspace:*
+        version: link:../../packages/player-core
+      '@6g-path/gaussian-renderer-babylon':
+        specifier: workspace:*
+        version: link:../../packages/renderer-babylon
+      react:
+        specifier: ^19.2.7
+        version: 19.2.7
+      react-dom:
+        specifier: ^19.2.7
+        version: 19.2.7(react@19.2.7)
+
+  apps/demo-playcanvas:
+    dependencies:
+      '@6g-path/gaussian-demo-support':
+        specifier: workspace:*
+        version: link:../../packages/demo-support
+      '@6g-path/gaussian-player':
+        specifier: workspace:*
+        version: link:../../packages/player-core
+      '@6g-path/gaussian-renderer-playcanvas':
+        specifier: workspace:*
+        version: link:../../packages/renderer-playcanvas
+      react:
+        specifier: ^19.2.7
+        version: 19.2.7
+      react-dom:
+        specifier: ^19.2.7
+        version: 19.2.7(react@19.2.7)
+
+  apps/showcase:
+    dependencies:
+      '@6g-path/gaussian-player':
+        specifier: workspace:*
+        version: link:../../packages/player-core
+      '@6g-path/gaussian-renderer-playcanvas':
+        specifier: workspace:*
+        version: link:../../packages/renderer-playcanvas
+      react:
+        specifier: ^19.2.7
+        version: 19.2.7
+      react-dom:
+        specifier: ^19.2.7
+        version: 19.2.7(react@19.2.7)
+
+  packages/codec-core: {}
+
+  packages/codec-spz:
+    dependencies:
+      '@6g-path/gaussian-codec':
+        specifier: workspace:*
+        version: link:../codec-core
+
   packages/content-tools:
     dependencies:
       '@6g-path/gaussian-player':
         specifier: workspace:*
         version: link:../player-core
+      '@playcanvas/splat-transform':
+        specifier: 3.0.0
+        version: 3.0.0(playcanvas@2.21.0)
+
+  packages/demo-support:
+    dependencies:
+      '@6g-path/gaussian-player':
+        specifier: workspace:*
+        version: link:../player-core
+      '@6g-path/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/player-core:
     dependencies:
+      '@6g-path/gaussian-codec':
+        specifier: workspace:*
+        version: link:../codec-core
       '@6g-path/shared':
         specifier: workspace:*
         version: link:../shared
@@ -121,8 +211,44 @@ importers:
         specifier: ^1.3.6
         version: 1.3.6
 
+  packages/renderer-babylon:
+    dependencies:
+      '@6g-path/gaussian-codec':
+        specifier: workspace:*
+        version: link:../codec-core
+      '@6g-path/gaussian-codec-spz':
+        specifier: workspace:*
+        version: link:../codec-spz
+      '@6g-path/gaussian-player':
+        specifier: workspace:*
+        version: link:../player-core
+      '@6g-path/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@babylonjs/core':
+        specifier: 9.17.0
+        version: 9.17.0(patch_hash=0fbb9dd141c3be5b3842448541df237339181f75d5f0a6009031f909b777db77)
+      '@babylonjs/loaders':
+        specifier: 9.17.0
+        version: 9.17.0(@babylonjs/core@9.17.0(patch_hash=0fbb9dd141c3be5b3842448541df237339181f75d5f0a6009031f909b777db77))(babylonjs-gltf2interface@9.17.0)
+
+  packages/renderer-playcanvas:
+    dependencies:
+      '@6g-path/gaussian-player':
+        specifier: workspace:*
+        version: link:../player-core
+      '@6g-path/shared':
+        specifier: workspace:*
+        version: link:../shared
+      playcanvas:
+        specifier: 2.21.0
+        version: 2.21.0
+
   packages/renderer-spark:
     dependencies:
+      '@6g-path/gaussian-codec':
+        specifier: workspace:*
+        version: link:../codec-core
       '@6g-path/gaussian-player':
         specifier: workspace:*
         version: link:../player-core
@@ -131,7 +257,7 @@ importers:
         version: link:../shared
       '@sparkjsdev/spark':
         specifier: 2.1.0
-        version: 2.1.0(patch_hash=b65f77f35232b8e17bdc72a074b455caed918c92dc8ffddff41829bd897db6ff)(three@0.180.0)
+        version: 2.1.0(patch_hash=beed064d4b2527b4ae517fc33e4295a748225a3a2fc5dd859d50ef37286e4f3c)(three@0.180.0)
       three:
         specifier: 0.180.0
         version: 0.180.0
@@ -149,6 +275,9 @@ importers:
         version: link:../player-core
 
 packages:
+
+  '@adobe/spz@0.2.2':
+    resolution: {integrity: sha512-KUCw5R52rCBnfyvOOIa9nUQGfR6TEcHjYzuWDYRGb1fpkpnkci6VXFqCx/xFJ1yEN7V5gc9YxU2zIY6sEjIbhw==}
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -216,6 +345,15 @@ packages:
   '@babel/types@7.29.7':
     resolution: {integrity: sha512-4zBIxpPzowiZpusoFkyGVwakdRJUyuH5PxQ/PrqghfdFWWasvnCdPfQXHrenDai+gyLARulZjZowCOj6fjT4pA==}
     engines: {node: '>=6.9.0'}
+
+  '@babylonjs/core@9.17.0':
+    resolution: {integrity: sha512-+yXYuQC6l9FbVeGWtYd4mcY3IJsfDc/R5Re6YtVT1t3ox3WgfaOVYMTjlUcqrG35wp6FbIANqVcos5EPt/IF8A==}
+
+  '@babylonjs/loaders@9.17.0':
+    resolution: {integrity: sha512-Z0XiIzA+v4EJ1L2Miu39LN3gdQpFEuocTCc0NRFnFIC+f5X2D06UkYay1jF26PmKpPQFVSLjUBr1if3tXBLpVA==}
+    peerDependencies:
+      '@babylonjs/core': ^9.0.0
+      babylonjs-gltf2interface: ^9.0.0
 
   '@bcoe/v8-coverage@1.0.2':
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
@@ -637,6 +775,13 @@ packages:
 
   '@oxc-project/types@0.139.0':
     resolution: {integrity: sha512-r9gHphtCs+1M7J0pw6Sn/hh/Wpa/iQrOOkrNAlVLF/gHq+/CJmHIWKKUUhdWjcD6CIa8idarspCsASiXCXvFUw==}
+
+  '@playcanvas/splat-transform@3.0.0':
+    resolution: {integrity: sha512-z2vMqlaiSxdRK0iA9snmNxjvw0tMBrF56bVRzUkGLz1n1nF8pdEprjK+F5mH6bpV37EYIyJ5c4bV7IC66beeCg==}
+    engines: {node: '>=22.0.0'}
+    hasBin: true
+    peerDependencies:
+      playcanvas: ^2.0.0
 
   '@playwright/test@1.61.1':
     resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
@@ -1187,6 +1332,9 @@ packages:
   ast-v8-to-istanbul@1.0.4:
     resolution: {integrity: sha512-0bC0/4bTSrnwdhU3IsZDwEdojvuPrSg59OYZfKsLRtJZ0u8VBx9DebfqqG8bRdCC0I7vjgxmPi41P0lpkhJHtA==}
 
+  babylonjs-gltf2interface@9.17.0:
+    resolution: {integrity: sha512-nqiTh0w/9MODhsa4K4YWGRSXsGgUyPLevcexn4gYEsCxMSYQm48wm9NhXaw+DtvSQTtmh8JL0nqqFYNTyinACw==}
+
   balanced-match@4.0.4:
     resolution: {integrity: sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==}
     engines: {node: 18 || 20 || >=22}
@@ -1713,6 +1861,10 @@ packages:
   pkg-types@1.3.1:
     resolution: {integrity: sha512-/Jm5M4RvtBFVkKWRu2BLUTNP8/M2a+UwuAX+ae4770q1qVGtfjG+WTCupoZixokjmHiry8uI+dlY8KXYV5HVVQ==}
 
+  playcanvas@2.21.0:
+    resolution: {integrity: sha512-9O94i5WHPkhXbPhhzWixBpXij1gsI+LvEUrUyl1hZ4/9w57892BNvWeXXM1DTe7vqAFtX0WaptOdtVy4AOvCZA==}
+    engines: {node: '>=18.3.0'}
+
   playwright-core@1.61.1:
     resolution: {integrity: sha512-h7Qlt6m4REp25qvIdvbDtVmD4LqVXfpRxhORv9L0jzETM05p4fuPJ3dKyuSXQxDSbXnmS79HAgi9589lGSpLkg==}
     engines: {node: '>=18'}
@@ -2031,6 +2183,9 @@ packages:
       jsdom:
         optional: true
 
+  webgpu@0.4.0:
+    resolution: {integrity: sha512-F5pimn3Aoi0zWjuRdiVs5TnrUwSzD2lESBohsIUsqyitWkGRQlXU2fhV6ycXlQTa1bvAf3sjqiUpBEpmSQ5ptA==}
+
   which@2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
     engines: {node: '>= 8'}
@@ -2062,6 +2217,8 @@ packages:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
 snapshots:
+
+  '@adobe/spz@0.2.2': {}
 
   '@babel/code-frame@7.29.7':
     dependencies:
@@ -2162,6 +2319,13 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
+
+  '@babylonjs/core@9.17.0(patch_hash=0fbb9dd141c3be5b3842448541df237339181f75d5f0a6009031f909b777db77)': {}
+
+  '@babylonjs/loaders@9.17.0(@babylonjs/core@9.17.0(patch_hash=0fbb9dd141c3be5b3842448541df237339181f75d5f0a6009031f909b777db77))(babylonjs-gltf2interface@9.17.0)':
+    dependencies:
+      '@babylonjs/core': 9.17.0(patch_hash=0fbb9dd141c3be5b3842448541df237339181f75d5f0a6009031f909b777db77)
+      babylonjs-gltf2interface: 9.17.0
 
   '@bcoe/v8-coverage@1.0.2': {}
 
@@ -2440,6 +2604,14 @@ snapshots:
 
   '@oxc-project/types@0.139.0': {}
 
+  '@playcanvas/splat-transform@3.0.0(playcanvas@2.21.0)':
+    dependencies:
+      '@adobe/spz': 0.2.2
+      playcanvas: 2.21.0
+      webgpu: 0.4.0
+    transitivePeerDependencies:
+      - supports-color
+
   '@playwright/test@1.61.1':
     dependencies:
       playwright: 1.61.1
@@ -2570,7 +2742,7 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.62.2':
     optional: true
 
-  '@sparkjsdev/spark@2.1.0(patch_hash=b65f77f35232b8e17bdc72a074b455caed918c92dc8ffddff41829bd897db6ff)(three@0.180.0)':
+  '@sparkjsdev/spark@2.1.0(patch_hash=beed064d4b2527b4ae517fc33e4295a748225a3a2fc5dd859d50ef37286e4f3c)(three@0.180.0)':
     dependencies:
       fflate: 0.8.3
       three: 0.180.0
@@ -2875,6 +3047,8 @@ snapshots:
       '@jridgewell/trace-mapping': 0.3.31
       estree-walker: 3.0.3
       js-tokens: 10.0.0
+
+  babylonjs-gltf2interface@9.17.0: {}
 
   balanced-match@4.0.4: {}
 
@@ -3375,6 +3549,11 @@ snapshots:
       mlly: 1.8.2
       pathe: 2.0.3
 
+  playcanvas@2.21.0:
+    dependencies:
+      '@types/webxr': 0.5.24
+      '@webgpu/types': 0.1.71
+
   playwright-core@1.61.1: {}
 
   playwright@1.61.1:
@@ -3675,6 +3854,13 @@ snapshots:
       '@vitest/coverage-v8': 4.1.10(vitest@4.1.10)
     transitivePeerDependencies:
       - msw
+
+  webgpu@0.4.0:
+    dependencies:
+      '@webgpu/types': 0.1.71
+      debug: 4.4.3
+    transitivePeerDependencies:
+      - supports-color
 
   which@2.0.2:
     dependencies:

@@ -4,18 +4,24 @@ Architecture decisions are recorded as ADRs in
 [`docs/architecture/decisions`](../architecture/decisions). This file is the short index
 used during day-to-day implementation.
 
-| ADR  | Decision                                            | Status   |
-| ---- | --------------------------------------------------- | -------- |
-| 0001 | Use a pnpm workspace monorepo                       | Accepted |
-| 0002 | Isolate renderers behind a core adapter             | Accepted |
-| 0003 | Use one `.RAD` asset per dynamic frame initially    | Accepted |
-| 0004 | Inject adaptive quality policy                      | Accepted |
-| 0005 | Make the sequence manifest player-owned             | Accepted |
-| 0006 | Normalise network telemetry behind a provider       | Accepted |
-| 0007 | Keep coordinate conversion in content transforms    | Accepted |
-| 0008 | Gate presentation quality and use an absolute clock | Accepted |
-| 0009 | Export flat dynamic quality tiers from RAD trees    | Accepted |
-| 0010 | Separate compressed and decoded frame buffers       | Accepted |
+| ADR  | Decision                                              | Status     |
+| ---- | ----------------------------------------------------- | ---------- |
+| 0001 | Use a pnpm workspace monorepo                         | Accepted   |
+| 0002 | Isolate renderers behind a core adapter               | Accepted   |
+| 0003 | Use one `.RAD` asset per dynamic frame initially      | Accepted   |
+| 0004 | Inject adaptive quality policy                        | Accepted   |
+| 0005 | Make the sequence manifest player-owned               | Accepted   |
+| 0006 | Normalise network telemetry behind a provider         | Accepted   |
+| 0007 | Keep coordinate conversion in content transforms      | Accepted   |
+| 0008 | Gate presentation quality and use an absolute clock   | Accepted   |
+| 0009 | Export flat dynamic quality tiers from RAD trees      | Superseded |
+| 0010 | Separate compressed and decoded frame buffers         | Accepted   |
+| 0011 | Separate Gaussian codecs from renderer adapters       | Accepted   |
+| 0012 | Support multiple renderer adapters and demos          | Accepted   |
+| 0013 | Use client-measured network state for the pilot       | Accepted   |
+| 0014 | Use native PlayCanvas SOG ingestion                   | Accepted   |
+| 0015 | Define the source-only public-preview product surface | Accepted   |
+| 0016 | Generate public dynamic tiers from PLY or SPZ         | Accepted   |
 
 ## Working conventions
 
@@ -71,9 +77,9 @@ used during day-to-day implementation.
   frame.
 - Dynamic base work is queued by temporal distance, deadline, then estimated byte cost;
   preparation and refinement concurrency remain runtime-configurable policy outputs.
-- The current RAD hierarchy is an authoring source for dynamic quality tiers, not the
-  intended runtime representation. The content pipeline expands valid non-overlapping
-  frontiers and exports each as flat SPZ with manifest-compatible quality metadata.
+- The public content pipeline accepts ordered PLY or SPZ frames, uses SplatTransform
+  merge-decimation, and emits independent bundled SOG or SPZ v4 tiers with
+  manifest-compatible quality metadata. The RAD frontier extractor is legacy-only.
 - Dynamic quality is network/deadline selected rather than camera selected. Dynamic SPZ
   tiers use Spark `PackedSplats` without LoD; static scenes retain paged, camera-aware
   RAD LoD.
@@ -103,6 +109,56 @@ used during day-to-day implementation.
 - Separate tier files are accepted for the first measurable version. A packed
   multi-frame container and temporal compression remain a later optimisation after the
   flat-tier playback baseline is measured.
+- Compressed-byte streaming, Gaussian decoding, and renderer-native packing are separate
+  boundaries. Content selects a codec explicitly; the first neutral path uses official
+  Niantic SPZ v4 and the first renderer sink is Spark `PackedSplats`.
+- Renderer-native packing concurrency belongs to the renderer adapter. Neutral decoded
+  typed arrays transfer ownership into persistent Spark packing workers, which return
+  renderer-native typed arrays by transfer; only lightweight `PackedSplats` binding
+  remains on the main thread. Codec and packing worker counts are independently
+  configurable so measurements do not conflate the two stages.
+- CPU sort keys are an explicit Spark-adapter experiment, not part of the neutral codec
+  contract. The Spark adapter may retain decoded centers and an active mask alongside a
+  flat buffered frame. It supplies keys only when that frame is the complete active
+  Gaussian mapping; persistent/mixed Gaussian scenes automatically use Spark's original
+  GPU readback. The library default remains GPU readback while the demo defaults to the
+  CPU experiment for current flat-sequence measurements.
+- The legacy Spark-owned SPZ v3 loader remains an explicit A/B compatibility path. It
+  does not act as an implicit fallback for SPZ v4 content, so the entire legacy route
+  can be removed cleanly after comparison.
+- Spark, Babylon.js, PlayCanvas, and later renderers are co-equal adapter packages.
+  Spark remains supported for its existing flat-SPZ and paged-RAD use cases. Each engine
+  has a dedicated demo and optional XR entry point instead of loading multiple engines
+  into one comparison application.
+- Babylon dynamic presentation uses two persistent front/back mesh slots. The current
+  frame remains visible while the other slot uploads and reaches a settled Babylon depth
+  sort, then both visibility flags change at one render boundary. This bounded extra GPU
+  allocation is preferred to a blank or partially ordered frame and must be included in
+  Quest/mobile memory measurements.
+- Babylon's dynamic 25%+ path may precompute its final covariance/texture payload in a
+  renderer-owned worker and submit it through Babylon's existing texture/sort machinery.
+  This removes the repeated main-thread `.splat` expansion but is guarded by an explicit
+  fallback because the texture hooks are internal to Babylon. It is an adapter-specific
+  optimisation, not a change to neutral SPZ decoding, player-core buffering, or content
+  quality selection.
+- Renderer adapters may advertise direct support for a compressed codec when a fused
+  decode-to-native path avoids a large neutral intermediate. The player still owns
+  fetching, caching, scheduling, and fallback selection; the shared SPZ streaming core
+  remains codec-owned, while final texture/buffer packing remains renderer-specific.
+  Babylon is the first implementation. Spark and future renderers keep the neutral path
+  until their own measured native sink justifies equivalent work.
+- The first SOG v2 path uses PlayCanvas's native WebP-backed asset ingestion. The
+  adapter explicitly accepts `sog-v2` compressed frames from the player-owned byte cache
+  and avoids a renderer-neutral expanded frame. Existing SPZ tiers are converted offline
+  without changing their declared detail target; unsupported renderer/codec combinations
+  fail instead of transcoding or falling back at runtime.
+- Demo and pilot playback use a 25% dynamic transfer floor. A 10% preview asset remains
+  available through the manual demo controls for diagnostics, but is not selected by the
+  initial or buffer-aware policy.
+- The 6G pilot uses completed-transfer throughput, request timing, buffer state, stalls,
+  and renderer capacity for adaptation because its Wi-Fi last hop exposes no useful
+  6G-specific client telemetry. The normalised 6G provider remains an extension point,
+  but the pilot does not claim a telemetry-assisted policy.
 - Renderer-native packed frame storage remains an experiment until its measured
   clone/bind cost is compared with SPZ decoding. The benchmark uses an ephemeral
   contiguous payload and does not establish a file header, manifest contract, or stable

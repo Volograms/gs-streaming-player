@@ -1,3 +1,4 @@
+import { GaussianFrameDecoderRegistry } from "@6g-path/gaussian-codec";
 import { describe, expect, it, vi } from "vitest";
 
 import { FrameRingBuffer } from "../src/index.js";
@@ -11,6 +12,7 @@ import type {
   GaussianRendererAdapter,
   PreparedFrame,
 } from "../src/index.js";
+import type { DecodedGaussianFrame } from "@6g-path/gaussian-codec";
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -178,6 +180,96 @@ function createRendererHarness({ automaticQuality = true } = {}) {
 }
 
 describe("FrameRingBuffer", () => {
+  it("decodes codec-tagged bytes before passing neutral attributes to the renderer", async () => {
+    const harness = createRendererHarness();
+    const sequence = createSequence(1);
+    sequence.frames[0] = {
+      ...sequence.frames[0]!,
+      byteSize: 4,
+      codec: "spz-v4",
+      url: "/frame-0.spz",
+    };
+    const decodedFrame: DecodedGaussianFrame = {
+      alphas: new Float32Array([1]),
+      antialiased: false,
+      codecId: "spz-v4",
+      colors: new Float32Array([1, 1, 1]),
+      coordinateSystem: "RUB",
+      numSplats: 1,
+      positions: new Float32Array([0, 0, 0]),
+      rotations: new Float32Array([0, 0, 0, 1]),
+      scales: new Float32Array([1, 1, 1]),
+      shDegree: 0,
+      sphericalHarmonics: new Float32Array(),
+    };
+    const decode = vi.fn(async () => decodedFrame);
+    const trace: FrameRingBufferTraceEvent[] = [];
+    const buffer = new FrameRingBuffer({
+      compressedBufferMaximumBytes: 16,
+      compressedFrameFetch: vi.fn(async () =>
+        Promise.resolve(new Response(new Uint8Array([1, 2, 3, 4]))),
+      ),
+      decoderRegistry: new GaussianFrameDecoderRegistry([
+        { codecId: "spz-v4", decode },
+      ]),
+      futureFrameCount: 0,
+      onTrace: (event) => trace.push(event),
+      renderer: harness.renderer,
+      sequence,
+    });
+
+    void buffer.initialise(0).catch(() => undefined);
+
+    await vi.waitFor(() => expect(harness.prepareFrame).toHaveBeenCalledOnce());
+    expect(decode).toHaveBeenCalledWith(
+      expect.any(Uint8Array),
+      expect.objectContaining({ coordinateSystem: "RUB" }),
+    );
+    expect(harness.prepareFrame.mock.calls[0]?.[2]).toMatchObject({
+      compressedBytes: expect.any(ArrayBuffer),
+      decodedFrame,
+    });
+    expect(trace.map(({ type }) => type)).toEqual(
+      expect.arrayContaining(["codec-decode-started", "codec-decode-ready"]),
+    );
+    buffer.dispose();
+  });
+
+  it("lets a renderer consume supported compressed frames without neutral decoding", async () => {
+    const harness = createRendererHarness();
+    harness.renderer.canPrepareCompressedFrame = (codecId) => codecId === "spz-v4";
+    const sequence = createSequence(1);
+    sequence.frames[0] = {
+      ...sequence.frames[0]!,
+      byteSize: 4,
+      codec: "spz-v4",
+      url: "/frame-0.spz",
+    };
+    const decode = vi.fn();
+    const buffer = new FrameRingBuffer({
+      compressedBufferMaximumBytes: 16,
+      compressedFrameFetch: vi.fn(async () =>
+        Promise.resolve(new Response(new Uint8Array([1, 2, 3, 4]))),
+      ),
+      decoderRegistry: new GaussianFrameDecoderRegistry([
+        { codecId: "spz-v4", decode },
+      ]),
+      futureFrameCount: 0,
+      renderer: harness.renderer,
+      sequence,
+    });
+
+    void buffer.initialise(0).catch(() => undefined);
+
+    await vi.waitFor(() => expect(harness.prepareFrame).toHaveBeenCalledOnce());
+    expect(decode).not.toHaveBeenCalled();
+    expect(harness.prepareFrame.mock.calls[0]?.[2]).toMatchObject({
+      compressedBytes: expect.any(ArrayBuffer),
+    });
+    expect(harness.prepareFrame.mock.calls[0]?.[2].decodedFrame).toBeUndefined();
+    buffer.dispose();
+  });
+
   it("prefetches compressed bytes beyond the decoded frame window", async () => {
     const harness = createRendererHarness();
     const sequence = createSequence(8);
@@ -426,6 +518,30 @@ describe("FrameRingBuffer", () => {
       expect.objectContaining({ frameIndex: 1 }),
     );
     expect(buffer.snapshot.currentFrameIndex).toBe(1);
+  });
+
+  it("does not publish a frame until an asynchronous renderer handoff completes", async () => {
+    const harness = createRendererHarness();
+    const handoff = deferred<void>();
+    harness.presentFrame.mockImplementation(() => handoff.promise);
+    const buffer = new FrameRingBuffer({
+      futureFrameCount: 0,
+      previousFrameCount: 0,
+      renderer: harness.renderer,
+      sequence: createSequence(1),
+    });
+
+    const initialising = buffer.initialise(0);
+    harness.resolve(0);
+    await vi.waitFor(() => expect(harness.presentFrame).toHaveBeenCalledOnce());
+    expect(buffer.snapshot.currentFrameIndex).toBeUndefined();
+    expect(
+      buffer.snapshot.frames.find(({ frameIndex }) => frameIndex === 0)?.status,
+    ).not.toBe("presented");
+
+    handoff.resolve();
+    await initialising;
+    expect(buffer.snapshot.currentFrameIndex).toBe(0);
   });
 
   it("retains the presented frame during a seek outside the destination window", async () => {

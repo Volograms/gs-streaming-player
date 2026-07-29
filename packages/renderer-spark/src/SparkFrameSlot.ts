@@ -1,7 +1,9 @@
 import { waitWithAbort } from "./abort.js";
 import { SparkRendererAbortError, SparkRendererStateError } from "./errors.js";
+import { createPackedSplatsFromPayload } from "./packDecodedGaussianFrame.js";
 import { applyTransform } from "./transform.js";
 
+import type { SparkFramePacker } from "./SparkFramePackingPool.js";
 import type {
   FramePresentationQuality,
   FramePreparationOptions,
@@ -39,6 +41,7 @@ export interface SparkFrameSlotOptions {
   getNow(): number;
   getRenderRevision(): number;
   invalidateLod(): void;
+  framePacker: SparkFramePacker;
   scene: Scene;
   slotId: number;
 }
@@ -147,7 +150,8 @@ export class SparkFrameSlot {
     this.abortController = controller;
     const unlinkExternalSignal = this.linkExternalSignal(options.signal, controller);
     const preparationStartedAt = this.options.getNow();
-    const fixedTransfer = options.transferQuality?.mode === "fixed";
+    const fixedTransfer =
+      options.decodedFrame !== undefined || options.transferQuality?.mode === "fixed";
     const trace = (
       phase: RendererFramePreparationPhase,
       quality?: FramePresentationQuality,
@@ -188,14 +192,43 @@ export class SparkFrameSlot {
     };
 
     try {
+      let packedFrame:
+        { packedSplats: ReturnType<typeof createPackedSplatsFromPayload> } | undefined;
+      if (options.decodedFrame !== undefined) {
+        const packing = await this.options.framePacker.pack(options.decodedFrame, {
+          signal: controller.signal,
+        });
+        trace("flat-pack-queue", undefined, {
+          stageDurationMs: packing.queueDurationMs,
+        });
+        trace("flat-pack-worker", undefined, {
+          stageDurationMs: packing.workerDurationMs,
+        });
+        trace("flat-pack-transfer", undefined, {
+          stageDurationMs: packing.resultTransferDurationMs,
+        });
+        const bindStartedAt = this.options.getNow();
+        const packedSplats = createPackedSplatsFromPayload(packing.payload);
+        const bindDurationMs = this.options.getNow() - bindStartedAt;
+        trace("flat-pack-bind", undefined, { stageDurationMs: bindDurationMs });
+        trace("flat-pack", undefined, {
+          stageDurationMs: packing.totalDurationMs + bindDurationMs,
+        });
+        packedFrame = { packedSplats };
+      }
       const mesh = this.options.createSplatMesh({
         editable: false,
-        ...(options.compressedBytes === undefined
-          ? { url: source.url }
-          : {
-              fileBytes: options.compressedBytes,
-              fileName: source.url,
-            }),
+        ...(packedFrame !== undefined
+          ? {
+              maxSplats: packedFrame.packedSplats.maxSplats,
+              packedSplats: packedFrame.packedSplats,
+            }
+          : options.compressedBytes === undefined
+            ? { url: source.url }
+            : {
+                fileBytes: options.compressedBytes,
+                fileName: source.url,
+              }),
         ...(fixedTransfer ? { enableLod: false, lod: false, paged: false } : {}),
         onProgress: (event) => {
           if (controller.signal.aborted) {
@@ -217,6 +250,11 @@ export class SparkFrameSlot {
         },
         ...(!fixedTransfer ? { paged: true } : {}),
       });
+      if (packedFrame !== undefined) {
+        mesh.numSplats = packedFrame.packedSplats.numSplats;
+        mesh.maxSh = packedFrame.packedSplats.maxSh;
+        mesh.updateGenerator();
+      }
       mesh.visible = false;
       this.meshValue = mesh;
       installPreparationTrace(mesh);
@@ -225,7 +263,7 @@ export class SparkFrameSlot {
       await waitWithAbort(mesh.initialized, controller.signal, () => undefined);
       installPreparationTrace(mesh);
       trace("resource-initialized");
-      if (fixedTransfer) {
+      if (fixedTransfer && packedFrame === undefined) {
         trace("flat-decode", undefined, {
           stageDurationMs: this.options.getNow() - resourceCreatedAt,
         });
@@ -234,7 +272,7 @@ export class SparkFrameSlot {
         throw new SparkRendererStateError(`Frame slot ${this.slotId} was released.`);
       }
       if (fixedTransfer) {
-        this.fixedDetailLevelValue = options.transferQuality?.detailLevel;
+        this.fixedDetailLevelValue = options.transferQuality?.detailLevel ?? 1;
         this.maximumSplatCountValue =
           options.transferQuality?.splatCount ?? mesh.numSplats;
         this.loadedBytesValue =

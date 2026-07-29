@@ -1,6 +1,7 @@
 {
   "name": "@6g-path/gaussian-renderer-spark",
   "version": "0.0.0",
+  "private": true,
   "type": "module",
   "files": [
     "dist"
@@ -14,11 +15,12 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
+    "build": "tsup src/index.ts src/sparkFramePacking.worker.ts --format esm --dts --sourcemap --clean",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
+    "@6g-path/gaussian-codec": "workspace:*",
     "@6g-path/gaussian-player": "workspace:*",
     "@6g-path/shared": "workspace:*",
     "@sparkjsdev/spark": "2.1.0",

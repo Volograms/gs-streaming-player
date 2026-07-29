@@ -3,6 +3,7 @@ dist/
 coverage/
 playwright-report/
 test-results/
+debug.log
 *.tsbuildinfo
 target/
 .DS_Store
@@ -10,13 +11,23 @@ target/
 .env.*
 .pnpm-store/
 !.env.example
+!apps/showcase/.env.https
+.cert/
 
 # Developer-provided renderer fixtures are staged here for local smoke tests only.
-apps/demo/public/assets/local-static.rad
+apps/demo/public/assets/static-sog/
 apps/demo/public/assets/local-dynamic
 apps/demo/public/assets/local-dynamic-cuts
-test-data/*.rad
-test-data/dynamic
+apps/demo/public/assets/local-dynamic-cuts-v4
+apps/demo/public/assets/local-dynamic-cuts*/
+apps/showcase/public/assets/
+apps/showcase/public/content/
+test-data/
+test-data/
+test-data/
 
 # Chrome DevTools performance captures are large local diagnostic artifacts.
 Trace-*.json
+*.jpeg
+*.mp4
+*.lnk

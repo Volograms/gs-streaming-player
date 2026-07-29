@@ -4,11 +4,17 @@ import type {
   StaticSceneObject,
 } from "../manifest/types.js";
 import type { QualityDecision } from "../quality/types.js";
+import type { DecodedGaussianFrame } from "@6g-path/gaussian-codec";
 import type { Transform } from "@6g-path/shared";
 
 export interface FramePreparationOptions {
   /** Complete compressed frame bytes supplied by an independent network buffer. */
   compressedBytes?: ArrayBuffer;
+  /**
+   * Renderer-neutral attributes decoded before entering the adapter. Ownership of the
+   * typed-array buffers transfers to the renderer for zero-copy worker preparation.
+   */
+  decodedFrame?: DecodedGaussianFrame;
   signal?: AbortSignal;
   /** Stop after the renderer's minimum drawable quality instead of refinement. */
   minimumQualityOnly?: boolean;
@@ -23,6 +29,8 @@ export interface FramePreparationOptions {
 }
 
 export interface FrameTransferQuality {
+  /** Decoder identifier for this independently addressable representation. */
+  codec?: string;
   /** Content detail represented by this complete asset in the range (0, 1]. */
   detailLevel: number;
   /** Manifest quality-level identifier. */
@@ -67,6 +75,11 @@ export type FrameQualityProgressCallback = (
 export type RendererFramePreparationPhase =
   | "resource-created"
   | "resource-initialized"
+  | "flat-pack"
+  | "flat-pack-bind"
+  | "flat-pack-queue"
+  | "flat-pack-transfer"
+  | "flat-pack-worker"
   | "flat-decode"
   | "flat-render-fence"
   | "metadata-ready"
@@ -77,7 +90,14 @@ export type RendererFramePreparationPhase =
   | "tree-registration"
   | "tree-update"
   | "tree-traversal"
-  | "minimum-renderable";
+  | "minimum-renderable"
+  | "spz-attribute-write"
+  | "spz-decode"
+  | "spz-input-allocation"
+  | "spz-input-copy"
+  | "spz-native-pack"
+  | "spz-output-allocation"
+  | "spz-wasm-decode";
 
 export interface RendererFramePreparationTraceEvent {
   chunkIndex?: number;
@@ -149,6 +169,8 @@ export interface RendererMetrics {
   dynamicGpuReallocationCount?: number;
   failedResourceLoadCount: number;
   flatFrameCopyTimeMs?: number;
+  /** Renderer-native presentation commit, including any deferred GPU data update. */
+  frameCommitTimeMs?: number;
   frameTimeMs?: number;
   gpuPageCapacity?: number;
   gpuPageCount?: number;
@@ -162,9 +184,13 @@ export interface RendererMetrics {
   resources: readonly RendererResourceMetrics[];
   sortTimeMs?: number;
   sparkUpdateTimeMs?: number;
+  /** Percentage of the unified GSplat work buffer uploaded during the latest frame. */
+  workBufferCopyPercent?: number;
 }
 
 export interface GaussianRendererAdapter {
+  /** Whether this adapter can consume a compressed codec without a neutral frame. */
+  canPrepareCompressedFrame?(codecId: string): boolean;
   initialise(): Promise<void>;
   loadStaticObject(
     object: StaticSceneObject,
@@ -179,7 +205,8 @@ export interface GaussianRendererAdapter {
     frame: GaussianFrameSource,
     options: FramePreparationOptions,
   ): Promise<PreparedFrame>;
-  presentFrame(frame: PreparedFrame): void;
+  /** Commit a prepared frame. Renderers with deferred GPU updates may complete asynchronously. */
+  presentFrame(frame: PreparedFrame): void | Promise<void>;
   hideFrame(frame: PreparedFrame): void;
   releaseFrame(frame: PreparedFrame): void;
   refineFrame(

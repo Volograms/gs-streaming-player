@@ -1,7 +1,11 @@
 import { PackedSplats } from "@sparkjsdev/spark";
 
 import { SparkRendererStateError } from "./errors.js";
+import { fillCpuSortKeys } from "./fillCpuSortKeys.js";
+import { getSparkCpuSortSource } from "./SparkCpuSortSource.js";
 
+import type { CpuSortKeyRequest } from "./fillCpuSortKeys.js";
+import type { SparkCpuSortSource } from "./SparkCpuSortSource.js";
 import type { SplatMesh, SplatMeshOptions } from "@sparkjsdev/spark";
 import type { Scene } from "three";
 
@@ -29,6 +33,7 @@ export interface SparkFlatFrameCopyResult {
  */
 export class SparkFlatFrameDisplay {
   private capacityValue = 0;
+  private cpuSortSourceValue: SparkCpuSortSource | undefined;
   private maximumSphericalHarmonicsValue = 0;
   private meshValue: SplatMesh | undefined;
   private reallocationCountValue = 0;
@@ -58,6 +63,7 @@ export class SparkFlatFrameDisplay {
     const previousCapacity = target.maxSplats;
 
     this.copyPackedSplats(source, target);
+    this.cpuSortSourceValue = getSparkCpuSortSource(source);
     displayMesh.numSplats = source.numSplats;
     this.copyTransform(sourceMesh, displayMesh);
     const sphericalHarmonicsChanged =
@@ -97,6 +103,19 @@ export class SparkFlatFrameDisplay {
     }
   }
 
+  fillCpuSortKeys(request: Omit<CpuSortKeyRequest, "matrixWorld">): boolean {
+    const mesh = this.meshValue;
+    const source = this.cpuSortSourceValue;
+    if (mesh === undefined || source === undefined || !mesh.visible) {
+      return false;
+    }
+    mesh.updateWorldMatrix(true, false);
+    return fillCpuSortKeys(source, {
+      ...request,
+      matrixWorld: mesh.matrixWorld.elements,
+    });
+  }
+
   updateTransform(sourceMesh: SplatMesh): void {
     if (this.meshValue !== undefined) {
       this.copyTransform(sourceMesh, this.meshValue);
@@ -119,6 +138,7 @@ export class SparkFlatFrameDisplay {
       return;
     }
     this.meshValue = undefined;
+    this.cpuSortSourceValue = undefined;
     mesh.removeFromParent();
     mesh.dispose();
   }

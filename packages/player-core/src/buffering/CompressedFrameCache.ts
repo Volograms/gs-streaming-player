@@ -18,13 +18,33 @@ export type CompressedFrameCacheTraceEventType =
 
 export interface CompressedFrameCacheTraceEvent {
   atMs: number;
+  bodyReadMs?: number;
+  connectionReused?: boolean;
+  connectionSetupMs?: number;
   durationMs?: number;
   errorMessage?: string;
   frameIndex: number;
   loadedBytes?: number;
+  networkProtocol?: string;
+  responseLatencyMs?: number;
   totalBytes?: number;
   type: CompressedFrameCacheTraceEventType;
   url: string;
+}
+
+interface FetchedBytes {
+  bodyReadMs: number;
+  bytes: ArrayBuffer;
+  connectionReused?: boolean;
+  connectionSetupMs?: number;
+  networkProtocol?: string;
+  responseLatencyMs: number;
+}
+
+interface FetchResourceTiming {
+  connectionReused: boolean;
+  connectionSetupMs: number;
+  networkProtocol?: string;
 }
 
 export interface CompressedFrameCacheOptions {
@@ -284,27 +304,41 @@ export class CompressedFrameCache {
       type: "fetch-started",
       url: entry.request.url,
     });
-    const fetchPromise = this.fetchBytes(entry.request, controller.signal)
-      .then((bytes) => {
-        if (controller.signal.aborted) {
-          throw abortError();
-        }
-        entry.bytes = bytes;
-        entry.state = "ready";
-        entry.lastUsed = this.sequence++;
-        this.onTrace?.({
-          atMs: this.now(),
-          durationMs: this.now() - startedAt,
-          frameIndex: entry.request.frameIndex,
-          loadedBytes: bytes.byteLength,
-          totalBytes: entry.request.byteSize ?? bytes.byteLength,
-          type: "fetch-ready",
-          url: entry.request.url,
-        });
-        this.evictToBudget();
-        entry.resolve?.(bytes);
-        return bytes;
-      })
+    const fetchPromise = this.fetchBytes(entry.request, controller.signal, startedAt)
+      .then(
+        ({
+          bodyReadMs,
+          bytes,
+          connectionReused,
+          connectionSetupMs,
+          networkProtocol,
+          responseLatencyMs,
+        }) => {
+          if (controller.signal.aborted) {
+            throw abortError();
+          }
+          entry.bytes = bytes;
+          entry.state = "ready";
+          entry.lastUsed = this.sequence++;
+          this.onTrace?.({
+            atMs: this.now(),
+            bodyReadMs,
+            ...(connectionReused === undefined ? {} : { connectionReused }),
+            ...(connectionSetupMs === undefined ? {} : { connectionSetupMs }),
+            durationMs: this.now() - startedAt,
+            frameIndex: entry.request.frameIndex,
+            loadedBytes: bytes.byteLength,
+            ...(networkProtocol === undefined ? {} : { networkProtocol }),
+            responseLatencyMs,
+            totalBytes: entry.request.byteSize ?? bytes.byteLength,
+            type: "fetch-ready",
+            url: entry.request.url,
+          });
+          this.evictToBudget();
+          entry.resolve?.(bytes);
+          return bytes;
+        },
+      )
       .catch((error: unknown) => {
         if (this.entries.get(entry.request.url) === entry) {
           this.entries.delete(entry.request.url);
@@ -335,14 +369,47 @@ export class CompressedFrameCache {
   private async fetchBytes(
     request: CompressedFrameRequest,
     signal: AbortSignal,
-  ): Promise<ArrayBuffer> {
+    startedAt: number,
+  ): Promise<FetchedBytes> {
     const response = await this.fetchImplementation(request.url, { signal });
+    const responseAt = this.now();
     if (!response.ok) {
       throw new Error(
         `Unable to fetch compressed frame ${request.frameIndex}: ${response.status} ${response.statusText}.`,
       );
     }
-    return response.arrayBuffer();
+    const bytes = await response.arrayBuffer();
+    const completedAt = this.now();
+    const resourceTiming = this.readFetchResourceTiming(response.url || request.url);
+    return {
+      bodyReadMs: completedAt - responseAt,
+      bytes,
+      ...resourceTiming,
+      responseLatencyMs: responseAt - startedAt,
+    };
+  }
+
+  private readFetchResourceTiming(url: string): FetchResourceTiming | undefined {
+    if (
+      typeof performance === "undefined" ||
+      typeof performance.getEntriesByName !== "function"
+    ) {
+      return undefined;
+    }
+    const absoluteUrl =
+      typeof location === "undefined" ? url : new URL(url, location.href).toString();
+    const entry = performance.getEntriesByName(absoluteUrl, "resource").at(-1) as
+      PerformanceResourceTiming | undefined;
+    if (entry === undefined) {
+      return undefined;
+    }
+    const connectionSetupMs = Math.max(0, entry.connectEnd - entry.connectStart);
+    const networkProtocol = entry.nextHopProtocol.trim();
+    return {
+      connectionReused: connectionSetupMs === 0,
+      connectionSetupMs,
+      ...(networkProtocol.length === 0 ? {} : { networkProtocol }),
+    };
   }
 
   private evictToBudget(): void {

@@ -6,6 +6,8 @@ export type BufferQualityTier = "critical" | "constrained" | "balanced" | "high"
 
 export interface BufferAwareQualityControllerConfiguration {
   dynamicObjectId: string;
+  /** Never request a dynamic transfer tier below this detail level. */
+  minimumDynamicDetailLevel?: number;
   minimumSplatCount?: number;
   safetyFactor?: number;
   targetBufferSeconds?: number;
@@ -68,6 +70,7 @@ export class BufferAwareQualityController implements QualityController {
   constructor(configuration: BufferAwareQualityControllerConfiguration) {
     this.configuration = {
       dynamicObjectId: configuration.dynamicObjectId,
+      minimumDynamicDetailLevel: configuration.minimumDynamicDetailLevel ?? 0,
       minimumSplatCount: configuration.minimumSplatCount ?? 2,
       safetyFactor: configuration.safetyFactor ?? 0.75,
       targetBufferSeconds: configuration.targetBufferSeconds ?? 0.2,
@@ -82,6 +85,13 @@ export class BufferAwareQualityController implements QualityController {
     }
     if (this.configuration.dynamicObjectId.length === 0) {
       throw new RangeError("dynamicObjectId cannot be empty.");
+    }
+    if (
+      !Number.isFinite(this.configuration.minimumDynamicDetailLevel) ||
+      this.configuration.minimumDynamicDetailLevel < 0 ||
+      this.configuration.minimumDynamicDetailLevel > 1
+    ) {
+      throw new RangeError("minimumDynamicDetailLevel must be between zero and one.");
     }
   }
 
@@ -111,7 +121,10 @@ export class BufferAwareQualityController implements QualityController {
     const tier = tierConfiguration[this.tierValue];
     return {
       allowStaticRefinement: this.tierValue !== "critical",
-      dynamicFrameDetailLevel: tier.detailLevel,
+      dynamicFrameDetailLevel: Math.max(
+        tier.detailLevel,
+        this.configuration.minimumDynamicDetailLevel,
+      ),
       dynamicObjectWeights: { [this.configuration.dynamicObjectId]: 1 },
       maximumBasePreparationConcurrency: tier.baseConcurrency,
       maximumRefinementBytes: Number.POSITIVE_INFINITY,

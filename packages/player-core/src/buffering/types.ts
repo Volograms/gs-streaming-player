@@ -61,6 +61,9 @@ export type FrameRingBufferTraceEventType =
   | "compressed-fetch-ready"
   | "compressed-cache-hit"
   | "compressed-fetch-failed"
+  | "codec-decode-started"
+  | "codec-phase"
+  | "codec-decode-ready"
   | "renderer-phase"
   | "base-ready"
   | "refinement-started"
@@ -83,6 +86,12 @@ export interface FrameRingBufferTraceFrame {
 export interface FrameRingBufferTraceEvent {
   /** Monotonic timestamp supplied by FrameRingBufferOptions.now. */
   atMs: number;
+  /** Time spent reading the response body into the owned ArrayBuffer. */
+  bodyReadMs?: number;
+  /** Whether Resource Timing reported no new connection setup for this request. */
+  connectionReused?: boolean;
+  /** DNS-independent TCP/TLS connection setup time reported by Resource Timing. */
+  connectionSetupMs?: number;
   /** Duration of the operation represented by this event, when applicable. */
   durationMs?: number;
   displayCommitIntervalsMs?: readonly number[];
@@ -90,15 +99,22 @@ export interface FrameRingBufferTraceEvent {
   frameIndex?: number;
   frames?: readonly FrameRingBufferTraceFrame[];
   loadedBytes?: number;
+  /** Browser-reported next-hop protocol, for example http/1.1, h2, or h3. */
+  networkProtocol?: string;
   chunkIndex?: number;
+  codecId?: string;
+  codecPhase?: string;
   pageIndex?: number;
   phase?: RendererFramePreparationPhase;
   quality?: Readonly<FramePresentationQuality>;
+  /** Time from fetch start until response headers became available. */
+  responseLatencyMs?: number;
   reusedPage?: boolean;
   renderCallSamplesMs?: readonly number[];
   renderIntervalSamplesMs?: readonly number[];
   flatFrameCopySamplesMs?: readonly number[];
   sortOrderingUploadSamplesMs?: readonly number[];
+  sortCpuKeySamplesMs?: readonly number[];
   sortReadbackSamplesMs?: readonly number[];
   sortSamplesMs?: readonly number[];
   sortWorkerSamplesMs?: readonly number[];

@@ -1,0 +1,31 @@
+diff --git a/Meshes/GaussianSplatting/gaussianSplattingMeshBase.pure.js b/Meshes/GaussianSplatting/gaussianSplattingMeshBase.pure.js
+index 33f8f4bc64c0f5b67bcf8f3fe5dd85d00b2ab5d1..0c777e09db2dce004e45311527fa895780c92d31 100644
+--- a/Meshes/GaussianSplatting/gaussianSplattingMeshBase.pure.js
++++ b/Meshes/GaussianSplatting/gaussianSplattingMeshBase.pure.js
+@@ -2625,13 +2625,20 @@ export class GaussianSplattingMeshBase extends Mesh {
+-            // get mesh for camera and update its instance buffer
++            // Every camera mesh owns a separate GPU instance buffer even though the CPU-side
++            // splat index array is shared. Publishing only to the camera that requested this
++            // sort leaves the other XR eye with a stale (or newly allocated all-zero) buffer
++            // when streamed frames change size faster than both eyes can finish a sort.
++            // Use the completed ordering for every view. The small ordering difference between
++            // eyes is far less disruptive than rendering invalid indices in one eye.
+             const cameraViewInfos = this._cameraViewInfos.get(cameraId);
+-            if (cameraViewInfos) {
+-                if (cameraViewInfos.splatIndexBufferSet) {
+-                    cameraViewInfos.mesh.thinInstanceBufferUpdated("splatIndex");
++            this._cameraViewInfos.forEach((viewInfos) => {
++                if (viewInfos.splatIndexBufferSet) {
++                    viewInfos.mesh.thinInstanceBufferUpdated("splatIndex");
+                 }
+                 else {
+-                    cameraViewInfos.mesh.thinInstanceSetBuffer("splatIndex", this._splatIndex, 16, false);
+-                    cameraViewInfos.splatIndexBufferSet = true;
++                    viewInfos.mesh.thinInstanceSetBuffer("splatIndex", this._splatIndex, 16, false);
++                    viewInfos.splatIndexBufferSet = true;
+                 }
++            });
++            if (cameraViewInfos) {
+                 cameraViewInfos.sortAppliedId = sortRequestId;
+             }
+             this._canPostToWorker = true;

@@ -1,15 +1,9 @@
-import { fileURLToPath } from "node:url";
-
 import { defineConfig } from "vitest/config";
 
+import { workspaceResolve } from "../../vitest.shared.config";
+
 export default defineConfig({
-  resolve: {
-    alias: {
-      "@6g-path/gaussian-player": fileURLToPath(
-        new URL("../player-core/src/index.ts", import.meta.url),
-      ),
-    },
-  },
+  resolve: workspaceResolve,
   test: {
     environment: "node",
     name: "content-tools",

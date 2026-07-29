@@ -9,6 +9,9 @@ const eventLabels: Record<FrameRingBufferTraceEvent["type"], string> = {
   "compressed-fetch-failed": "compressed fetch failed",
   "compressed-fetch-ready": "compressed fetch ready",
   "compressed-fetch-started": "compressed fetch started",
+  "codec-decode-ready": "codec decode ready",
+  "codec-decode-started": "codec decode started",
+  "codec-phase": "codec phase",
   evicted: "evicted",
   failed: "failed",
   "presentation-ready": "presentation gate passed",
@@ -42,6 +45,12 @@ function describeEvent(event: Readonly<FrameRingBufferTraceEvent>): string {
   const details: string[] = [];
   if (event.phase !== undefined) {
     details.push(event.phase);
+  }
+  if (event.codecId !== undefined) {
+    details.push(event.codecId);
+  }
+  if (event.codecPhase !== undefined) {
+    details.push(event.codecPhase);
   }
   if (event.durationMs !== undefined) {
     details.push(
@@ -136,11 +145,11 @@ export function PlaybackTracePanel({ events, onClear }: PlaybackTracePanelProps)
         in bounded batches to avoid disturbing playback.
       </p>
       <ol aria-live="polite">
-        {visibleEvents.map((event) => (
+        {visibleEvents.map((event, visibleIndex) => (
           <li
             data-frame-index={event.frameIndex}
             data-trace-type={event.type}
-            key={`${event.atMs}:${event.type}:${event.frameIndex ?? "window"}:${event.phase ?? "event"}:${event.loadedBytes ?? "none"}`}
+            key={`${event.atMs}:${event.type}:${event.frameIndex ?? "window"}:${event.phase ?? "event"}:${event.loadedBytes ?? "none"}:${visibleIndex}`}
           >
             <time>+{(event.atMs - firstTimestamp).toFixed(1)} ms</time>
             <strong>

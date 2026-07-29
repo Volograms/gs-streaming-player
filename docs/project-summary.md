@@ -1,5 +1,12 @@
 # Adaptive Gaussian Splat Streaming Player
 
+> Public-preview update (2026-07-29): the product surface is now the source-only
+> **Volograms 4DGS Streaming Player**, its `GaussianStreamingPlayer` facade, canonical
+> manifest, SOG content builder, and Pages showcase. PlayCanvas/SOG is recommended;
+> Spark/RAD and Babylon/SPZ are experimental. Later sections preserve the original
+> implementation plan as project history. See
+> [ADR 0015](architecture/decisions/0015-public-preview-product-surface.md).
+
 ## 1. Project Summary
 
 ### Project goal
@@ -8,13 +15,13 @@ Develop a reusable web player library for playback of composited Gaussian Splat 
 
 * one or more persistent static Gaussian Splat objects;
 * one dynamic Gaussian Splat sequence, initially represented as one `.RAD` file per frame;
-* optional conventional Three.js meshes;
+* optional conventional renderer-native meshes;
 * local rendering on mobile, tablet and desktop devices;
 * temporal buffering similar to a conventional video player;
 * progressive per-frame spatial Level of Detail;
-* adaptive quality driven first by generic network measurements and later by network telemetry supplied by the 6G testbed.
+* adaptive quality driven by generic client network measurements and buffer state, with optional telemetry providers when actionable end-to-end measurements exist.
 
-A separate demo application will integrate the library and provide:
+Separate renderer-specific demo applications will integrate the library and provide:
 
 * content loading;
 * playback controls;
@@ -22,14 +29,14 @@ A separate demo application will integrate the library and provide:
 * quality controls;
 * network simulation;
 * diagnostic visualisation;
-* 6G telemetry integration;
+* optional telemetry-provider integration;
 * experiment logging.
 
 ### Primary implementation stages
 
 1. **L1 — Content representation and rendering**
 2. **L2 — Temporal player and generic adaptive streaming**
-3. **L3 — 6G-assisted adaptive streaming**
+3. **L3 — Pilot testbed validation and optional telemetry extensions**
 
 These stages correspond to implementation milestones, while also remaining distinct architectural layers of the final system.
 
@@ -40,7 +47,7 @@ These stages correspond to implementation milestones, while also remaining disti
 ## In scope
 
 * Browser-based TypeScript library.
-* Spark and Three.js integration.
+* Multiple renderer adapters, retaining Spark and adding Babylon.js and PlayCanvas candidates.
 * Static `.RAD` objects.
 * Dynamic sequence using per-frame `.RAD` objects.
 * Optional GLTF/GLB meshes.
@@ -53,9 +60,9 @@ These stages correspond to implementation milestones, while also remaining disti
 * Generic quality controller abstraction.
 * Fixed-quality controller.
 * Client-measured bandwidth controller.
-* 6G telemetry-driven controller.
+* Optional telemetry-driven controller when the testbed exposes usable client signals.
 * Runtime metrics and experiment logging.
-* Demo application.
+* Dedicated renderer demo applications and optional WebXR entry where supported.
 * Mobile browser support.
 * Automated testing.
 * Example content preparation tools.
@@ -72,7 +79,7 @@ These stages correspond to implementation milestones, while also remaining disti
 * Multi-user synchronised classroom session control.
 * Server-side rendering.
 * Edge rendering.
-* Full VR interaction.
+* Product-level VR interaction beyond renderer-provided WebXR entry and navigation.
 * Authoring tools for complex scenes.
 
 These can be added later without changing the core player architecture.
@@ -82,12 +89,12 @@ These can be added later without changing the core player architecture.
 # 3. High-Level Architecture
 
 ```text
-Demo Application
+Renderer-specific Demo Application
 ├── Playback UI
 ├── Scene controls
 ├── Diagnostics and experiment UI
 ├── Network simulation
-└── 6G telemetry adapter configuration
+└── Client network measurement and optional telemetry providers
           |
           v
 GaussianSequencePlayer
@@ -99,18 +106,12 @@ GaussianSequencePlayer
 ├── Metrics collector
 └── Renderer abstraction
           |
-          +----------------------+
-          |                      |
-          v                      v
-SparkRendererAdapter      Future renderer adapter
-├── Static .RAD objects
-├── Dynamic frame slots
-├── Spark SplatPager
-├── LoD controls
-└── Three.js scene
+          ├── Spark adapter: RAD, PackedSplats, Three.js
+          ├── Babylon adapter: neutral frames, GaussianSplattingMesh
+          └── PlayCanvas adapter: planned SPZ/SOG comparison
           |
           v
-HTTP / HTTP Range / 6G Testbed Network
+HTTP / HTTP Range / 6G testbed with client-visible Wi-Fi last hop
 ```
 
 ---
@@ -302,9 +303,9 @@ export interface GaussianRendererAdapter {
 | E07  | Generic Adaptive Quality Control             | L2          |
 | E08  | Robust Playback and Recovery                 | L2          |
 | E09  | Metrics and Experimentation                  | L2          |
-| E10  | 6G Telemetry Integration                     | L3          |
-| E11  | 6G-Assisted Quality Controller               | L3          |
-| E12  | Testbed Evaluation Tools                     | L3          |
+| E10  | Optional 6G Telemetry Extension              | L3          |
+| E11  | Pilot Client-Measured Quality Controller     | L3          |
+| E12  | Testbed and Wi-Fi Evaluation Tools           | L3          |
 | E13  | Performance, Mobile and Production Hardening | Cross-stage |
 | E14  | Documentation and Release                    | Cross-stage |
 
@@ -1228,7 +1229,7 @@ Required baseline policies:
 2. fixed high quality;
 3. throughput-only adaptive;
 4. throughput plus buffer occupancy;
-5. later: 6G telemetry assisted.
+5. optional later: telemetry-assisted when actionable end-to-end signals exist.
 
 ---
 
@@ -1428,11 +1429,13 @@ Support importing a trace such as:
 
 ---
 
-# EPIC E10 — 6G Telemetry Integration
+# EPIC E10 — Optional 6G Telemetry Extension
 
 ## Objective
 
-Connect the generic player architecture to the local 6G testbed without coupling the player core to a specific vendor or API.
+Retain a vendor-neutral telemetry extension without making it a pilot dependency. The
+pilot's Wi-Fi last hop exposes no actionable 6G-specific state to the web client, so
+implementation beyond the existing provider boundary is deferred.
 
 ## Tasks
 
@@ -1521,19 +1524,19 @@ Display:
 
 ---
 
-# EPIC E11 — 6G-Assisted Quality Controller
+# EPIC E11 — Pilot Client-Measured Quality Controller
 
 ## Objective
 
-Use explicit network information to improve frame quality and reduce stalls compared with conventional client-side adaptation.
+Calibrate ordinary application-level throughput and buffer-aware adaptation for the
+sub-500-Mbps testbed-plus-Wi-Fi path.
 
 ## Tasks
 
-### E11-T01 — Implement telemetry-assisted controller
+### E11-T01 — Calibrate the client-measured controller
 
 Inputs:
 
-* 6G network state;
 * client throughput measurement;
 * buffer occupancy;
 * frame deadlines;
@@ -1580,22 +1583,21 @@ The controller must be able to reduce static quality while preserving dynamic-pe
 
 ---
 
-### E11-T06 — Implement predictive adaptation
+### E11-T06 — Validate buffer-aware adaptation
 
-Where the testbed exposes predicted capacity, compare:
+Compare:
 
 * reactive throughput adaptation;
-* predictive 6G adaptation.
+* throughput plus compressed-buffer occupancy and stall risk.
 
 ---
 
 ### E11-T07 — Implement telemetry fallback
 
-Fallback chain:
+Fallback chain for the pilot:
 
 ```text
-6G telemetry
-→ client measurement
+client measurement
 → conservative fixed policy
 ```
 
@@ -1615,11 +1617,13 @@ Every quality decision must record:
 
 ---
 
-# EPIC E12 — Testbed Evaluation Tools
+# EPIC E12 — Testbed and Wi-Fi Evaluation Tools
 
 ## Objective
 
-Provide reproducible experiments demonstrating whether 6G-assisted adaptation improves the player.
+Provide reproducible experiments for client-measured adaptation over the 6G testbed's
+Wi-Fi last hop. Results must not attribute ordinary fetch-speed estimates to 6G
+telemetry.
 
 ## Tasks
 
@@ -1647,7 +1651,7 @@ Compare:
 * fixed high quality;
 * client throughput adaptation;
 * buffer-aware client adaptation;
-* 6G-assisted adaptation.
+* buffer-aware client adaptation with calibrated safety margin and hysteresis.
 
 ---
 
@@ -1682,7 +1686,7 @@ Configuration example:
 ```json
 {
   "content": "lesson-01.json",
-  "controller": "sixg-assisted",
+  "controller": "client-buffer-aware",
   "durationSeconds": 120,
   "repeatCount": 5,
   "networkScenario": "handover-01",
@@ -1712,7 +1716,7 @@ For classroom experiments, record:
 * experiment start time;
 * content version;
 * testbed scenario ID;
-* network slice or QoS state.
+* available testbed scenario metadata, explicitly distinguished from client telemetry.
 
 ---
 
@@ -1837,7 +1841,7 @@ Include:
 
 ---
 
-### E14-T05 — Document 6G telemetry integration
+### E14-T05 — Document pilot client measurement and optional telemetry extensions
 
 ---
 
@@ -1849,7 +1853,7 @@ Required:
 2. static plus dynamic frame switching;
 3. complete temporal player;
 4. generic adaptive streaming;
-5. 6G telemetry integration.
+5. client-measured testbed adaptation and the optional telemetry-provider boundary.
 
 ---
 
@@ -2108,8 +2112,8 @@ The implementation should produce evidence for the following questions:
 1. Can independent `.RAD` person frames be swapped at the required playback rate on mobile devices?
 2. What is the minimum viable `.RAD` quality required for an acceptable human representation?
 3. How much `.RAD` refinement can be delivered within each video-frame interval?
-4. Does explicit 6G throughput information reduce stalls compared with client-side estimation?
-5. Does 6G feedback improve average dynamic-person quality at the same stall rate?
+4. How accurately can completed browser fetches estimate capacity across the testbed's Wi-Fi last hop?
+5. Does buffer-aware client adaptation improve average dynamic-person quality at the same stall rate?
 6. How much bandwidth is wasted on refinement chunks that arrive after their useful deadline?
 7. Does prioritising the person over the static environment improve perceived quality?
 8. What buffer size provides the best balance between latency, quality and resilience?
