@@ -12,6 +12,11 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- Local showcase datasets can be served directly from an external directory with
+  `SHOWCASE_LOCAL_DATASET_DIR`, while relative manifest paths and the existing ignored
+  `public/assets` convention remain supported. The showcase now uses the Volograms
+  black, pink, violet, and blue visual palette.
+
 - A source-only Volograms 4DGS public preview: `GaussianStreamingPlayer`, audio-backed
   timing, adaptive PlayCanvas render budgets, a landing/player showcase with Quest XR
   transport controls, the `gs-content build` dataset pipeline, Pages deployment, and

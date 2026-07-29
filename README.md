@@ -10,8 +10,6 @@ and Babylon/SPZ remain experimental laboratories for research and performance wo
 > Public preview: APIs and the manifest may evolve. No dataset is distributed in this
 > repository, and no Quest frame-rate guarantee is made.
 
-![Volograms 4DGS showcase](docs/assets/showcase-landing.png)
-
 ## Run from source
 
 Requirements: Node.js 22.12 or newer and Corepack. The pinned pnpm version manages the
@@ -27,6 +25,28 @@ Open `http://localhost:4180/#/`. The showcase accepts an external manifest URL a
 `#/demo?manifest=https%3A%2F%2Fcdn.example.com%2Fmanifest.json`. Set
 `VITE_DEFAULT_MANIFEST_URL` in `apps/showcase/.env.local` to load a public sample by
 default. Without it, GitHub Pages publishes a functional manifest picker.
+
+### Use a local dataset
+
+The browser cannot load a filesystem path directly. For development, let Vite serve the
+external dataset directory. If `C:/datasets/my-sequence/manifest.json` is the generated
+manifest, create `apps/showcase/.env.local` containing:
+
+```dotenv
+SHOWCASE_LOCAL_DATASET_DIR=C:/datasets/my-sequence
+VITE_DEFAULT_MANIFEST_URL=/manifest.json
+```
+
+Then run `pnpm dev:showcase` and open `http://localhost:4180/#/demo`. Manifest-relative
+SOG, Streamed SOG, mesh, and audio URLs continue to resolve from that directory. A path
+relative to the repository root, such as `../datasets/my-sequence`, is also accepted.
+This is equivalent to staging assets under a demo's Vite public directory, without
+copying or linking a potentially large dataset into the repository.
+
+If you prefer the existing demo convention, place or link the dataset at
+`apps/showcase/public/assets/my-sequence` and use
+`VITE_DEFAULT_MANIFEST_URL=/assets/my-sequence/manifest.json`. Showcase asset/content
+directories are ignored by Git.
 
 ## Integrate the player
 

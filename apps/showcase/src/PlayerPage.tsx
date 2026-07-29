@@ -194,18 +194,19 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
           </span>
           <h1 id="manifest-title">Open a 4DGS manifest</h1>
           <p>
-            Paste the HTTPS URL of a version 1.0 Gaussian sequence manifest. Assets must
-            allow cross-origin requests.
+            Enter a version 1.0 manifest URL. Hosted datasets require HTTPS and CORS;
+            local development can use a path such as /manifest.json.
           </p>
           <form onSubmit={submitManifest}>
             <label htmlFor="manifest-url">Manifest URL</label>
             <div>
               <input
                 id="manifest-url"
-                type="url"
+                type="text"
+                inputMode="url"
                 required
                 autoFocus
-                placeholder="https://cdn.example.com/sequence/manifest.json"
+                placeholder="/manifest.json or https://cdn.example.com/manifest.json"
                 value={manifestInput}
                 onChange={(event) => setManifestInput(event.target.value)}
               />

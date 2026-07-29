@@ -6,6 +6,11 @@ Confirm the URL is HTTPS on an HTTPS page, returns JSON rather than an HTML erro
 and has CORS headers. Validate it with `pnpm gs-content validate <manifest>` and inspect
 every relative asset URL.
 
+For a local dataset, do not paste a disk path or `file://` URL. Set
+`SHOWCASE_LOCAL_DATASET_DIR` to the dataset directory, use `/manifest.json` (or the
+correct path inside that directory), and restart `pnpm dev:showcase` after changing
+`.env.local`.
+
 ## Playback remains buffering
 
 Check that the minimum tier exists for every frame, splat/byte metadata matches the
