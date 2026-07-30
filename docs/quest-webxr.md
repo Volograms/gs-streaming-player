@@ -36,9 +36,28 @@ must be trusted on the device; accepting an untrusted page warning is not equiva
 a secure context for WebXR. The committed HTTPS mode enables XR and binds to `0.0.0.0`,
 while `.env.local` continues to supply the external dataset path and manifest URL.
 
-Native WebGPU WebXR is experimental in Quest Browser and may require its WebGPU/WebXR
-binding, projection-layer, and WebXR experiment flags. The showcase falls back once to
-WebGL2 when compatibility or initialization fails and displays the actual backend.
+## Native WebGPU WebXR on Quest Browser 146+
+
+Native WebGPU-backed immersive XR is experimental and is not enabled by the Quest
+Browser version alone. On Quest Browser 146 or newer, open each URL in the headset
+browser, set the flag to **Enabled**, and relaunch:
+
+1. `chrome://flags/#webxr-webgpu-binding` — WebXR/WebGPU Binding
+2. `chrome://flags/#webxr-projection-layers` — WebXR Projection Layers
+3. `chrome://flags/#webxr-experiments` — WebXR Experiments
+
+If Relaunch does not apply all three flags, fully close the browser or restart the
+headset. Browser updates may reset experimental flags.
+
+WebGPU page rendering does not prove that WebGPU can host an immersive session.
+PlayCanvas also requires the browser to expose `XRGPUBinding`. Verify that the player
+reports WebGPU as the graphics backend and that WebXR is ready before entering VR. If it
+reports a missing WebGPU binding, recheck the browser version and all three flags.
+
+The showcase falls back once to WebGL2 when WebGPU XR compatibility or initialization
+fails and displays the backend actually in use. The diagnostic PlayCanvas application
+can instead enforce strict WebGPU XR for measurements; see
+[Native WebGPU WebXR in the PlayCanvas integration guide](playcanvas-renderer-integration.md#native-webgpu-webxr-on-quest-browser-146).
 
 ## Input
 
