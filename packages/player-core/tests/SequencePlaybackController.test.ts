@@ -88,6 +88,21 @@ function createSequence(frameCount = 120): DynamicGaussianSequence {
   };
 }
 
+function createTimestampedSequence(
+  timestamps: readonly number[],
+): DynamicGaussianSequence {
+  return {
+    frameCount: timestamps.length,
+    frameRate: 30,
+    frames: timestamps.map((timestampSeconds, frameIndex) => ({
+      frameIndex,
+      timestampSeconds,
+      url: `/frame-${frameIndex}.rad`,
+    })),
+    id: "actor",
+  };
+}
+
 function preparedFrame(frameIndex: number): PreparedFrame {
   return {
     frameIndex,
@@ -199,6 +214,100 @@ describe("SequencePlaybackController", () => {
       lifecycle: "PLAYING",
       targetFramesPerSecond: 30,
     });
+  });
+
+  it("uses manifest timestamps for presentation deadlines and buffered duration", async () => {
+    const clock = new FakePlaybackClock();
+    const harness = createBufferHarness({ allReady: true });
+    const controller = new SequencePlaybackController({
+      buffer: harness.buffer,
+      clock,
+      durationSeconds: 0.25,
+      loop: false,
+      minimumReadyFrames: 0,
+      sequence: createTimestampedSequence([0, 0.1, 0.11, 0.2]),
+    });
+
+    expect(controller.snapshot).toMatchObject({
+      bufferAheadFrames: 3,
+      currentTimeSeconds: 0,
+    });
+    expect(controller.snapshot.bufferAheadSeconds).toBeCloseTo(0.2);
+    controller.play();
+    await flushPromises();
+
+    await clock.advanceTo(99);
+    expect(harness.present).not.toHaveBeenCalled();
+    await clock.advanceTo(100);
+    expect(harness.present).toHaveBeenLastCalledWith(
+      1,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(controller.snapshot.currentTimeSeconds).toBe(0.1);
+
+    await clock.advanceTo(109);
+    expect(harness.present).toHaveBeenCalledTimes(1);
+    await clock.advanceTo(110);
+    expect(harness.present).toHaveBeenLastCalledWith(
+      2,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(controller.snapshot.currentTimeSeconds).toBe(0.11);
+  });
+
+  it("keeps a one-frame sequence playing until its duration", async () => {
+    const clock = new FakePlaybackClock();
+    const harness = createBufferHarness({ allReady: true });
+    const controller = new SequencePlaybackController({
+      buffer: harness.buffer,
+      clock,
+      durationSeconds: 0.2,
+      loop: false,
+      minimumReadyFrames: 0,
+      sequence: createTimestampedSequence([0]),
+    });
+
+    controller.play();
+    await flushPromises();
+    expect(controller.snapshot.lifecycle).toBe("PLAYING");
+
+    await clock.advanceTo(199);
+    expect(controller.snapshot.lifecycle).toBe("PLAYING");
+    await clock.advanceTo(200);
+    expect(controller.snapshot).toMatchObject({
+      currentFrameIndex: 0,
+      currentTimeSeconds: 0.2,
+      isPlaying: false,
+      lifecycle: "ENDED",
+    });
+    expect(harness.present).not.toHaveBeenCalled();
+  });
+
+  it("resumes from the exact requested time within a frame interval", async () => {
+    const clock = new FakePlaybackClock();
+    const harness = createBufferHarness({ allReady: true });
+    const controller = new SequencePlaybackController({
+      buffer: harness.buffer,
+      clock,
+      durationSeconds: 0.3,
+      loop: false,
+      minimumReadyFrames: 0,
+      sequence: createTimestampedSequence([0, 0.1, 0.2]),
+    });
+
+    await controller.seek(1, 0.15);
+    expect(controller.snapshot.currentTimeSeconds).toBe(0.15);
+    harness.present.mockClear();
+
+    controller.play();
+    await flushPromises();
+    await clock.advanceTo(49);
+    expect(harness.present).not.toHaveBeenCalled();
+    await clock.advanceTo(51);
+    expect(harness.present).toHaveBeenLastCalledWith(
+      2,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it("remains buffering until the requested startup reserve is ready", async () => {

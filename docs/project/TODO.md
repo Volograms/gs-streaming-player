@@ -227,8 +227,9 @@ quality target. Remaining work focuses on target-device validation.
       device-matrix runs and maximum stable playback-rate measurements remain.
 - [ ] E05-T02/T08 — Add media-element and audio-master clocks. The monotonic injectable
       clock and deterministic test clock are now implemented.
-- [ ] E05-T03/T06/T07 — Complete timestamp-based selection, playback-rate support, and
-      the public event model beyond observable state snapshots.
+- [ ] E05-T06/T07 — Complete playback-rate support and the public event model beyond
+      observable state snapshots. Timestamp-based selection, presentation deadlines,
+      buffered duration, and final-frame timeline holding are implemented.
 - [ ] E06-T06/T09 — Complete independent in-flight refinement cancellation and memory
       budget integration beyond frame-count eviction.
 - [x] E06-T03/E07-T08 follow-on — Replace dynamic paged-RAD preparation with selection

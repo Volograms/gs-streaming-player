@@ -120,6 +120,10 @@ export class BabylonGaussianRendererAdapter
   private renderCallTimeMs: number | undefined;
   private renderFramesPerSecond: number | undefined;
   private presentationQueue: Promise<void> = Promise.resolve();
+  private readonly pendingFrameHandoffCancellations = new Map<
+    PreparedFrame,
+    Set<(error: Error) => void>
+  >();
   private readonly pendingHandoffCancellations = new Set<(error: Error) => void>();
   private resizeObserver: ResizeObserver | undefined;
   private readonly resourceMetrics = new Map<string, MutableResourceMetric>();
@@ -423,6 +427,14 @@ export class BabylonGaussianRendererAdapter
     if (this.activeFrame === frame) {
       this.hideFrame(frame);
     }
+    const releaseError = new Error(
+      "The prepared Babylon frame was released during presentation.",
+    );
+    for (const cancel of [
+      ...(this.pendingFrameHandoffCancellations.get(frame) ?? []),
+    ]) {
+      cancel(releaseError);
+    }
     this.preparedFrames.delete(frame);
     this.resourceMetrics.delete(this.frameResourceId(frame));
   }
@@ -630,6 +642,7 @@ export class BabylonGaussianRendererAdapter
     resource: BabylonPreparedResource,
   ): Promise<void> {
     this.assertInitialised();
+    this.assertFrameOwned(frame, resource);
     const startedAt = this.now();
     const stagingSlot = this.getStagingDynamicMeshSlot();
     const mesh = this.requireDynamicMeshes()[stagingSlot]!;
@@ -650,6 +663,7 @@ export class BabylonGaussianRendererAdapter
         );
       }
       this.assertInitialised();
+      this.assertFrameOwned(frame, resource);
 
       const textureWidth = Math.max(1, this.engine.getCaps().maxTextureSize);
       const requiredCapacity =
@@ -668,23 +682,11 @@ export class BabylonGaussianRendererAdapter
       // Keep this back-buffer mesh invisible until that fence has settled, then swap both
       // mesh visibility flags in onBeforeRender so every rendered frame has one complete GS.
       mesh.setEnabled(true);
-      await this.waitForDepthSortAndSwap(stagingSlot);
+      await this.waitForDepthSortAndSwap(frame, resource, stagingSlot);
       this.assertInitialised();
+      this.assertFrameOwned(frame, resource);
 
       this.frameCommitTimeMs = this.now() - startedAt;
-      if (this.activeFrame !== undefined) {
-        const previousMetric = this.resourceMetrics.get(
-          this.frameResourceId(this.activeFrame),
-        );
-        if (previousMetric !== undefined) {
-          previousMetric.visible = false;
-        }
-      }
-      this.activeFrame = frame;
-      const metric = this.resourceMetrics.get(this.frameResourceId(frame));
-      if (metric !== undefined) {
-        metric.visible = true;
-      }
     } catch (error) {
       mesh.isVisible = false;
       mesh.setEnabled(false);
@@ -785,7 +787,11 @@ export class BabylonGaussianRendererAdapter
     return this.requireInitialised(this.dynamicMeshesValue, "dynamic meshes");
   }
 
-  private waitForDepthSortAndSwap(stagingSlot: DynamicMeshSlot): Promise<void> {
+  private waitForDepthSortAndSwap(
+    frame: PreparedFrame,
+    resource: BabylonPreparedResource,
+    stagingSlot: DynamicMeshSlot,
+  ): Promise<void> {
     const meshes = this.requireDynamicMeshes();
     const stagingMesh = meshes[stagingSlot]!;
     const previousMesh =
@@ -798,6 +804,11 @@ export class BabylonGaussianRendererAdapter
       const cleanUp = () => {
         this.sceneValue?.onBeforeRenderObservable.remove(observer);
         this.pendingHandoffCancellations.delete(cancel);
+        const frameCancellations = this.pendingFrameHandoffCancellations.get(frame);
+        frameCancellations?.delete(cancel);
+        if (frameCancellations?.size === 0) {
+          this.pendingFrameHandoffCancellations.delete(frame);
+        }
       };
       const cancel = (error: Error) => {
         if (settled) {
@@ -808,11 +819,29 @@ export class BabylonGaussianRendererAdapter
         reject(error);
       };
       this.pendingHandoffCancellations.add(cancel);
+      const frameCancellations =
+        this.pendingFrameHandoffCancellations.get(frame) ?? new Set();
+      frameCancellations.add(cancel);
+      this.pendingFrameHandoffCancellations.set(frame, frameCancellations);
       const observer = this.scene.onBeforeRenderObservable.add(() => {
         if (!stagingMesh._isDepthSortSettled) {
           return;
         }
+        try {
+          this.assertFrameOwned(frame, resource);
+        } catch (error) {
+          cancel(error instanceof Error ? error : new Error(String(error)));
+          return;
+        }
         settled = true;
+        if (this.activeFrame !== undefined) {
+          const previousMetric = this.resourceMetrics.get(
+            this.frameResourceId(this.activeFrame),
+          );
+          if (previousMetric !== undefined) {
+            previousMetric.visible = false;
+          }
+        }
         previousMesh?.setEnabled(false);
         if (previousMesh !== undefined) {
           previousMesh.isVisible = false;
@@ -820,6 +849,11 @@ export class BabylonGaussianRendererAdapter
         stagingMesh.isVisible = true;
         stagingMesh.setEnabled(true);
         this.activeDynamicMeshSlot = stagingSlot;
+        this.activeFrame = frame;
+        const metric = this.resourceMetrics.get(this.frameResourceId(frame));
+        if (metric !== undefined) {
+          metric.visible = true;
+        }
         cleanUp();
         resolve();
       });
@@ -862,6 +896,15 @@ export class BabylonGaussianRendererAdapter
       throw new Error("The prepared Babylon frame is no longer owned by this adapter.");
     }
     return resource;
+  }
+
+  private assertFrameOwned(
+    frame: PreparedFrame,
+    resource: BabylonPreparedResource,
+  ): void {
+    if (this.preparedFrames.get(frame) !== resource) {
+      throw new Error("The prepared Babylon frame is no longer owned by this adapter.");
+    }
   }
 }
 

@@ -21,6 +21,23 @@ const metrics = {
 };
 
 describe("BufferAwareQualityController", () => {
+  it.each([
+    [{ minimumSplatCount: 0 }, "minimumSplatCount"],
+    [{ minimumSplatCount: 1.5 }, "minimumSplatCount"],
+    [{ targetBufferSeconds: 0 }, "targetBufferSeconds"],
+    [{ targetBufferSeconds: Number.POSITIVE_INFINITY }, "targetBufferSeconds"],
+    [{ upgradeObservationCount: 0 }, "upgradeObservationCount"],
+    [{ upgradeObservationCount: 1.5 }, "upgradeObservationCount"],
+  ])("rejects invalid quality configuration %o", (configuration, field) => {
+    expect(
+      () =>
+        new BufferAwareQualityController({
+          dynamicObjectId: "actor",
+          ...configuration,
+        }),
+    ).toThrow(field);
+  });
+
   it("downgrades immediately on buffer risk and upgrades only after hysteresis", () => {
     const controller = new BufferAwareQualityController({
       dynamicObjectId: "actor",

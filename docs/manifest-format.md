@@ -90,6 +90,8 @@ independently; transforms do not need to match.
 Each dynamic sequence declares its own `frameRate`, `frameCount`, and `frames`. Every
 frame contains a zero-based `frameIndex`, a non-negative `timestampSeconds`, a non-empty
 asset `url`, and optional byte size, metadata URL, quality information, and metadata.
+Playback presentation and buffering deadlines follow `timestampSeconds`; `frameRate` is
+the nominal rate used for quality and capacity estimates.
 
 In addition to JSON Schema validation, the player enforces:
 

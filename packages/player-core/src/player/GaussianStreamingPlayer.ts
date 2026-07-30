@@ -1,5 +1,6 @@
 import { FrameRingBuffer } from "../buffering/FrameRingBuffer.js";
 import { loadManifest } from "../manifest/loader.js";
+import { sequencePlaybackDurationSeconds } from "../manifest/timeline.js";
 import { ClientThroughputEstimator } from "../network/ClientThroughputEstimator.js";
 import { BufferAwareQualityController } from "../quality/BufferAwareQualityController.js";
 
@@ -131,9 +132,9 @@ export class GaussianStreamingPlayer {
   ) {
     this.manifest = manifest;
     this.sequence = sequence;
-    this.durationSeconds = Math.min(
+    this.durationSeconds = sequencePlaybackDurationSeconds(
+      sequence,
       manifest.durationSeconds,
-      (sequence.frames.at(-1)?.timestampSeconds ?? 0) + 1 / sequence.frameRate,
     );
     this.renderer = renderer;
     this.buffer = buffer;
@@ -193,6 +194,10 @@ export class GaussianStreamingPlayer {
         );
       }
       const clock = audioClock ?? options.clock;
+      const durationSeconds = sequencePlaybackDurationSeconds(
+        sequence,
+        manifest.durationSeconds,
+      );
       const bufferOptions = options.buffer ?? {};
       const facadeReference: { current?: GaussianStreamingPlayer } = {};
       buffer = new FrameRingBuffer({
@@ -203,6 +208,7 @@ export class GaussianStreamingPlayer {
           ? {}
           : { decoderRegistry: options.decoderRegistry }),
         futureFrameCount: bufferOptions.futureFrameCount ?? DEFAULT_FUTURE_FRAMES,
+        durationSeconds,
         loop: options.loop ?? bufferOptions.loop ?? false,
         maximumBasePreparationConcurrency:
           bufferOptions.maximumBasePreparationConcurrency ?? 2,
@@ -225,6 +231,7 @@ export class GaussianStreamingPlayer {
       playback = new SequencePlaybackController({
         buffer,
         ...(clock === undefined ? {} : { clock }),
+        durationSeconds,
         loop: options.loop ?? bufferOptions.loop ?? false,
         minimumReadyFrames,
         sequence,
@@ -269,7 +276,7 @@ export class GaussianStreamingPlayer {
       },
       bufferAheadFrames: playback.bufferAheadFrames,
       currentFrameIndex: playback.currentFrameIndex,
-      currentTimeSeconds: this.frameTime(playback.currentFrameIndex),
+      currentTimeSeconds: playback.currentTimeSeconds,
       droppedFrameCount: playback.droppedFrameCount,
       durationSeconds: this.durationSeconds,
       ...(playback.error === undefined ? {} : { error: playback.error }),
@@ -307,7 +314,7 @@ export class GaussianStreamingPlayer {
     }
     const clamped = Math.min(Math.max(0, timeSeconds), this.durationSeconds);
     this.audioClock?.seek(clamped);
-    await this.playback.seek(this.frameForTime(clamped));
+    await this.playback.seek(this.frameForTime(clamped), clamped);
   }
 
   async stepFrames(delta: number): Promise<void> {
@@ -409,10 +416,9 @@ export class GaussianStreamingPlayer {
 
   private toPlaybackState(): PlaybackState {
     return {
-      bufferAheadSeconds:
-        this.playbackSnapshot.bufferAheadFrames / this.sequence.frameRate,
+      bufferAheadSeconds: this.playbackSnapshot.bufferAheadSeconds,
       currentFrameIndex: this.playbackSnapshot.currentFrameIndex,
-      currentTimeSeconds: this.frameTime(this.playbackSnapshot.currentFrameIndex),
+      currentTimeSeconds: this.playbackSnapshot.currentTimeSeconds,
       isPlaying: this.playbackSnapshot.isPlaying,
       lifecycle: this.playbackSnapshot.lifecycle,
       minimumReadyFrames: this.minimumReadyFrames,
@@ -453,8 +459,10 @@ export class GaussianStreamingPlayer {
     if (this.audioClock === undefined) {
       return;
     }
-    const time = this.frameTime(snapshot.currentFrameIndex);
-    this.audioClock.synchronise(time, snapshot.lifecycle === "PLAYING");
+    this.audioClock.synchronise(
+      snapshot.currentTimeSeconds,
+      snapshot.lifecycle === "PLAYING",
+    );
   }
 
   private frameForTime(timeSeconds: number): number {

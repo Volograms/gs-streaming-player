@@ -1,10 +1,12 @@
 import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
 import { buildDataset } from "../src/build-dataset/buildDataset.js";
+
+import type { BuildDatasetDependencies } from "../src/build-dataset/buildDataset.js";
 
 function createIo() {
   const stdout: string[] = [];
@@ -62,6 +64,49 @@ async function fixture(outputFormat: "sog" | "spz" = "sog") {
     }),
   );
   return { configPath, outputDir: join(root, "output"), root };
+}
+
+function successfulDependencies(): BuildDatasetDependencies {
+  return {
+    exportStreamedSog: async (request) => {
+      await mkdir(request.outputDir, { recursive: true });
+      await writeFile(join(request.outputDir, "lod-meta.json"), "{}\n");
+      return 0;
+    },
+    generateDynamicTiers: async (request) => {
+      await mkdir(request.outputDir, { recursive: true });
+      const extension = request.outputFormat;
+      const qualityLevels = request.inputPaths.map((_, frameIndex) => ({
+        byteSize: 100 + frameIndex,
+        codec: request.outputFormat === "sog" ? "sog-v2" : "spz-v4",
+        detailLevel: 0.25,
+        level: 0,
+        minimumPlayable: true,
+        splatCount: 25_000,
+        url: `frame-${frameIndex}-minimum.${extension}`,
+      }));
+      await Promise.all(
+        qualityLevels.map(({ url }) =>
+          writeFile(join(request.outputDir, url), `generated ${url}\n`),
+        ),
+      );
+      await writeFile(
+        join(request.outputDir, "quality-cuts.json"),
+        JSON.stringify({
+          format:
+            request.outputFormat === "sog"
+              ? "flat-sog-quality-cuts"
+              : "flat-spz-quality-cuts",
+          frames: request.inputPaths.map((sourceFile, frameIndex) => ({
+            qualityLevels: [qualityLevels[frameIndex]!],
+            sourceFile,
+          })),
+          version: 1,
+        }),
+      );
+      return 0;
+    },
+  };
 }
 
 describe("buildDataset", () => {
@@ -157,6 +202,70 @@ describe("buildDataset", () => {
       "2 dynamic PLY/SPZ frame(s) -> SOG tiers",
     );
     await expect(access(input.outputDir)).rejects.toThrow();
+  });
+
+  it("force replaces only generated entries and preserves unrelated output", async () => {
+    const input = await fixture();
+    const dependencies = successfulDependencies();
+    const firstOutput = createIo();
+    expect(
+      await buildDataset(
+        { ...input, dryRun: false, force: false },
+        firstOutput.io,
+        dependencies,
+      ),
+    ).toBe(0);
+
+    const sentinelPath = join(input.outputDir, "keep-me.txt");
+    const staleDynamicPath = join(input.outputDir, "dynamic", "stale.sog");
+    await writeFile(sentinelPath, "unrelated\n");
+    await writeFile(staleDynamicPath, "stale\n");
+    const configuration = JSON.parse(await readFile(input.configPath, "utf8")) as {
+      audio?: unknown;
+      staticObjects?: unknown[];
+    };
+    delete configuration.audio;
+    configuration.staticObjects = [];
+    await writeFile(input.configPath, JSON.stringify(configuration));
+
+    const secondOutput = createIo();
+    expect(
+      await buildDataset(
+        { ...input, dryRun: false, force: true },
+        secondOutput.io,
+        dependencies,
+      ),
+    ).toBe(0);
+
+    expect(await readFile(sentinelPath, "utf8")).toBe("unrelated\n");
+    await expect(access(staleDynamicPath)).rejects.toThrow();
+    await expect(access(join(input.outputDir, "audio"))).rejects.toThrow();
+    await expect(access(join(input.outputDir, "static"))).rejects.toThrow();
+    await expect(
+      access(join(input.outputDir, "manifest.json")),
+    ).resolves.toBeUndefined();
+  });
+
+  it("refuses to force-replace generated-looking paths without a valid manifest", async () => {
+    const input = await fixture();
+    const generatedPath = join(input.outputDir, "dynamic", "unrelated.sog");
+    await mkdir(dirname(generatedPath), { recursive: true });
+    await writeFile(generatedPath, "unrelated\n");
+    const output = createIo();
+    const generateDynamicTiers = vi.fn(async () => 0);
+
+    const exitCode = await buildDataset(
+      { ...input, dryRun: false, force: true },
+      output.io,
+      { generateDynamicTiers },
+    );
+
+    expect(exitCode).toBe(1);
+    expect(output.stderr.join("\n")).toContain(
+      "Refusing to replace generated-looking entries without an existing manifest.json",
+    );
+    expect(generateDynamicTiers).not.toHaveBeenCalled();
+    expect(await readFile(generatedPath, "utf8")).toBe("unrelated\n");
   });
 
   it("rejects path-like static object ids before invoking converters", async () => {

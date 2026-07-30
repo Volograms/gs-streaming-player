@@ -214,6 +214,9 @@ export class CompressedFrameCache {
     this.disposed = true;
     for (const entry of this.entries.values()) {
       entry.controller?.abort();
+      if (entry.state !== "ready") {
+        entry.reject?.(abortError());
+      }
     }
     this.entries.clear();
     this.emitChange();

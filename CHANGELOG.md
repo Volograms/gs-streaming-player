@@ -7,6 +7,14 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Make `gs-content build --force` replace only dataset-owned output entries with
+  rollback protection, preserving unrelated files instead of deleting the complete
+  output directory.
+- Schedule dynamic-frame presentation and buffering from manifest timestamps, and keep
+  the final frame active until the selected sequence duration elapses.
+- Cancel Babylon frame handoffs when their prepared frame is released, reject pending
+  compressed-frame reads on cache disposal, and validate all adaptive-quality numeric
+  configuration.
 - Raise the minimum Node.js version to 22.13 and let GitHub Pages use the current
   Node.js 22 release so the pinned pnpm version can start successfully.
 

@@ -152,12 +152,15 @@ pnpm gs-content build dataset.json --output-dir dist/content \
   --max-workers 2
 ```
 
-Existing output is protected; pass `--force` only after checking the target. The build
-stages output, generates merge-decimated dynamic tiers, exports static Streamed SOG,
-copies audio, populates exact splat/byte metadata, generates and validates the canonical
-manifest, and then promotes the result. It does not rewrite the input recipe with file
-names. `outputFormat` defaults to `"sog"`; use `"spz"` to produce SPZ v4 tiers for an
-experimental runtime path.
+Existing output is protected. With `--force`, the build replaces only the dataset-owned
+`manifest.json`, `dynamic/`, `static/`, and `audio/` entries; unrelated files in the
+output directory are preserved. Generated-looking entries are replaced only when the
+existing `manifest.json` is a valid Gaussian sequence manifest. The build stages output,
+generates merge-decimated dynamic tiers, exports static Streamed SOG, copies audio,
+populates exact splat/byte metadata, generates and validates the canonical manifest, and
+then promotes the result with rollback protection. It does not rewrite the input recipe
+with file names. `outputFormat` defaults to `"sog"`; use `"spz"` to produce SPZ v4 tiers
+for an experimental runtime path.
 
 To generate tiers without building a complete dataset:
 

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { BabylonGaussianRendererAdapter } from "../src/index.js";
 
 import type { BabylonNativeTexturePayload } from "../src/index.js";
+import type { PreparedFrame } from "@6g-path/gaussian-player";
 import type { GaussianSplattingMesh } from "@babylonjs/core/Meshes/GaussianSplatting/gaussianSplattingMesh.js";
 
 interface NativeUploadTestAdapter {
@@ -11,6 +12,13 @@ interface NativeUploadTestAdapter {
     mesh: GaussianSplattingMesh,
     payload: BabylonNativeTexturePayload,
   ): void;
+}
+
+interface PresentationTestAdapter {
+  dynamicMeshesValue: readonly [GaussianSplattingMesh, GaussianSplattingMesh];
+  engineValue: { getCaps(): { maxTextureSize: number } };
+  initialised: boolean;
+  preparedFrames: Map<PreparedFrame, unknown>;
 }
 
 describe("BabylonGaussianRendererAdapter native texture upload", () => {
@@ -54,6 +62,55 @@ describe("BabylonGaussianRendererAdapter native texture upload", () => {
         ._activeSplatRanges,
     ).toBeNull();
     expect(reConstruct).toHaveBeenCalledOnce();
+  });
+
+  it("does not activate a frame released during its asynchronous upload", async () => {
+    const upload = deferred<void>();
+    const setEnabled = vi.fn();
+    const mesh = {
+      isVisible: false,
+      position: { set: vi.fn() },
+      rotationQuaternion: undefined,
+      scaling: { set: vi.fn() },
+      setEnabled,
+      updateDataAsync: vi.fn(async () => upload.promise),
+    } as unknown as GaussianSplattingMesh;
+    const standbyMesh = {
+      isVisible: false,
+      position: { set: vi.fn() },
+      rotationQuaternion: undefined,
+      scaling: { set: vi.fn() },
+      setEnabled: vi.fn(),
+    } as unknown as GaussianSplattingMesh;
+    const frame: PreparedFrame = {
+      frameIndex: 0,
+      qualityLevel: 0,
+      rendererResource: {},
+      sequenceId: "sequence",
+      source: { frameIndex: 0, timestampSeconds: 0, url: "frame.splat" },
+    };
+    const adapter = new BabylonGaussianRendererAdapter({});
+    const internals = adapter as unknown as PresentationTestAdapter;
+    internals.initialised = true;
+    internals.engineValue = { getCaps: () => ({ maxTextureSize: 2048 }) };
+    internals.dynamicMeshesValue = [mesh, standbyMesh];
+    internals.preparedFrames.set(frame, {
+      payload: {
+        numSplats: 1,
+        shDegree: 0,
+        sphericalHarmonics: [],
+        splatBuffer: new ArrayBuffer(32),
+      },
+      quality: {},
+    });
+
+    const presentation = adapter.presentFrame(frame);
+    await Promise.resolve();
+    adapter.releaseFrame(frame);
+    upload.resolve();
+
+    await expect(presentation).rejects.toThrow("no longer owned");
+    expect(setEnabled).not.toHaveBeenCalledWith(true);
   });
 });
 
@@ -103,4 +160,15 @@ function upload(mesh: GaussianSplattingMesh): void {
     {},
   ) as unknown as NativeUploadTestAdapter;
   adapter.updateMeshFromNativeTextures(mesh, payload);
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve(value: T): void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }

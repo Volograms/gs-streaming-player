@@ -1,3 +1,8 @@
+import {
+  forwardFrameDelaySeconds,
+  sequencePlaybackDurationSeconds,
+} from "../manifest/timeline.js";
+
 import type { PlayerLifecycleState } from "./playbackState.js";
 import type { FramePresentationOptions } from "../buffering/FrameRingBuffer.js";
 import type { FrameRingBufferSnapshot } from "../buffering/types.js";
@@ -24,6 +29,7 @@ export interface SequencePlaybackBuffer {
 export interface SequencePlaybackControllerOptions {
   buffer: SequencePlaybackBuffer;
   clock?: PlaybackClock;
+  durationSeconds?: number;
   loop?: boolean;
   minimumReadyFrames?: number;
   sequence: DynamicGaussianSequence;
@@ -31,6 +37,7 @@ export interface SequencePlaybackControllerOptions {
 
 export interface SequencePlaybackSnapshot {
   bufferAheadFrames: number;
+  bufferAheadSeconds: number;
   currentFrameIndex: number;
   currentTimeSeconds: number;
   droppedFrameCount: number;
@@ -56,16 +63,18 @@ export class SequencePlaybackController {
   private desiredPlaying = false;
   private disposed = false;
   private droppedFrameCountValue = 0;
+  private readonly durationSeconds: number;
   private errorValue: unknown;
   private lifecycleValue: PlayerLifecycleState = "READY";
   private readonly listeners = new Set<SnapshotListener>();
   private readonly loop: boolean;
   private readonly minimumReadyFrames: number;
   private operationRevision = 0;
-  private ordinalAnchor = 0;
   private presentationController: AbortController | undefined;
   private readonly sequence: DynamicGaussianSequence;
   private timerHandle: unknown;
+  private timelineAnchorSeconds = 0;
+  private timelinePositionSeconds = 0;
   private wallAnchorMs = 0;
 
   constructor(options: SequencePlaybackControllerOptions) {
@@ -85,6 +94,35 @@ export class SequencePlaybackController {
     if (this.sequence.frameCount <= 0) {
       throw new RangeError("sequence.frameCount must be greater than zero.");
     }
+    if (this.sequence.frames.length !== this.sequence.frameCount) {
+      throw new RangeError("sequence.frames must match sequence.frameCount.");
+    }
+    let previousTimestamp = -1;
+    for (const frame of this.sequence.frames) {
+      if (
+        !Number.isFinite(frame.timestampSeconds) ||
+        frame.timestampSeconds < 0 ||
+        frame.timestampSeconds <= previousTimestamp
+      ) {
+        throw new RangeError(
+          "sequence frame timestamps must be finite and increasing.",
+        );
+      }
+      previousTimestamp = frame.timestampSeconds;
+    }
+    this.durationSeconds =
+      options.durationSeconds ?? sequencePlaybackDurationSeconds(this.sequence);
+    if (
+      !Number.isFinite(this.durationSeconds) ||
+      this.durationSeconds <= 0 ||
+      this.durationSeconds < previousTimestamp
+    ) {
+      throw new RangeError(
+        "durationSeconds must be positive and include the final frame timestamp.",
+      );
+    }
+    this.timelinePositionSeconds =
+      this.sequence.frames[this.currentFrameIndexValue]?.timestampSeconds ?? 0;
     if (
       !Number.isInteger(this.minimumReadyFrames) ||
       this.minimumReadyFrames < 0 ||
@@ -99,8 +137,9 @@ export class SequencePlaybackController {
   get snapshot(): SequencePlaybackSnapshot {
     return {
       bufferAheadFrames: this.countReadyFramesAhead(),
+      bufferAheadSeconds: this.countReadySecondsAhead(),
       currentFrameIndex: this.currentFrameIndexValue,
-      currentTimeSeconds: this.currentFrameIndexValue / this.sequence.frameRate,
+      currentTimeSeconds: this.currentTimeSeconds(),
       droppedFrameCount: this.droppedFrameCountValue,
       ...(this.errorValue === undefined ? {} : { error: this.errorValue }),
       isPlaying: this.desiredPlaying,
@@ -121,9 +160,7 @@ export class SequencePlaybackController {
     if (this.desiredPlaying) {
       return;
     }
-    if (!this.loop && this.currentFrameIndexValue === this.lastFrameIndex) {
-      this.lifecycleValue = "ENDED";
-      this.emit();
+    if (!this.loop && this.lifecycleValue === "ENDED") {
       return;
     }
 
@@ -139,6 +176,9 @@ export class SequencePlaybackController {
 
   pause(): void {
     this.assertNotDisposed();
+    if (this.lifecycleValue === "PLAYING") {
+      this.timelinePositionSeconds = this.activeTimelineSeconds();
+    }
     this.desiredPlaying = false;
     this.beginOperation();
     if (this.lifecycleValue !== "ENDED" && this.lifecycleValue !== "ERROR") {
@@ -147,9 +187,12 @@ export class SequencePlaybackController {
     this.emit();
   }
 
-  async seek(requestedFrameIndex: number): Promise<void> {
+  async seek(requestedFrameIndex: number, timeSeconds?: number): Promise<void> {
     this.assertNotDisposed();
     const frameIndex = this.normaliseFrameIndex(requestedFrameIndex);
+    const requestedTime =
+      timeSeconds ?? this.sequence.frames[frameIndex]?.timestampSeconds ?? 0;
+    this.validateSeekTime(frameIndex, requestedTime);
     this.desiredPlaying = false;
     const revision = this.beginOperation();
     const controller = new AbortController();
@@ -169,6 +212,7 @@ export class SequencePlaybackController {
       }
       this.currentFrameIndexValue = frameIndex;
       this.currentOrdinal = frameIndex;
+      this.timelinePositionSeconds = requestedTime;
       this.lifecycleValue = "PAUSED";
       this.emit();
     } catch (error) {
@@ -207,7 +251,7 @@ export class SequencePlaybackController {
     if (!this.isPlayableOperation(revision)) {
       return;
     }
-    this.ordinalAnchor = this.currentOrdinal;
+    this.timelineAnchorSeconds = this.timelinePositionSeconds;
     this.wallAnchorMs = this.clock.now();
     this.lifecycleValue = "PLAYING";
     this.emit();
@@ -218,10 +262,14 @@ export class SequencePlaybackController {
     if (!this.isPlayableOperation(revision)) {
       return;
     }
+    if (!this.loop && this.currentOrdinal >= this.lastFrameIndex) {
+      this.scheduleEnd(revision);
+      return;
+    }
     const nextOrdinal = this.currentOrdinal + 1;
     const deadlineMs =
       this.wallAnchorMs +
-      ((nextOrdinal - this.ordinalAnchor) * 1000) / this.sequence.frameRate;
+      (this.timelineForOrdinal(nextOrdinal) - this.timelineAnchorSeconds) * 1000;
     this.timerHandle = this.clock.setTimeout(
       () => {
         this.timerHandle = undefined;
@@ -237,16 +285,11 @@ export class SequencePlaybackController {
     if (!this.isPlayableOperation(revision)) {
       return;
     }
-    const elapsedFrames = Math.max(
-      1,
-      Math.floor(
-        ((this.clock.now() - this.wallAnchorMs) * this.sequence.frameRate) / 1000 +
-          1e-7,
-      ),
-    );
+    const dueTimelineSeconds =
+      this.timelineAnchorSeconds + (this.clock.now() - this.wallAnchorMs) / 1000 + 1e-7;
     let dueOrdinal = Math.max(
       this.currentOrdinal + 1,
-      this.ordinalAnchor + elapsedFrames,
+      this.ordinalAtOrBefore(dueTimelineSeconds),
     );
     if (!this.loop) {
       dueOrdinal = Math.min(dueOrdinal, this.lastFrameIndex);
@@ -275,26 +318,38 @@ export class SequencePlaybackController {
     this.droppedFrameCountValue += Math.max(0, dueOrdinal - this.currentOrdinal - 1);
     this.currentOrdinal = dueOrdinal;
     this.currentFrameIndexValue = frameIndex;
+    this.timelinePositionSeconds = this.timelineForOrdinal(dueOrdinal);
     this.emit();
-
-    if (!this.loop && frameIndex === this.lastFrameIndex) {
-      this.desiredPlaying = false;
-      this.lifecycleValue = "ENDED";
-      this.emit();
-      return;
-    }
 
     if (!readyAtDeadline) {
       await this.buffer.whenPresentationReadyAhead(this.minimumReadyFrames);
       if (!this.isPlayableOperation(revision)) {
         return;
       }
-      this.ordinalAnchor = this.currentOrdinal;
+      this.timelineAnchorSeconds = this.timelinePositionSeconds;
       this.wallAnchorMs = this.clock.now();
       this.lifecycleValue = "PLAYING";
       this.emit();
     }
     this.scheduleNextFrame(revision);
+  }
+
+  private scheduleEnd(revision: number): void {
+    const deadlineMs =
+      this.wallAnchorMs + (this.durationSeconds - this.timelineAnchorSeconds) * 1000;
+    this.timerHandle = this.clock.setTimeout(
+      () => {
+        this.timerHandle = undefined;
+        if (!this.isPlayableOperation(revision)) {
+          return;
+        }
+        this.timelinePositionSeconds = this.durationSeconds;
+        this.desiredPlaying = false;
+        this.lifecycleValue = "ENDED";
+        this.emit();
+      },
+      Math.max(0, deadlineMs - this.clock.now()),
+    );
   }
 
   private beginOperation(): number {
@@ -330,6 +385,38 @@ export class SequencePlaybackController {
     return count;
   }
 
+  private countReadySecondsAhead(): number {
+    let seconds = 0;
+    let previousFrameIndex = this.currentFrameIndexValue;
+    for (let offset = 1; offset <= this.buffer.snapshot.futureFrameCount; offset += 1) {
+      const frameIndex = this.offsetFrameIndex(this.currentFrameIndexValue, offset);
+      if (frameIndex === undefined) {
+        break;
+      }
+      const frame = this.buffer.snapshot.frames.find(
+        (candidate) => candidate.frameIndex === frameIndex,
+      );
+      if (frame?.status !== "ready" && frame?.status !== "presented") {
+        break;
+      }
+      seconds += forwardFrameDelaySeconds(
+        this.sequence,
+        previousFrameIndex,
+        frameIndex,
+        this.loop,
+        this.durationSeconds,
+      );
+      previousFrameIndex = frameIndex;
+    }
+    const currentFrameTime =
+      this.sequence.frames[this.currentFrameIndexValue]?.timestampSeconds ?? 0;
+    const elapsedInCurrentFrame = Math.max(
+      0,
+      this.currentTimeSeconds() - currentFrameTime,
+    );
+    return Math.max(0, seconds - elapsedInCurrentFrame);
+  }
+
   private get lastFrameIndex(): number {
     return this.sequence.frameCount - 1;
   }
@@ -339,6 +426,82 @@ export class SequencePlaybackController {
       ? ((ordinal % this.sequence.frameCount) + this.sequence.frameCount) %
           this.sequence.frameCount
       : ordinal;
+  }
+
+  private timelineForOrdinal(ordinal: number): number {
+    const frameIndex = this.frameIndexForOrdinal(ordinal);
+    const timestamp = this.sequence.frames[frameIndex]?.timestampSeconds ?? 0;
+    if (!this.loop) {
+      return timestamp;
+    }
+    return (
+      Math.floor(ordinal / this.sequence.frameCount) * this.durationSeconds + timestamp
+    );
+  }
+
+  private ordinalAtOrBefore(timelineSeconds: number): number {
+    if (!this.loop) {
+      return this.frameIndexAtOrBefore(timelineSeconds);
+    }
+    let cycle = Math.floor(timelineSeconds / this.durationSeconds);
+    const localTimeline = timelineSeconds - cycle * this.durationSeconds;
+    let frameIndex = this.frameIndexAtOrBefore(localTimeline);
+    if (frameIndex < 0) {
+      cycle -= 1;
+      frameIndex = this.lastFrameIndex;
+    }
+    return Math.max(0, cycle * this.sequence.frameCount + frameIndex);
+  }
+
+  private frameIndexAtOrBefore(timelineSeconds: number): number {
+    let lower = 0;
+    let upper = this.lastFrameIndex;
+    let selected = -1;
+    while (lower <= upper) {
+      const middle = Math.floor((lower + upper) / 2);
+      const timestamp = this.sequence.frames[middle]?.timestampSeconds ?? 0;
+      if (timestamp <= timelineSeconds) {
+        selected = middle;
+        lower = middle + 1;
+      } else {
+        upper = middle - 1;
+      }
+    }
+    return selected;
+  }
+
+  private currentTimeSeconds(): number {
+    const timelineSeconds =
+      this.lifecycleValue === "PLAYING"
+        ? this.activeTimelineSeconds()
+        : this.timelinePositionSeconds;
+    if (!this.loop) {
+      return Math.min(this.durationSeconds, timelineSeconds);
+    }
+    return (
+      ((timelineSeconds % this.durationSeconds) + this.durationSeconds) %
+      this.durationSeconds
+    );
+  }
+
+  private activeTimelineSeconds(): number {
+    return this.timelineAnchorSeconds + (this.clock.now() - this.wallAnchorMs) / 1000;
+  }
+
+  private validateSeekTime(frameIndex: number, timeSeconds: number): void {
+    if (
+      !Number.isFinite(timeSeconds) ||
+      timeSeconds < 0 ||
+      timeSeconds > this.durationSeconds
+    ) {
+      throw new RangeError("Seek time must be within the sequence duration.");
+    }
+    const frameStart = this.sequence.frames[frameIndex]?.timestampSeconds ?? 0;
+    const frameEnd =
+      this.sequence.frames[frameIndex + 1]?.timestampSeconds ?? this.durationSeconds;
+    if (timeSeconds < frameStart || timeSeconds > frameEnd) {
+      throw new RangeError("Seek time must fall within the selected frame's interval.");
+    }
   }
 
   private normaliseFrameIndex(frameIndex: number): number {

@@ -1,3 +1,7 @@
+import {
+  forwardFrameDelaySeconds,
+  sequencePlaybackDurationSeconds,
+} from "../manifest/timeline.js";
 import { selectFrameTransferQuality } from "../quality/selectFrameTransferQuality.js";
 
 import { CompressedFrameCache } from "./CompressedFrameCache.js";
@@ -53,6 +57,7 @@ export interface FrameRingBufferOptions extends FrameRingBufferConfiguration {
   compressedFrameFetch?: typeof fetch;
   /** Optional renderer-neutral codecs keyed by the frame source's codec identifier. */
   decoderRegistry?: GaussianFrameDecoderRegistry;
+  durationSeconds?: number;
   now?: () => number;
   onTrace?: FrameRingBufferTraceListener;
   presentationQualityTarget?: FrameQualityTarget;
@@ -83,6 +88,7 @@ export class FrameRingBuffer {
   private readonly sequence: DynamicGaussianSequence;
   private currentFrameIndexValue: number | undefined;
   private disposed = false;
+  private readonly durationSeconds: number;
   private presentationRequestRevision = 0;
   private transformRevision = 0;
   private transformValue: Transform | undefined;
@@ -92,6 +98,8 @@ export class FrameRingBuffer {
     this.renderer = options.renderer;
     this.decoderRegistry = options.decoderRegistry;
     this.sequence = options.sequence;
+    this.durationSeconds =
+      options.durationSeconds ?? sequencePlaybackDurationSeconds(options.sequence);
     this.transformValue = options.sequence.transform;
     this.futureFrameCount = options.futureFrameCount ?? 3;
     this.previousFrameCount = options.previousFrameCount ?? 1;
@@ -480,11 +488,10 @@ export class FrameRingBuffer {
     const baseRequestedAtMs = this.now();
     const requestedTransform = this.transformValue;
     const requestedTransformRevision = this.transformRevision;
-    const temporalDistance = this.temporalDistance(frameIndex);
     const record = {} as FrameRecord;
     record.controller = controller;
     record.deadlineMs =
-      baseRequestedAtMs + (temporalDistance / this.sequence.frameRate) * 1000;
+      baseRequestedAtMs + this.preparationDelaySeconds(frameIndex) * 1000;
     record.downloadedBytes = 0;
     record.qualityLevel = -1;
     record.refinementEnabled = false;
@@ -746,12 +753,17 @@ export class FrameRingBuffer {
         continue;
       }
       const forwardDistance = this.forwardDistanceFrom(frameIndex, bufferedFrameIndex);
-      const deadlineDistance =
-        forwardDistance >= 0 && forwardDistance <= this.futureFrameCount
-          ? forwardDistance
-          : 0;
       record.deadlineMs =
-        this.now() + (deadlineDistance / this.sequence.frameRate) * 1000;
+        this.now() +
+        (forwardDistance >= 0 && forwardDistance <= this.futureFrameCount
+          ? forwardFrameDelaySeconds(
+              this.sequence,
+              frameIndex,
+              bufferedFrameIndex,
+              this.loop,
+              this.durationSeconds,
+            ) * 1000
+          : 0);
     }
     this.basePreparationScheduler.reprioritise();
     this.applyRefinementPolicies();
@@ -1158,11 +1170,19 @@ export class FrameRingBuffer {
     return frameIndex;
   }
 
-  private temporalDistance(frameIndex: number): number {
-    if (this.currentFrameIndexValue === undefined) {
-      return frameIndex;
-    }
-    return this.forwardDistance(frameIndex);
+  private preparationDelaySeconds(frameIndex: number): number {
+    const anchorFrameIndex =
+      this.windowFrameIndexValue ?? this.currentFrameIndexValue ?? 0;
+    const forwardDistance = this.forwardDistanceFrom(anchorFrameIndex, frameIndex);
+    return forwardDistance >= 0 && forwardDistance <= this.futureFrameCount
+      ? forwardFrameDelaySeconds(
+          this.sequence,
+          anchorFrameIndex,
+          frameIndex,
+          this.loop,
+          this.durationSeconds,
+        )
+      : 0;
   }
 
   private preparationPriority(frameIndex: number): number {
@@ -1173,11 +1193,6 @@ export class FrameRingBuffer {
       return forwardDistance;
     }
     return 1_000 + Math.abs(frameIndex - anchorFrameIndex);
-  }
-
-  private forwardDistance(frameIndex: number): number {
-    const currentFrameIndex = this.currentFrameIndexValue ?? 0;
-    return this.forwardDistanceFrom(currentFrameIndex, frameIndex);
   }
 
   private forwardDistanceFrom(currentFrameIndex: number, frameIndex: number): number {

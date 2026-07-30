@@ -180,6 +180,36 @@ function createRendererHarness({ automaticQuality = true } = {}) {
 }
 
 describe("FrameRingBuffer", () => {
+  it("assigns preparation deadlines from manifest timestamps", async () => {
+    const harness = createRendererHarness();
+    const sequence = createSequence(3);
+    sequence.frames = [0, 0.1, 0.11].map((timestampSeconds, frameIndex) => ({
+      frameIndex,
+      timestampSeconds,
+      url: `/frame-${frameIndex}.rad`,
+    }));
+    const buffer = new FrameRingBuffer({
+      futureFrameCount: 2,
+      now: () => 500,
+      renderer: harness.renderer,
+      sequence,
+    });
+
+    void buffer.initialise(0).catch(() => undefined);
+    await vi.waitFor(() => expect(harness.prepareFrame).toHaveBeenCalledTimes(3));
+
+    const deadlines = new Map(
+      buffer.snapshot.frames.map(({ deadlineMs, frameIndex }) => [
+        frameIndex,
+        deadlineMs,
+      ]),
+    );
+    expect(deadlines.get(0)).toBeCloseTo(500);
+    expect(deadlines.get(1)).toBeCloseTo(600);
+    expect(deadlines.get(2)).toBeCloseTo(610);
+    buffer.dispose();
+  });
+
   it("decodes codec-tagged bytes before passing neutral attributes to the renderer", async () => {
     const harness = createRendererHarness();
     const sequence = createSequence(1);

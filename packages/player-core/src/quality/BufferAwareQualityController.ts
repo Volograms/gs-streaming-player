@@ -93,6 +93,24 @@ export class BufferAwareQualityController implements QualityController {
     ) {
       throw new RangeError("minimumDynamicDetailLevel must be between zero and one.");
     }
+    if (
+      !Number.isInteger(this.configuration.minimumSplatCount) ||
+      this.configuration.minimumSplatCount <= 0
+    ) {
+      throw new RangeError("minimumSplatCount must be a positive integer.");
+    }
+    if (
+      !Number.isFinite(this.configuration.targetBufferSeconds) ||
+      this.configuration.targetBufferSeconds <= 0
+    ) {
+      throw new RangeError("targetBufferSeconds must be a positive finite number.");
+    }
+    if (
+      !Number.isInteger(this.configuration.upgradeObservationCount) ||
+      this.configuration.upgradeObservationCount <= 0
+    ) {
+      throw new RangeError("upgradeObservationCount must be a positive integer.");
+    }
   }
 
   get tier(): BufferQualityTier {

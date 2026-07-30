@@ -173,4 +173,24 @@ describe("CompressedFrameCache", () => {
     await expect(second).resolves.toHaveProperty("byteLength", 10);
     cache.dispose();
   });
+
+  it("rejects fetching and queued callers when disposed", async () => {
+    const pending = deferred<Response>();
+    const fetchImplementation = vi.fn(async () => pending.promise);
+    const cache = new CompressedFrameCache({
+      fetch: fetchImplementation,
+      maximumBytes: 20,
+      maximumFetchConcurrency: 1,
+    });
+    const first = cache.get({ byteSize: 10, frameIndex: 0, url: "/frame-0.spz" });
+    const second = cache.get({ byteSize: 10, frameIndex: 1, url: "/frame-1.spz" });
+    await vi.waitFor(() => expect(fetchImplementation).toHaveBeenCalledOnce());
+
+    cache.dispose();
+
+    await expect(first).rejects.toMatchObject({ name: "AbortError" });
+    await expect(second).rejects.toMatchObject({ name: "AbortError" });
+    pending.resolve(response(10));
+    await vi.waitFor(() => expect(cache.snapshot.activeFetchCount).toBe(0));
+  });
 });
