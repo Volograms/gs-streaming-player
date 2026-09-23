@@ -22,6 +22,41 @@ function response(byteLength: number): Response {
 }
 
 describe("CompressedFrameCache", () => {
+  it.each([
+    [0, 8, true],
+    [0, 0, undefined],
+    [308, 8, false],
+  ])(
+    "distinguishes cache hits from hidden cross-origin sizes (%s / %s)",
+    async (transferSize, decodedBodySize, fromCache) => {
+      const timing = vi.spyOn(performance, "getEntriesByName").mockReturnValue([
+        {
+          startTime: 0,
+          connectStart: 0,
+          connectEnd: 0,
+          nextHopProtocol: "h2",
+          transferSize,
+          decodedBodySize,
+        } as PerformanceResourceTiming,
+      ]);
+      const trace: CompressedFrameCacheTraceEvent[] = [];
+      const cache = new CompressedFrameCache({
+        fetch: vi.fn(async () => response(8)),
+        maximumBytes: 8,
+        now: () => 0,
+        onTrace: (event) => trace.push(event),
+      });
+      try {
+        await cache.get({ frameIndex: 0, url: "/frame.sog" });
+        expect(trace.find(({ type }) => type === "fetch-ready")?.fromCache).toBe(
+          fromCache,
+        );
+      } finally {
+        cache.dispose();
+        timing.mockRestore();
+      }
+    },
+  );
   it("separates response latency from response body processing", async () => {
     let now = 0;
     const trace: CompressedFrameCacheTraceEvent[] = [];

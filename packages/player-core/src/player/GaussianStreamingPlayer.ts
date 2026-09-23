@@ -3,6 +3,7 @@ import { loadManifest } from "../manifest/loader.js";
 import { sequencePlaybackDurationSeconds } from "../manifest/timeline.js";
 import { ClientThroughputEstimator } from "../network/ClientThroughputEstimator.js";
 import { BufferAwareQualityController } from "../quality/BufferAwareQualityController.js";
+import { sequenceQualityLevels } from "../quality/sequenceQualityLevels.js";
 
 import { MediaPlaybackClock } from "./MediaPlaybackClock.js";
 import { SequencePlaybackController } from "./SequencePlaybackController.js";
@@ -119,6 +120,11 @@ export class GaussianStreamingPlayer {
   private playbackSnapshot: SequencePlaybackSnapshot;
   private qualityModeValue: GaussianStreamingQualityMode = { mode: "automatic" };
   private readonly qualityController: QualityController;
+  private readonly now: () => number;
+  private readonly loop: boolean;
+  private updatingQuality = false;
+  private lastQualityUpdateAt = -Infinity;
+  private lastQualityLifecycle: PlayerLifecycleState | undefined;
   private readonly renderer: GaussianRendererAdapter;
   readonly sequence: DynamicGaussianSequence;
   private stallStartedAtMs: number | undefined;
@@ -136,6 +142,8 @@ export class GaussianStreamingPlayer {
     qualityController: QualityController,
     audioClock: MediaPlaybackClock | undefined,
     minimumReadyFrames: number,
+    now: () => number,
+    loop: boolean,
   ) {
     this.manifest = manifest;
     this.sequence = sequence;
@@ -150,6 +158,8 @@ export class GaussianStreamingPlayer {
     this.qualityController = qualityController;
     this.audioClock = audioClock;
     this.minimumReadyFrames = minimumReadyFrames;
+    this.now = now;
+    this.loop = loop;
     this.unsubscribeBuffer = buffer.subscribe(() => {
       this.updateAutomaticQuality();
       this.emit();
@@ -211,7 +221,12 @@ export class GaussianStreamingPlayer {
         manifest.durationSeconds,
       );
       const bufferOptions = options.buffer ?? {};
+      const now =
+        options.clock === undefined ? performanceNow : () => options.clock!.now();
+      const qualityLevels = sequenceQualityLevels(sequence);
+      const minimumDetail = qualityLevels[0]?.detailLevel ?? DEFAULT_MINIMUM_DETAIL;
       const facadeReference: { current?: GaussianStreamingPlayer } = {};
+      const initialTransfers: Readonly<FrameRingBufferTraceEvent>[] = [];
       buffer = new FrameRingBuffer({
         compressedBufferMaximumBytes:
           bufferOptions.compressedBufferMaximumBytes ?? DEFAULT_COMPRESSED_BUFFER_BYTES,
@@ -227,9 +242,17 @@ export class GaussianStreamingPlayer {
         maximumCompressedFetchConcurrency:
           bufferOptions.maximumCompressedFetchConcurrency ?? 6,
         maximumRefinementConcurrency: bufferOptions.maximumRefinementConcurrency ?? 1,
-        onTrace: (event) => facadeReference.current?.observeTrace(event),
+        now,
+        onTrace: (event) => {
+          if (facadeReference.current !== undefined)
+            facadeReference.current.observeTrace(event);
+          else if (event.type === "compressed-fetch-ready") {
+            initialTransfers.push(event);
+            if (initialTransfers.length > 32) initialTransfers.shift();
+          }
+        },
         presentationQualityTarget: {
-          detailLevel: DEFAULT_MINIMUM_DETAIL,
+          detailLevel: minimumDetail,
           minimumSplatCount: 100,
         },
         previousFrameCount: bufferOptions.previousFrameCount ?? 1,
@@ -252,9 +275,21 @@ export class GaussianStreamingPlayer {
         options.qualityController ??
         new BufferAwareQualityController({
           dynamicObjectId: sequence.id,
-          minimumDynamicDetailLevel: DEFAULT_MINIMUM_DETAIL,
+          ...(qualityLevels.length === 0
+            ? {}
+            : { dynamicQualityLevels: qualityLevels }),
+          minimumDynamicDetailLevel: minimumDetail,
           minimumSplatCount: 100,
-          targetBufferSeconds: DEFAULT_FUTURE_FRAMES / sequence.frameRate,
+          targetBufferSeconds:
+            (Math.max(
+              1,
+              Math.min(
+                bufferOptions.futureFrameCount ?? DEFAULT_FUTURE_FRAMES,
+                sequence.frameCount - 1,
+              ),
+            ) *
+              0.7) /
+            sequence.frameRate,
         });
       const facade = new GaussianStreamingPlayer(
         manifest,
@@ -265,8 +300,12 @@ export class GaussianStreamingPlayer {
         qualityController,
         audioClock,
         minimumReadyFrames,
+        now,
+        options.loop ?? bufferOptions.loop ?? false,
       );
       facadeReference.current = facade;
+      for (const event of initialTransfers) facade.observeTrace(event);
+      initialTransfers.length = 0;
       facade.updateAutomaticQuality();
       return facade;
     } catch (error) {
@@ -390,6 +429,7 @@ export class GaussianStreamingPlayer {
       });
     } else {
       this.qualityModeValue = { mode: "automatic" };
+      this.lastQualityUpdateAt = -Infinity;
       this.updateAutomaticQuality();
     }
     this.emit();
@@ -426,6 +466,7 @@ export class GaussianStreamingPlayer {
   private observeTrace(event: Readonly<FrameRingBufferTraceEvent>): void {
     if (
       event.type === "compressed-fetch-ready" &&
+      event.fromCache !== true &&
       event.durationMs !== undefined &&
       (event.loadedBytes ?? event.totalBytes) !== undefined
     ) {
@@ -439,46 +480,70 @@ export class GaussianStreamingPlayer {
   }
 
   private updateAutomaticQuality(): void {
-    if (this.qualityModeValue.mode !== "automatic" || this.disposed) {
+    if (
+      this.qualityModeValue.mode !== "automatic" ||
+      this.disposed ||
+      this.updatingQuality
+    ) {
       return;
     }
-    const now = performanceNow();
-    const playback = this.toPlaybackState();
-    const network: NetworkState = this.throughputEstimator.getState(now) ?? {
-      confidence: 0,
-      estimatedThroughputBps: 100_000_000,
-      source: "client-measured",
-      timestampMs: now,
-    };
-    const metrics = this.toPlayerMetrics();
-    const decision = this.qualityController.update(playback, network, metrics);
-    this.buffer.setPresentationQualityTarget({
-      detailLevel: decision.dynamicFrameDetailLevel ?? DEFAULT_MINIMUM_DETAIL,
-      minimumSplatCount: decision.minimumDynamicSplatCount ?? 100,
-    });
-    if (decision.maximumBasePreparationConcurrency !== undefined) {
-      this.buffer.setPreparationConcurrency(
-        decision.maximumBasePreparationConcurrency,
-        decision.maximumRefinementConcurrency ?? 1,
+    this.updatingQuality = true;
+    try {
+      const now = this.now();
+      const playback = this.toPlaybackState();
+      // Buffer/renderer callbacks can be nested and arrive many times per frame.
+      // Observe wall time, while still reacting immediately to lifecycle changes.
+      if (
+        now - this.lastQualityUpdateAt < 250 &&
+        playback.lifecycle === this.lastQualityLifecycle
+      )
+        return;
+      this.lastQualityUpdateAt = now;
+      this.lastQualityLifecycle = playback.lifecycle;
+      const network: NetworkState = this.throughputEstimator.getState(now) ?? {
+        confidence: 0,
+        estimatedThroughputBps: 0,
+        source: "client-measured",
+        timestampMs: now,
+      };
+      const metrics = this.toPlayerMetrics(now);
+      const decision = this.qualityController.update(playback, network, metrics);
+      this.buffer.setPresentationQualityTarget(
+        {
+          detailLevel: decision.dynamicFrameDetailLevel ?? DEFAULT_MINIMUM_DETAIL,
+          minimumSplatCount: decision.minimumDynamicSplatCount ?? 100,
+        },
+        { preservePreparedFrames: true },
       );
+      if (decision.maximumBasePreparationConcurrency !== undefined) {
+        this.buffer.setPreparationConcurrency(
+          decision.maximumBasePreparationConcurrency,
+          decision.maximumRefinementConcurrency ?? 1,
+        );
+      }
+      this.renderer.setRenderQuality(decision);
+    } finally {
+      this.updatingQuality = false;
     }
-    this.renderer.setRenderQuality(decision);
   }
 
   private toPlaybackState(): PlaybackState {
+    // Read current readiness: preparing a future frame does not emit a playback event.
+    const snapshot = this.playback.snapshot;
     return {
-      bufferAheadSeconds: this.playbackSnapshot.bufferAheadSeconds,
-      currentFrameIndex: this.playbackSnapshot.currentFrameIndex,
-      currentTimeSeconds: this.playbackSnapshot.currentTimeSeconds,
-      isPlaying: this.playbackSnapshot.isPlaying,
-      lifecycle: this.playbackSnapshot.lifecycle,
+      bufferAheadSeconds: snapshot.bufferAheadSeconds,
+      currentFrameIndex: snapshot.currentFrameIndex,
+      currentTimeSeconds: snapshot.currentTimeSeconds,
+      isPlaying: snapshot.isPlaying,
+      lifecycle: snapshot.lifecycle,
       minimumReadyFrames: this.minimumReadyFrames,
       playbackRate: 1,
     };
   }
 
-  private toPlayerMetrics(): PlayerMetrics {
-    const frames = this.buffer.snapshot.frames;
+  private toPlayerMetrics(now: number): PlayerMetrics {
+    const buffer = this.buffer.snapshot;
+    const frames = buffer.frames;
     const requested = frames.filter((frame) => frame.requestedBytes > 0);
     const estimatedBaseFrameBytes =
       requested.length === 0
@@ -487,6 +552,15 @@ export class GaussianStreamingPlayer {
           requested.length;
     const renderFramesPerSecond = this.renderer.getMetrics().renderFramesPerSecond;
     return {
+      timestampMs: now,
+      bufferCapacitySeconds:
+        Math.min(
+          buffer.futureFrameCount,
+          this.sequence.frameCount - 1,
+          this.loop
+            ? Infinity
+            : this.sequence.frameCount - 1 - this.playbackSnapshot.currentFrameIndex,
+        ) / this.sequence.frameRate,
       downloadedBytes: frames.reduce((sum, frame) => sum + frame.downloadedBytes, 0),
       droppedFrames: this.playbackSnapshot.droppedFrameCount,
       ...(estimatedBaseFrameBytes === undefined ? {} : { estimatedBaseFrameBytes }),
@@ -497,7 +571,7 @@ export class GaussianStreamingPlayer {
   }
 
   private observePlayback(snapshot: SequencePlaybackSnapshot): void {
-    const now = performanceNow();
+    const now = this.now();
     if (snapshot.lifecycle === "BUFFERING") {
       this.stallStartedAtMs ??= now;
     } else if (this.stallStartedAtMs !== undefined) {

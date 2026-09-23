@@ -7,6 +7,11 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Make automatic dynamic quality use the manifest's actual tier ladder and byte costs,
+  with reachable buffer thresholds, timed upgrades through full quality, and downgrades
+  under network or presentation pressure. Preserve prepared frames during automatic
+  switches, aggregate overlapping downloads, and exclude known cached/stale throughput
+  evidence.
 - Keep audio and frame presentation synchronized across loops, seeks, audio starvation,
   and splat buffering, including non-frame-aligned audio offsets. Cancel pending audio
   starts on transport changes, preserve mute/volume during silent priming, expose media

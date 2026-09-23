@@ -18,6 +18,8 @@ export type CompressedFrameCacheTraceEventType =
 
 export interface CompressedFrameCacheTraceEvent {
   atMs: number;
+  /** True only when browser Resource Timing positively identifies a local cache hit. */
+  fromCache?: boolean;
   bodyReadMs?: number;
   connectionReused?: boolean;
   connectionSetupMs?: number;
@@ -33,6 +35,7 @@ export interface CompressedFrameCacheTraceEvent {
 }
 
 interface FetchedBytes {
+  fromCache?: boolean;
   bodyReadMs: number;
   bytes: ArrayBuffer;
   connectionReused?: boolean;
@@ -42,6 +45,7 @@ interface FetchedBytes {
 }
 
 interface FetchResourceTiming {
+  fromCache?: boolean;
   connectionReused: boolean;
   connectionSetupMs: number;
   networkProtocol?: string;
@@ -312,6 +316,7 @@ export class CompressedFrameCache {
         ({
           bodyReadMs,
           bytes,
+          fromCache,
           connectionReused,
           connectionSetupMs,
           networkProtocol,
@@ -326,6 +331,7 @@ export class CompressedFrameCache {
           this.onTrace?.({
             atMs: this.now(),
             bodyReadMs,
+            ...(fromCache === undefined ? {} : { fromCache }),
             ...(connectionReused === undefined ? {} : { connectionReused }),
             ...(connectionSetupMs === undefined ? {} : { connectionSetupMs }),
             durationMs: this.now() - startedAt,
@@ -383,7 +389,10 @@ export class CompressedFrameCache {
     }
     const bytes = await response.arrayBuffer();
     const completedAt = this.now();
-    const resourceTiming = this.readFetchResourceTiming(response.url || request.url);
+    const resourceTiming = this.readFetchResourceTiming(
+      response.url || request.url,
+      startedAt,
+    );
     return {
       bodyReadMs: completedAt - responseAt,
       bytes,
@@ -392,7 +401,10 @@ export class CompressedFrameCache {
     };
   }
 
-  private readFetchResourceTiming(url: string): FetchResourceTiming | undefined {
+  private readFetchResourceTiming(
+    url: string,
+    startedAt: number,
+  ): FetchResourceTiming | undefined {
     if (
       typeof performance === "undefined" ||
       typeof performance.getEntriesByName !== "function"
@@ -403,12 +415,13 @@ export class CompressedFrameCache {
       typeof location === "undefined" ? url : new URL(url, location.href).toString();
     const entry = performance.getEntriesByName(absoluteUrl, "resource").at(-1) as
       PerformanceResourceTiming | undefined;
-    if (entry === undefined) {
+    if (entry === undefined || entry.startTime < startedAt - 1) {
       return undefined;
     }
     const connectionSetupMs = Math.max(0, entry.connectEnd - entry.connectStart);
     const networkProtocol = entry.nextHopProtocol.trim();
     return {
+      ...(entry.decodedBodySize > 0 ? { fromCache: entry.transferSize === 0 } : {}),
       connectionReused: connectionSetupMs === 0,
       connectionSetupMs,
       ...(networkProtocol.length === 0 ? {} : { networkProtocol }),

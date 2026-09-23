@@ -44,15 +44,22 @@ the caller must choose one with `sequenceId`; simultaneous sequences are unsuppo
 - `dispose()` cancels work and releases frame, static, mesh, audio, and renderer
   resources.
 
-Defaults are 25% minimum dynamic detail, one previous and ten future frames, a 200 MB
-compressed cache, six concurrent fetches, two preparations, and two ready startup
-frames. Override them through the facade's `buffer`, `quality`, and `startup` options.
+Automatic quality starts at the manifest's minimum playable tier (or its lowest
+available tier). Content without an authored tier ladder retains the 25% progressive
+detail default. Buffer defaults are one previous and ten future frames, a 200 MB
+compressed cache, six concurrent fetches, two initial preparations, and two ready
+startup frames. Configure these through `buffer`, including `buffer.minimumReadyFrames`;
+inject a custom policy with `qualityController`. Automatic policy can adjust preparation
+concurrency while playing.
 
 The showcase exposes the same modes in the compact quality menu beside the timeline.
 `Auto` is the normal buffer-aware policy; the named percentage entries pin a dynamic
 transfer tier and remain selected when entering XR. Static Streamed SOG keeps its own
 camera-dependent spatial hierarchy in every mode—the dynamic tier menu does not freeze
 or replace static-scene LoD.
+
+See [automatic quality](automatic-quality.md) for tier selection, throughput
+measurement, switching behavior, and policy configuration.
 
 ## Backend selection
 

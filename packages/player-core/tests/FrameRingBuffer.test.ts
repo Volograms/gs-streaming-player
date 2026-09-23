@@ -463,6 +463,68 @@ describe("FrameRingBuffer", () => {
     buffer.dispose();
   });
 
+  it.each([
+    [0.25, 1],
+    [1, 0.25],
+  ])(
+    "preserves prepared frames switching automatically from %s to %s",
+    async (initialDetail, nextDetail) => {
+      const harness = createRendererHarness();
+      const sequence = createSequence(2);
+      sequence.frames = sequence.frames.map((frame) => ({
+        ...frame,
+        qualityLevels: [0.25, 1].map((detailLevel, level) => ({
+          detailLevel,
+          level,
+          minimumPlayable: level === 0,
+          url: `/frame-${frame.frameIndex}-${detailLevel}.sog`,
+        })),
+      }));
+      // Fixed assets cannot refine in place: report their original detail throughout.
+      for (const index of [0, 1])
+        harness.presentationQualities.set(index, {
+          detailLevel: initialDetail,
+          selectedSplatCount: 1_000,
+          state: "presentable",
+        });
+      harness.refineFrame.mockImplementation(async (frame) =>
+        harness.presentationQualities.get(frame.frameIndex)!,
+      );
+      const buffer = new FrameRingBuffer({
+        futureFrameCount: 1,
+        previousFrameCount: 0,
+        loop: true,
+        presentationQualityTarget: { detailLevel: initialDetail, minimumSplatCount: 2 },
+        renderer: harness.renderer,
+        sequence,
+      });
+      const initialising = buffer.initialise(0);
+      const first = harness.resolve(0);
+      await initialising;
+      const next = harness.resolve(1);
+      await buffer.whenBuffered();
+      buffer.setPresentationQualityTarget(
+        { detailLevel: nextDetail, minimumSplatCount: 2 },
+        { preservePreparedFrames: true },
+      );
+      expect(harness.releaseFrame).not.toHaveBeenCalledWith(next);
+      expect(buffer.isPresentationReady(1)).toBe(true);
+      expect(harness.prepareFrame).toHaveBeenCalledTimes(2);
+      await expect(buffer.present(1)).resolves.toBe(next);
+      expect(harness.releaseFrame).toHaveBeenCalledWith(first);
+      // Even when the whole clip fits in the ring, consumed frames adopt the new tier.
+      expect(harness.prepareFrame).toHaveBeenLastCalledWith(
+        "actor",
+        expect.objectContaining({
+          frameIndex: 0,
+          url: `/frame-0-${nextDetail}.sog`,
+        }),
+        expect.anything(),
+      );
+      buffer.dispose();
+    },
+  );
+
   it("replaces the formerly presented tier after a safe handoff", async () => {
     const harness = createRendererHarness();
     const sequence = createSequence(2);

@@ -93,6 +93,7 @@ export {
   BufferAwareQualityController,
   type BufferAwareQualityControllerConfiguration,
   type BufferQualityTier,
+  type DynamicQualityLevel,
 } from "./quality/BufferAwareQualityController.js";
 export {
   selectFrameTransferQuality,
