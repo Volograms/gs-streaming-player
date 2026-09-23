@@ -143,7 +143,9 @@ pressure rises, or concurrent SOG compression contends for the same GPU. Tiers w
 single frame remain sequential to bound peak memory and scratch-file usage. The
 equivalent lower-level option is `--frame-workers <n>`.
 
-Preview and run:
+From the repository root, install dependencies with `pnpm install --frozen-lockfile`,
+then preview and run. The `gs-content` and legacy `gs-manifest` scripts load workspace
+packages directly from source; a separate `pnpm build` is not required.
 
 ```bash
 pnpm gs-content build dataset.json --output-dir dist/content --dry-run

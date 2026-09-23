@@ -7,6 +7,8 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Load workspace source aliases explicitly in `gs-content` and `gs-manifest` so content
+  preparation works without previously built package `dist` files.
 - Generate compressed prefetch requests lazily so long sequences are inspected only
   until the cache budget is filled. Use observed sizes for resident assets and bound
   speculative lookahead when byte-size metadata is missing.
