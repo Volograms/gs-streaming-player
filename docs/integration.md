@@ -52,6 +52,13 @@ startup frames. Configure these through `buffer`, including `buffer.minimumReady
 inject a custom policy with `qualityController`. Automatic policy can adjust preparation
 concurrency while playing.
 
+Compressed prefetch planning stops at the byte budget instead of scanning the remaining
+sequence on every window update. Cached assets use their observed byte sizes. When sizes
+are missing or zero, speculative lookahead admits at most one fetch batch of
+unknown-size assets per plan; frames needed for presentation can still be fetched on
+demand. Prefetch stops at a native progressive-frame boundary, where the renderer
+manages its own reads.
+
 The showcase exposes the same modes in the compact quality menu beside the timeline.
 `Auto` is the normal buffer-aware policy; the named percentage entries pin a dynamic
 transfer tier and remain selected when entering XR. Static Streamed SOG keeps its own

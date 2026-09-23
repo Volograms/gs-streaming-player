@@ -741,7 +741,7 @@ export class FrameRingBuffer {
 
   private reconcileWindow(frameIndex: number, preservedFrameIndex?: number): void {
     this.windowFrameIndexValue = frameIndex;
-    this.updateCompressedPrefetchPlan(frameIndex);
+    this.compressedFrameCache?.setPlan(this.compressedPrefetchRequests(frameIndex));
     const desired = this.desiredFrameIndices(frameIndex);
     if (preservedFrameIndex !== undefined) {
       desired.add(preservedFrameIndex);
@@ -810,11 +810,9 @@ export class FrameRingBuffer {
     );
   }
 
-  private updateCompressedPrefetchPlan(frameIndex: number): void {
-    if (this.compressedFrameCache === undefined) {
-      return;
-    }
-    const requests: CompressedFrameRequest[] = [];
+  private *compressedPrefetchRequests(
+    frameIndex: number,
+  ): Generator<CompressedFrameRequest> {
     for (let offset = 0; offset < this.sequence.frameCount; offset += 1) {
       const requestedFrameIndex = this.offsetFrameIndex(frameIndex, offset);
       if (requestedFrameIndex === undefined) {
@@ -836,11 +834,12 @@ export class FrameRingBuffer {
           ? retained.preparedSource
           : (selectedTransfer?.source ?? source);
       if (selectedTransfer === undefined && preparedSource.codec === undefined) {
-        continue;
+        // Native progressive frames manage their own reads. Stop at that boundary
+        // instead of scanning the remaining clip for a later compressed frame.
+        return;
       }
-      requests.push(this.toCompressedFrameRequest(requestedFrameIndex, preparedSource));
+      yield this.toCompressedFrameRequest(requestedFrameIndex, preparedSource);
     }
-    this.compressedFrameCache.setPlan(requests);
   }
 
   private toCompressedFrameRequest(

@@ -345,6 +345,143 @@ describe("FrameRingBuffer", () => {
     buffer.dispose();
   });
 
+  it.each([25, 30])(
+    "bounds prefetch visits for a two-minute %s fps clip through seeks, loops, and tier changes",
+    async (fps) => {
+      const harness = createRendererHarness();
+      const sequence = createSequence(fps * 120);
+      sequence.frameRate = fps;
+      const visited = new Set<number>();
+      sequence.frames = sequence.frames.map((frame) => ({
+        ...frame,
+        timestampSeconds: frame.frameIndex / fps,
+        get qualityLevels() {
+          visited.add(frame.frameIndex);
+          return [0.25, 1].map((detailLevel, level) => ({
+            byteSize: level === 0 ? 4 : 8,
+            detailLevel,
+            level,
+            minimumPlayable: level === 0,
+            url: `/frame-${frame.frameIndex}-${level}.sog`,
+          }));
+        },
+      }));
+      const compressedFrameFetch = vi.fn(
+        async (input: RequestInfo | URL) =>
+          new Response(new Uint8Array(String(input).endsWith("-0.sog") ? 4 : 8)),
+      );
+      const buffer = new FrameRingBuffer({
+        compressedBufferMaximumBytes: 20,
+        compressedFrameFetch,
+        futureFrameCount: 1,
+        previousFrameCount: 0,
+        loop: true,
+        renderer: harness.renderer,
+        sequence,
+      });
+      try {
+        const initialising = buffer.initialise(0);
+        await vi.waitFor(() => expect(harness.preparations.has(0)).toBe(true));
+        harness.resolve(0);
+        await initialising;
+        expect([...visited].sort((left, right) => left - right)).toEqual([
+          0, 1, 2, 3, 4,
+        ]);
+
+        visited.clear();
+        const last = sequence.frameCount - 1;
+        const seeking = buffer.present(last);
+        await vi.waitFor(() => expect(harness.preparations.has(last)).toBe(true));
+        harness.resolve(last);
+        await seeking;
+        expect([...visited].every((index) => index === last || index < 5)).toBe(true);
+        expect(visited.size).toBeLessThanOrEqual(6);
+        await vi.waitFor(() => expect(harness.preparations.has(0)).toBe(true));
+        harness.resolve(0);
+        await buffer.whenPresentationReadyAhead(1);
+        await buffer.present(0);
+
+        visited.clear();
+        buffer.setPresentationQualityTarget({ detailLevel: 1, minimumSplatCount: 2 });
+        await vi.waitFor(() =>
+          expect(compressedFrameFetch).toHaveBeenCalledWith(
+            "/frame-1-1.sog",
+            expect.anything(),
+          ),
+        );
+        expect(visited.size).toBeLessThanOrEqual(5);
+        expect([...visited].every((index) => index < 5)).toBe(true);
+      } finally {
+        buffer.dispose();
+      }
+    },
+  );
+
+  it("does not scan a native progressive sequence for compressed prefetch", async () => {
+    const harness = createRendererHarness();
+    const sequence = createSequence(3_600);
+    const visited = new Set<number>();
+    sequence.frames = sequence.frames.map((frame) => ({
+      ...frame,
+      get qualityLevels() {
+        visited.add(frame.frameIndex);
+        return [];
+      },
+    }));
+    const compressedFrameFetch = vi.fn();
+    const buffer = new FrameRingBuffer({
+      compressedBufferMaximumBytes: 20,
+      compressedFrameFetch,
+      futureFrameCount: 1,
+      renderer: harness.renderer,
+      sequence,
+    });
+    try {
+      const initialising = buffer.initialise(0);
+      harness.resolve(0);
+      await initialising;
+      expect([...visited].sort()).toEqual([0, 1]);
+      expect(compressedFrameFetch).not.toHaveBeenCalled();
+    } finally {
+      buffer.dispose();
+    }
+  });
+
+  it("still fetches demanded compressed frames beyond a native progressive boundary", async () => {
+    const harness = createRendererHarness();
+    harness.renderer.canPrepareCompressedFrame = () => true;
+    const sequence = createSequence(3);
+    sequence.frames[1] = {
+      ...sequence.frames[1]!,
+      codec: "sog",
+      byteSize: 4,
+      url: "/frame-1.sog",
+    };
+    const compressedFrameFetch = vi.fn(async () => new Response(new Uint8Array(4)));
+    const buffer = new FrameRingBuffer({
+      compressedBufferMaximumBytes: 20,
+      compressedFrameFetch,
+      futureFrameCount: 1,
+      renderer: harness.renderer,
+      sequence,
+    });
+    try {
+      const initialising = buffer.initialise(0);
+      harness.resolve(0);
+      await initialising;
+      await vi.waitFor(() => expect(harness.preparations.has(1)).toBe(true));
+      const frame = harness.resolve(1);
+      await buffer.whenPresentationReadyAhead(1);
+      await expect(buffer.present(1)).resolves.toBe(frame);
+      expect(compressedFrameFetch).toHaveBeenCalledExactlyOnceWith(
+        "/frame-1.sog",
+        expect.anything(),
+      );
+    } finally {
+      buffer.dispose();
+    }
+  });
+
   it("prepares the smallest flat tier that satisfies presentation quality", () => {
     const harness = createRendererHarness();
     const sequence = createSequence(1);

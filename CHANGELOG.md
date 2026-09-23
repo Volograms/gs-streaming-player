@@ -7,6 +7,9 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Generate compressed prefetch requests lazily so long sequences are inspected only
+  until the cache budget is filled. Use observed sizes for resident assets and bound
+  speculative lookahead when byte-size metadata is missing.
 - Make automatic dynamic quality use the manifest's actual tier ladder and byte costs,
   with reachable buffer thresholds, timed upgrades through full quality, and downgrades
   under network or presentation pressure. Preserve prepared frames during automatic

@@ -143,13 +143,17 @@ export class CompressedFrameCache {
     };
   }
 
-  /** Replace the forward prefetch plan, ordered from nearest to furthest frame. */
-  setPlan(requests: readonly CompressedFrameRequest[]): void {
+  /** Consume a nearest-first plan lazily, stopping when the byte budget is filled. */
+  setPlan(requests: Iterable<CompressedFrameRequest>): void {
     this.assertNotDisposed();
     const plannedUrls = new Set<string>();
     let plannedBytes = 0;
+    let unknownSizeCount = 0;
     for (const request of requests) {
-      const expectedBytes = Math.max(0, request.byteSize ?? 0);
+      const declaredBytes = request.byteSize ?? 0;
+      const expectedBytes =
+        this.entries.get(request.url)?.bytes?.byteLength ??
+        (Number.isFinite(declaredBytes) ? Math.max(0, declaredBytes) : 0);
       if (
         plannedUrls.size > 0 &&
         expectedBytes > 0 &&
@@ -161,6 +165,15 @@ export class CompressedFrameCache {
       plannedBytes += expectedBytes;
       const entry = this.ensureEntry(request);
       entry.planPriority = plannedUrls.size - 1;
+      if (expectedBytes === 0) unknownSizeCount += 1;
+      // Missing sizes must not make an arbitrarily long sequence look free. Allow
+      // one fetch batch; subsequent plans can use the observed response sizes.
+      if (
+        plannedBytes >= this.maximumBytes ||
+        unknownSizeCount >= this.maximumFetchConcurrency
+      ) {
+        break;
+      }
     }
 
     for (const [url, entry] of this.entries) {
