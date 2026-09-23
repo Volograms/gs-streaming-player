@@ -478,10 +478,12 @@ export class SequencePlaybackController {
     if (!this.loop) {
       return Math.min(this.durationSeconds, timelineSeconds);
     }
-    return (
+    const loopTime =
       ((timelineSeconds % this.durationSeconds) + this.durationSeconds) %
-      this.durationSeconds
-    );
+      this.durationSeconds;
+    // Floating-point rounding at a loop boundary must not seek audio to the end
+    // of the preceding cycle after the next cycle's first frame is presented.
+    return this.durationSeconds - loopTime < 1e-7 ? 0 : loopTime;
   }
 
   private activeTimelineSeconds(): number {

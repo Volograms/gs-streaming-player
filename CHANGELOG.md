@@ -7,6 +7,11 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Keep audio and frame presentation synchronized across loops, seeks, audio starvation,
+  and splat buffering, including non-frame-aligned audio offsets. Cancel pending audio
+  starts on transport changes, preserve mute/volume during silent priming, expose media
+  failures in player snapshots and the showcase, and release media resources on
+  disposal.
 - Make `gs-content build --force` replace only dataset-owned output entries with
   rollback protection, preserving unrelated files instead of deleting the complete
   output directory.

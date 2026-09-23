@@ -4,6 +4,7 @@ import { sequencePlaybackDurationSeconds } from "../manifest/timeline.js";
 import { ClientThroughputEstimator } from "../network/ClientThroughputEstimator.js";
 import { BufferAwareQualityController } from "../quality/BufferAwareQualityController.js";
 
+import { MediaPlaybackClock } from "./MediaPlaybackClock.js";
 import { SequencePlaybackController } from "./SequencePlaybackController.js";
 
 import type { PlayerLifecycleState, PlaybackState } from "./playbackState.js";
@@ -40,9 +41,12 @@ export interface GaussianStreamingMediaElement {
   preload: string;
   src: string;
   volume: number;
+  readonly error?: { code: number; message?: string } | null;
   addEventListener(type: string, listener: () => void): void;
+  load?(): void;
   pause(): void;
   play(): Promise<void>;
+  removeAttribute?(name: string): void;
   removeEventListener(type: string, listener: () => void): void;
 }
 
@@ -101,9 +105,12 @@ type SnapshotListener = (snapshot: Readonly<GaussianStreamingPlayerSnapshot>) =>
  * supplied adapter.
  */
 export class GaussianStreamingPlayer {
-  private readonly audioClock: HybridMediaClock | undefined;
+  private readonly audioClock: MediaPlaybackClock | undefined;
+  private audioError: unknown;
   private readonly buffer: FrameRingBuffer;
   private disposed = false;
+  private operationRevision = 0;
+  private pendingPlayRevision: number | undefined;
   private readonly durationSeconds: number;
   private readonly listeners = new Set<SnapshotListener>();
   readonly manifest: GaussianSequenceManifest;
@@ -127,7 +134,7 @@ export class GaussianStreamingPlayer {
     buffer: FrameRingBuffer,
     playback: SequencePlaybackController,
     qualityController: QualityController,
-    audioClock: HybridMediaClock | undefined,
+    audioClock: MediaPlaybackClock | undefined,
     minimumReadyFrames: number,
   ) {
     this.manifest = manifest;
@@ -154,6 +161,11 @@ export class GaussianStreamingPlayer {
       this.updateAutomaticQuality();
       this.emit();
     });
+    if (audioClock !== undefined) {
+      audioClock.onError = (error) => this.handleAudioError(error);
+      audioClock.onChange = () => this.emit();
+      if (audioClock.error !== undefined) this.handleAudioError(audioClock.error);
+    }
   }
 
   static async create(
@@ -169,7 +181,7 @@ export class GaussianStreamingPlayer {
     const renderer = options.renderer;
     let buffer: FrameRingBuffer | undefined;
     let playback: SequencePlaybackController | undefined;
-    let audioClock: HybridMediaClock | undefined;
+    let audioClock: MediaPlaybackClock | undefined;
 
     try {
       throwIfAborted(options.signal);
@@ -187,10 +199,10 @@ export class GaussianStreamingPlayer {
 
       if (manifest.audio !== undefined) {
         const factory = options.audioElementFactory ?? defaultAudioElementFactory;
-        audioClock = new HybridMediaClock(
+        audioClock = new MediaPlaybackClock(
           factory(manifest.audio),
           manifest.audio.offsetSeconds ?? 0,
-          options.clock,
+          options.clock ?? browserClock,
         );
       }
       const clock = audioClock ?? options.clock;
@@ -268,6 +280,8 @@ export class GaussianStreamingPlayer {
 
   get snapshot(): GaussianStreamingPlayerSnapshot {
     const playback = this.playbackSnapshot;
+    const error = this.audioError ?? playback.error;
+    const starting = this.pendingPlayRevision !== undefined;
     return {
       audio: {
         configured: this.audioClock !== undefined,
@@ -279,9 +293,14 @@ export class GaussianStreamingPlayer {
       currentTimeSeconds: playback.currentTimeSeconds,
       droppedFrameCount: playback.droppedFrameCount,
       durationSeconds: this.durationSeconds,
-      ...(playback.error === undefined ? {} : { error: playback.error }),
-      isPlaying: playback.isPlaying,
-      lifecycle: playback.lifecycle,
+      ...(error === undefined ? {} : { error }),
+      isPlaying: error === undefined && (starting || playback.isPlaying),
+      lifecycle:
+        error !== undefined
+          ? "ERROR"
+          : starting || (playback.isPlaying && this.audioClock?.waiting)
+            ? "BUFFERING"
+            : playback.lifecycle,
       manifestId: this.manifest.id,
       qualityMode: { ...this.qualityModeValue },
       renderer: this.renderer.getMetrics(),
@@ -298,12 +317,30 @@ export class GaussianStreamingPlayer {
 
   async play(): Promise<void> {
     this.assertOpen();
-    await this.audioClock?.prime();
-    this.playback.play();
+    if (this.pendingPlayRevision !== undefined || this.playbackSnapshot.isPlaying)
+      return;
+    const revision = ++this.operationRevision;
+    this.audioError = undefined;
+    this.pendingPlayRevision = revision;
+    this.emit();
+    try {
+      await this.audioClock?.prime(this.playbackSnapshot.currentTimeSeconds);
+      if (this.disposed || revision !== this.operationRevision) return;
+      this.pendingPlayRevision = undefined;
+      this.playback.play();
+    } catch (error) {
+      if (this.disposed || revision !== this.operationRevision) return;
+      this.handleAudioError(error);
+      throw error;
+    } finally {
+      if (this.pendingPlayRevision === revision) this.pendingPlayRevision = undefined;
+      this.emit();
+    }
   }
 
   pause(): void {
     this.assertOpen();
+    this.cancelPendingPlay();
     this.playback.pause();
   }
 
@@ -313,14 +350,27 @@ export class GaussianStreamingPlayer {
       throw new RangeError("Seek time must be finite.");
     }
     const clamped = Math.min(Math.max(0, timeSeconds), this.durationSeconds);
+    this.cancelPendingPlay();
+    const revision = this.operationRevision;
+    this.audioError = undefined;
+    this.playback.pause();
     this.audioClock?.seek(clamped);
     await this.playback.seek(this.frameForTime(clamped), clamped);
+    if (!this.disposed && revision === this.operationRevision)
+      this.audioClock?.seek(clamped);
   }
 
   async stepFrames(delta: number): Promise<void> {
     this.assertOpen();
+    if (!Number.isInteger(delta)) throw new RangeError("delta must be an integer.");
+    this.cancelPendingPlay();
+    const revision = this.operationRevision;
+    this.audioError = undefined;
+    this.playback.pause();
     await this.playback.step(delta);
-    this.audioClock?.seek(this.frameTime(this.playback.snapshot.currentFrameIndex));
+    if (!this.disposed && revision === this.operationRevision) {
+      this.audioClock?.seek(this.frameTime(this.playback.snapshot.currentFrameIndex));
+    }
   }
 
   setQualityMode(mode: GaussianStreamingQualityMode): void {
@@ -363,6 +413,7 @@ export class GaussianStreamingPlayer {
       return;
     }
     this.disposed = true;
+    this.cancelPendingPlay();
     this.unsubscribePlayback?.();
     this.unsubscribeBuffer?.();
     this.playback.dispose();
@@ -456,13 +507,32 @@ export class GaussianStreamingPlayer {
   }
 
   private syncAudio(snapshot: SequencePlaybackSnapshot): void {
-    if (this.audioClock === undefined) {
+    // An earlier seek may finish while Play is still unlocking the media element.
+    // Its paused snapshot must not cancel that newer gesture's pending prime.
+    if (
+      this.audioClock === undefined ||
+      this.pendingPlayRevision !== undefined ||
+      snapshot.lifecycle === "SEEKING"
+    ) {
       return;
     }
     this.audioClock.synchronise(
       snapshot.currentTimeSeconds,
       snapshot.lifecycle === "PLAYING",
     );
+  }
+
+  private cancelPendingPlay(): void {
+    this.operationRevision += 1;
+    this.pendingPlayRevision = undefined;
+    this.audioClock?.stop();
+  }
+
+  private handleAudioError(error: unknown): void {
+    if (this.disposed) return;
+    this.audioError = error;
+    this.cancelPendingPlay();
+    this.playback.pause();
   }
 
   private frameForTime(timeSeconds: number): number {
@@ -497,132 +567,6 @@ export class GaussianStreamingPlayer {
   }
 }
 
-class HybridMediaClock implements PlaybackClock {
-  private anchorMs = 0;
-  private anchorTimelineMs = 0;
-  private disposed = false;
-  private readonly endedListener: () => void;
-  private readonly fallbackClock: PlaybackClock;
-
-  constructor(
-    private readonly media: GaussianStreamingMediaElement,
-    private readonly offsetSeconds: number,
-    fallbackClock?: PlaybackClock,
-  ) {
-    this.fallbackClock = fallbackClock ?? browserClock;
-    this.anchorMs = this.fallbackClock.now();
-    media.preload = "auto";
-    this.endedListener = () => {
-      this.anchorTimelineMs = (this.media.duration + this.offsetSeconds) * 1000;
-      this.anchorMs = this.fallbackClock.now();
-    };
-    media.addEventListener("ended", this.endedListener);
-  }
-
-  get muted(): boolean {
-    return this.media.muted;
-  }
-
-  get volume(): number {
-    return this.media.volume;
-  }
-
-  clearTimeout(handle: unknown): void {
-    this.fallbackClock.clearTimeout(handle);
-  }
-
-  now(): number {
-    if (!this.media.paused && !this.media.ended) {
-      return (this.media.currentTime + this.offsetSeconds) * 1000;
-    }
-    return this.anchorTimelineMs + (this.fallbackClock.now() - this.anchorMs);
-  }
-
-  setTimeout(callback: () => void, delayMs: number): unknown {
-    return this.fallbackClock.setTimeout(callback, delayMs);
-  }
-
-  async prime(): Promise<void> {
-    if (this.disposed) {
-      return;
-    }
-    const timelineSeconds = this.now() / 1000;
-    const anchorTimelineMs = this.anchorTimelineMs;
-    const anchorMs = this.anchorMs;
-    const expectedMediaTime = Math.max(0, timelineSeconds - this.offsetSeconds);
-    if (Number.isFinite(this.media.duration)) {
-      this.media.currentTime = Math.min(expectedMediaTime, this.media.duration);
-    } else {
-      this.media.currentTime = expectedMediaTime;
-    }
-    await this.media.play();
-    this.media.pause();
-    this.anchorTimelineMs = anchorTimelineMs;
-    this.anchorMs = anchorMs;
-  }
-
-  seek(timeSeconds: number): void {
-    this.anchorTimelineMs = timeSeconds * 1000;
-    this.anchorMs = this.fallbackClock.now();
-    this.media.currentTime = Math.max(0, timeSeconds - this.offsetSeconds);
-  }
-
-  synchronise(timeSeconds: number, shouldPlay: boolean): void {
-    if (this.disposed) {
-      return;
-    }
-    const expectedMediaTime = timeSeconds - this.offsetSeconds;
-    if (expectedMediaTime >= 0 && Number.isFinite(this.media.duration)) {
-      if (Math.abs(this.media.currentTime - expectedMediaTime) > 0.15) {
-        this.media.currentTime = Math.min(expectedMediaTime, this.media.duration);
-      }
-    }
-    this.anchorTimelineMs = timeSeconds * 1000;
-    this.anchorMs = this.fallbackClock.now();
-    if (shouldPlay && this.inMediaRange(timeSeconds)) {
-      void this.media.play().catch(() => {
-        this.captureAndPause();
-      });
-    } else {
-      this.captureAndPause();
-    }
-  }
-
-  setMuted(muted: boolean): void {
-    this.media.muted = muted;
-  }
-
-  setVolume(volume: number): void {
-    this.media.volume = volume;
-  }
-
-  dispose(): void {
-    if (this.disposed) {
-      return;
-    }
-    this.disposed = true;
-    this.captureAndPause();
-    this.media.removeEventListener("ended", this.endedListener);
-    this.media.src = "";
-  }
-
-  private captureAndPause(): void {
-    if (!this.media.paused) {
-      this.anchorTimelineMs = (this.media.currentTime + this.offsetSeconds) * 1000;
-      this.anchorMs = this.fallbackClock.now();
-      this.media.pause();
-    }
-  }
-
-  private inMediaRange(timelineSeconds: number): boolean {
-    const mediaTime = timelineSeconds - this.offsetSeconds;
-    return (
-      mediaTime >= 0 &&
-      (!Number.isFinite(this.media.duration) || mediaTime < this.media.duration)
-    );
-  }
-}
-
 const browserClock: PlaybackClock = {
   clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
   now: performanceNow,
@@ -637,8 +581,9 @@ function defaultAudioElementFactory(
       "This manifest has audio, but no audioElementFactory was supplied outside a browser.",
     );
   }
-  const audio = new Audio(track.url);
+  const audio = new Audio();
   audio.crossOrigin = "anonymous";
+  audio.src = track.url;
   return audio;
 }
 

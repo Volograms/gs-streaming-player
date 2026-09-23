@@ -81,7 +81,10 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
         adapterRef.current = result.adapter;
         setQualityOptions(collectShowcaseQualityOptions(result.player.sequence));
         setBackend(result.backend);
-        unsubscribe = result.player.subscribe((next) => setSnapshot({ ...next }));
+        unsubscribe = result.player.subscribe((next) => {
+          setSnapshot({ ...next });
+          if (next.error !== undefined) setError(describeShowcaseError(next.error));
+        });
         const support = await result.adapter.getXrSupportInfo();
         if (!active) return;
         setXrAvailable(support.available);
@@ -111,7 +114,12 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
     const player = playerRef.current;
     if (player === undefined) return;
     if (player.snapshot.isPlaying) player.pause();
-    else void player.play().catch((caught) => setError(describeShowcaseError(caught)));
+    else {
+      setError(undefined);
+      void player.play().catch((caught) => {
+        if (playerRef.current === player) setError(describeShowcaseError(caught));
+      });
+    }
   }, []);
 
   const seek = useCallback((time: number) => {
@@ -119,7 +127,13 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
     if (player === undefined) return;
     void player
       .seek(Math.min(Math.max(0, time), player.snapshot.durationSeconds))
-      .catch((caught) => setError(describeShowcaseError(caught)));
+      .then(() => {
+        if (playerRef.current === player && player.snapshot.error === undefined)
+          setError(undefined);
+      })
+      .catch((caught) => {
+        if (playerRef.current === player) setError(describeShowcaseError(caught));
+      });
   }, []);
 
   async function toggleXr() {
