@@ -93,7 +93,10 @@ Each dynamic sequence declares its own `frameRate`, `frameCount`, and `frames`. 
   calculates each timestamp as `frameIndex / sequence.frameRate`, starting at zero.
   Fractional rates such as `29.97` are supported without rounding the derived values.
 - When `regularTiming` is false or absent, every frame must have a non-negative
-  `timestampSeconds`. This supports irregular intervals and nonzero starting times.
+  `timestampSeconds`. This supports irregular intervals and nonzero first timestamps.
+  Playback starts at timeline zero, holding frame 0 until the next frame's timestamp (or
+  the sequence end for a single frame). The leading interval remains seekable and
+  repeats when looping; audio retains its position on the full timeline.
 - A frame's `url` may be omitted when its minimum playable quality level has a URL,
   falling back to the first quality level's URL. An explicit frame URL takes precedence.
 

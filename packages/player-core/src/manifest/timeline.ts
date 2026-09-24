@@ -1,5 +1,17 @@
 import type { DynamicGaussianSequence } from "./types.js";
 
+/** Frame zero covers the leading interval from timeline zero in every cycle. */
+export function framePlaybackStartSeconds(
+  sequence: Readonly<DynamicGaussianSequence>,
+  frameIndex: number,
+): number {
+  const timestamp = sequence.frames[frameIndex]?.timestampSeconds;
+  if (timestamp === undefined) {
+    throw new RangeError("Frame timestamp is unavailable for timeline scheduling.");
+  }
+  return frameIndex === 0 ? 0 : timestamp;
+}
+
 /** Effective duration for one selected dynamic sequence on the manifest timeline. */
 export function sequencePlaybackDurationSeconds(
   sequence: Readonly<DynamicGaussianSequence>,
@@ -20,11 +32,8 @@ export function forwardFrameDelaySeconds(
   loop: boolean,
   durationSeconds = sequencePlaybackDurationSeconds(sequence),
 ): number {
-  const fromTimestamp = sequence.frames[fromFrameIndex]?.timestampSeconds;
-  const toTimestamp = sequence.frames[toFrameIndex]?.timestampSeconds;
-  if (fromTimestamp === undefined || toTimestamp === undefined) {
-    throw new RangeError("Frame timestamp is unavailable for timeline scheduling.");
-  }
+  const fromTimestamp = framePlaybackStartSeconds(sequence, fromFrameIndex);
+  const toTimestamp = framePlaybackStartSeconds(sequence, toFrameIndex);
   if (toFrameIndex >= fromFrameIndex) {
     return Math.max(0, toTimestamp - fromTimestamp);
   }

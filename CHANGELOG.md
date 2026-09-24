@@ -285,6 +285,9 @@ All notable changes to this project will be documented here. The project uses
 
 ### Fixed
 
+- Preserve timeline zero for sequences with a nonzero first frame timestamp. Hold frame
+  0 through the leading interval, including seeks and loops, and keep audio, buffered
+  duration, and frame preparation deadlines aligned with that timeline.
 - Vitest now resolves every internal workspace package directly from source, so clean CI
   checkouts can run unit tests before package build artifacts exist.
 - PlayCanvas transform tests now supply their entity's required application context,

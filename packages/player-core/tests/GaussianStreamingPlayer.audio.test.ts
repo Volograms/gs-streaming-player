@@ -308,6 +308,52 @@ async function harness(
 }
 
 describe("GaussianStreamingPlayer audio integration", () => {
+  it("preserves leading audio before a nonzero first timestamp, including loops", async () => {
+    const { audio, clock, player, presentations } = await harness({
+      frameRate: 10,
+      loop: true,
+      timestamps: [0.2, 0.4],
+    });
+
+    expect(player.snapshot.currentTimeSeconds).toBe(0);
+    expect(audio.currentTime).toBe(0);
+    await player.play();
+    await clock.advanceTo(201);
+    expect(audio.paused).toBe(false);
+    expect(audio.currentTime).toBeCloseTo(0.201);
+    expect(presentations).toEqual([{ atMs: 0, frameIndex: 0 }]);
+
+    await clock.advanceTo(501);
+    expect(presentations.map(({ frameIndex }) => frameIndex)).toEqual([0, 1, 0]);
+    expect(presentations.at(-1)?.atMs).toBeCloseTo(500);
+    expect(player.snapshot.currentFrameIndex).toBe(0);
+    expect(audio.currentTime).toBeCloseTo(0.001);
+    expect(audio.paused).toBe(false);
+  });
+
+  it("keeps audio aligned when seeking or stepping back into the leading interval", async () => {
+    const { audio, player } = await harness({ timestamps: [0.2, 0.4] });
+
+    await player.seek(0.4);
+    await player.seek(0.1);
+    expect(player.snapshot).toMatchObject({
+      currentFrameIndex: 0,
+      currentTimeSeconds: 0.1,
+      lifecycle: "PAUSED",
+    });
+    expect(audio.currentTime).toBeCloseTo(0.1);
+
+    await player.seek(0);
+    expect(player.snapshot.currentTimeSeconds).toBe(0);
+    expect(audio.currentTime).toBe(0);
+
+    await player.stepFrames(1);
+    expect(audio.currentTime).toBeCloseTo(0.4);
+    await player.stepFrames(-1);
+    expect(player.snapshot.currentTimeSeconds).toBe(0);
+    expect(audio.currentTime).toBe(0);
+  });
+
   it.each([25, 30])(
     "keeps %i fps presentation cadence across successive audio loops",
     async (frameRate) => {

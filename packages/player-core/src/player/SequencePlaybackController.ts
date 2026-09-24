@@ -1,5 +1,6 @@
 import {
   forwardFrameDelaySeconds,
+  framePlaybackStartSeconds,
   sequencePlaybackDurationSeconds,
 } from "../manifest/timeline.js";
 
@@ -121,8 +122,10 @@ export class SequencePlaybackController {
         "durationSeconds must be positive and include the final frame timestamp.",
       );
     }
-    this.timelinePositionSeconds =
-      this.sequence.frames[this.currentFrameIndexValue]?.timestampSeconds ?? 0;
+    this.timelinePositionSeconds = framePlaybackStartSeconds(
+      this.sequence,
+      this.currentFrameIndexValue,
+    );
     if (
       !Number.isInteger(this.minimumReadyFrames) ||
       this.minimumReadyFrames < 0 ||
@@ -191,7 +194,7 @@ export class SequencePlaybackController {
     this.assertNotDisposed();
     const frameIndex = this.normaliseFrameIndex(requestedFrameIndex);
     const requestedTime =
-      timeSeconds ?? this.sequence.frames[frameIndex]?.timestampSeconds ?? 0;
+      timeSeconds ?? framePlaybackStartSeconds(this.sequence, frameIndex);
     this.validateSeekTime(frameIndex, requestedTime);
     this.desiredPlaying = false;
     const revision = this.beginOperation();
@@ -408,8 +411,10 @@ export class SequencePlaybackController {
       );
       previousFrameIndex = frameIndex;
     }
-    const currentFrameTime =
-      this.sequence.frames[this.currentFrameIndexValue]?.timestampSeconds ?? 0;
+    const currentFrameTime = framePlaybackStartSeconds(
+      this.sequence,
+      this.currentFrameIndexValue,
+    );
     const elapsedInCurrentFrame = Math.max(
       0,
       this.currentTimeSeconds() - currentFrameTime,
@@ -430,7 +435,7 @@ export class SequencePlaybackController {
 
   private timelineForOrdinal(ordinal: number): number {
     const frameIndex = this.frameIndexForOrdinal(ordinal);
-    const timestamp = this.sequence.frames[frameIndex]?.timestampSeconds ?? 0;
+    const timestamp = framePlaybackStartSeconds(this.sequence, frameIndex);
     if (!this.loop) {
       return timestamp;
     }
@@ -459,7 +464,7 @@ export class SequencePlaybackController {
     let selected = -1;
     while (lower <= upper) {
       const middle = Math.floor((lower + upper) / 2);
-      const timestamp = this.sequence.frames[middle]?.timestampSeconds ?? 0;
+      const timestamp = framePlaybackStartSeconds(this.sequence, middle);
       if (timestamp <= timelineSeconds) {
         selected = middle;
         lower = middle + 1;
@@ -498,7 +503,7 @@ export class SequencePlaybackController {
     ) {
       throw new RangeError("Seek time must be within the sequence duration.");
     }
-    const frameStart = this.sequence.frames[frameIndex]?.timestampSeconds ?? 0;
+    const frameStart = framePlaybackStartSeconds(this.sequence, frameIndex);
     const frameEnd =
       this.sequence.frames[frameIndex + 1]?.timestampSeconds ?? this.durationSeconds;
     if (timeSeconds < frameStart || timeSeconds > frameEnd) {

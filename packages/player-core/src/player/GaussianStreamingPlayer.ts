@@ -408,7 +408,7 @@ export class GaussianStreamingPlayer {
     this.playback.pause();
     await this.playback.step(delta);
     if (!this.disposed && revision === this.operationRevision) {
-      this.audioClock?.seek(this.frameTime(this.playback.snapshot.currentFrameIndex));
+      this.audioClock?.seek(this.playback.snapshot.currentTimeSeconds);
     }
   }
 
@@ -618,10 +618,6 @@ export class GaussianStreamingPlayer {
       selected = frame.frameIndex;
     }
     return selected;
-  }
-
-  private frameTime(frameIndex: number): number {
-    return this.sequence.frames[frameIndex]?.timestampSeconds ?? 0;
   }
 
   private emit(): void {
