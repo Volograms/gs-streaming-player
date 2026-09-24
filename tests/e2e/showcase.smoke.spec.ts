@@ -7,7 +7,7 @@ test("showcase landing and manifest picker are usable without bundled content", 
 }) => {
   await page.goto(`${showcaseUrl}/#/`);
   await expect(
-    page.getByRole("heading", { name: /stream volumetric moments/i }),
+    page.getByRole("heading", { name: /volumetric video.*built for the web/i }),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: /open the player/i })).toBeVisible();
 

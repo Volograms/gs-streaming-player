@@ -36,6 +36,41 @@ must be trusted on the device; accepting an untrusted page warning is not equiva
 a secure context for WebXR. The committed HTTPS mode enables XR and binds to `0.0.0.0`,
 while `.env.local` continues to supply the external dataset path and manifest URL.
 
+### A separate server or VPN address
+
+The repository includes the `dev:showcase:https` startup command, but certificate
+generation uses `mkcert` directly. Both `.cert/` and `apps/showcase/.env.local` are
+ignored by Git: configure them separately on the server.
+
+Include every hostname or IP used in the browser in the certificate. A certificate for
+`localhost` alone does not cover the server's VPN IP. On a development machine where you
+use the browser, run the following from the repository root, replacing
+`SERVER_VPN_IP_OR_HOSTNAME` with the actual address:
+
+```powershell
+mkcert -install
+New-Item -ItemType Directory -Force .cert
+mkcert -key-file .cert/localhost-key.pem -cert-file .cert/localhost-cert.pem localhost 127.0.0.1 ::1 SERVER_VPN_IP_OR_HOSTNAME
+```
+
+This replaces the development certificate pair; include any existing LAN addresses you
+still need in the same command. Copy the resulting `localhost-cert.pem` and
+`localhost-key.pem` securely into the server checkout's `.cert/` directory, then run:
+
+```bash
+pnpm dev:showcase:https
+```
+
+Open `https://SERVER_VPN_IP_OR_HOSTNAME:4180/`. The certificate was issued by the CA
+trusted on your development machine. If you generate the certificate on the server
+instead, each browser device must trust that server's issuing CA: its public
+`rootCA.pem` is in the directory reported by `mkcert -CAROOT`. The CA private key,
+`rootCA-key.pem`, stays on the issuing machine. See
+[mkcert's instructions for installing the CA on other systems](https://github.com/FiloSottile/mkcert#installing-the-ca-on-other-systems).
+
+The HTTPS mode already selects `VITE_HOST=0.0.0.0`. The server's VPN/network policy must
+also permit access to TCP port 4180.
+
 ## Native WebGPU WebXR on Quest Browser 146+
 
 Native WebGPU-backed immersive XR is experimental and is not enabled by the Quest

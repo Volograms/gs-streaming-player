@@ -7,6 +7,10 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Redesign the showcase landing page with a restrained dark palette, clearer content
+  hierarchy, a generated volumetric illustration, responsive layouts, a semantic support
+  table, and a copyable dataset build command. Document HTTPS setup for a separate
+  server reached through a VPN.
 - Emit compact manifest `1.1` JSON with shared sequence codec and quality defaults,
   implicit frame indices and fallback URLs, and optional regular timing derived from
   FPS. Keep `1.0` readable and add `gs-manifest convert-manifest` to upgrade existing
