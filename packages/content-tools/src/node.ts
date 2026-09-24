@@ -2,6 +2,10 @@ export {
   countManifestFrames,
   validateManifestFile,
 } from "./validate-manifest/validateManifestFile.js";
+export {
+  convertManifest,
+  type ConvertManifestRequest,
+} from "./convert-manifest/convertManifest.js";
 export type {
   ManifestFileIssue,
   ManifestFileIssueCode,

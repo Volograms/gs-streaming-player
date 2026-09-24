@@ -11,7 +11,7 @@ import {
 } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
-import { assertValidManifest } from "@6g-path/gaussian-player";
+import { assertValidManifest, compactManifest } from "@6g-path/gaussian-player";
 
 import { generateDynamicTiers } from "../dynamic-tiers/generateDynamicTiers.js";
 import { exportStreamedSog } from "../sog/exportStreamedSog.js";
@@ -71,6 +71,7 @@ export interface DatasetBuildConfiguration {
     maxSh?: number;
     minimumPlayable?: string;
     outputFormat?: DynamicTierOutputFormat;
+    regularTiming?: boolean;
     tiers?: Record<string, number>;
     transform?: DatasetBuildTransform;
   };
@@ -256,7 +257,7 @@ export async function buildDataset(
     );
     await writeFile(
       join(stagingDir, "manifest.json"),
-      `${JSON.stringify(manifest, null, 2)}\n`,
+      `${JSON.stringify(compactManifest(manifest, { regularTiming: configuration.dynamic.regularTiming ?? true }))}\n`,
     );
     await mkdir(dirname(outputDir), { recursive: true });
     await promoteStagedDataset(stagingDir, outputDir);
@@ -352,7 +353,7 @@ function createManifest(
         url: `static/${encodeURIComponent(object.id)}/lod-meta.json`,
       };
     }),
-    version: "1.0",
+    version: "1.1",
   });
 }
 
@@ -368,6 +369,12 @@ function parseConfiguration(value: unknown): DatasetBuildConfiguration {
   }
   if (!isRecord(value.dynamic)) {
     throw new Error("Dataset config dynamic section is required.");
+  }
+  if (
+    value.dynamic.regularTiming !== undefined &&
+    typeof value.dynamic.regularTiming !== "boolean"
+  ) {
+    throw new Error("Dynamic regularTiming must be a boolean.");
   }
   if (typeof value.dynamic.id !== "string" || value.dynamic.id.trim() === "") {
     throw new Error("Dynamic id must be a non-empty string.");

@@ -24,13 +24,16 @@ declare global {
 const showcaseUrl = `http://127.0.0.1:${process.env.PLAYWRIGHT_SHOWCASE_PORT ?? "4180"}`;
 const sourceUrl = `/@fs/${fileURLToPath(new URL("../../packages/player-core/src/index.ts", import.meta.url)).replaceAll("\\", "/")}`;
 
-for (const frameRate of [25, 30]) {
-  test(`native browser audio loops, pauses, and seeks at ${frameRate} fps`, async ({
+for (const { frameRate, manifestVersion } of [
+  { frameRate: 25, manifestVersion: "1.0" },
+  { frameRate: 30, manifestVersion: "1.1" },
+]) {
+  test(`native browser audio loops, pauses, and seeks at ${frameRate} fps (manifest ${manifestVersion})`, async ({
     page,
   }) => {
     await page.goto(`${showcaseUrl}/#/demo`);
     await page.evaluate(
-      async ({ frameRate, sourceUrl }) => {
+      async ({ frameRate, manifestVersion, sourceUrl }) => {
         const { GaussianStreamingPlayer } = (await import(
           sourceUrl
         )) as typeof import("../../packages/player-core/src/index.js");
@@ -109,7 +112,7 @@ for (const frameRate of [25, 30]) {
           loop: true,
           renderer,
           manifest: {
-            version: "1.0",
+            version: manifestVersion,
             id: "browser-audio",
             frameRate,
             frameCount,
@@ -121,9 +124,14 @@ for (const frameRate of [25, 30]) {
                 id: "actor",
                 frameRate,
                 frameCount,
+                ...(manifestVersion === "1.1" ? { regularTiming: true } : {}),
                 frames: Array.from({ length: frameCount }, (_, frameIndex) => ({
-                  frameIndex,
-                  timestampSeconds: frameIndex / frameRate,
+                  ...(manifestVersion === "1.1"
+                    ? {}
+                    : {
+                        frameIndex,
+                        timestampSeconds: frameIndex / frameRate,
+                      }),
                   url: `frames/${frameIndex}.sog`,
                 })),
               },
@@ -143,7 +151,7 @@ for (const frameRate of [25, 30]) {
         };
         document.body.append(button);
       },
-      { frameRate, sourceUrl },
+      { frameRate, manifestVersion, sourceUrl },
     );
 
     await page.getByRole("button", { name: "Start audio regression" }).click();

@@ -7,6 +7,11 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Emit compact manifest `1.1` JSON with shared sequence codec and quality defaults,
+  implicit frame indices and fallback URLs, and optional regular timing derived from
+  FPS. Keep `1.0` readable and add `gs-manifest convert-manifest` to upgrade existing
+  datasets without encoding assets again, preserving irregular timing and measured
+  per-frame data.
 - Load workspace source aliases explicitly in `gs-content` and `gs-manifest` so content
   preparation works without previously built package `dist` files.
 - Generate compressed prefetch requests lazily so long sequences are inspected only

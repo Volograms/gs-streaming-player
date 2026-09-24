@@ -37,6 +37,10 @@ used during day-to-day implementation.
   before the first public release.
 - The manifest's TypeBox definition is the source of truth; the committed JSON Schema is
   generated from it and protected by a synchronisation test.
+- Manifest `1.1` remains a single JSON file, with shared sequence codec/quality defaults
+  and a `regularTiming` boolean for deriving timestamps from FPS. Loaders expand these
+  shortcuts into explicit runtime frames and continue accepting `1.0`. Existing datasets
+  can be converted without re-encoding; segmented indexes are deferred.
 - Manifest diagnostics identify fields using JSON Pointer paths. Referenced-asset checks
   are opt-in so structural and semantic validation does not require local media assets.
 - The initial concrete renderer baseline is Spark 2.1.0 with Three.js 0.180.0.

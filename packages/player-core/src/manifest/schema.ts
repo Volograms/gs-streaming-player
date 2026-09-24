@@ -1,6 +1,8 @@
 import Type from "typebox";
 
-export const GAUSSIAN_SEQUENCE_MANIFEST_VERSION = "1.0" as const;
+export const GAUSSIAN_SEQUENCE_MANIFEST_VERSION = "1.1" as const;
+export const GAUSSIAN_SEQUENCE_MANIFEST_SCHEMA_ID =
+  "https://6g-path.eu/schemas/gaussian-sequence-manifest-1.1.json";
 
 const NonEmptyStringSchema = Type.String({ minLength: 1 });
 const NonNegativeIntegerSchema = Type.Integer({ minimum: 0 });
@@ -130,10 +132,10 @@ export const MediaTrackSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const GaussianSequenceManifestSchema = Type.Object(
+export const LegacyGaussianSequenceManifestSchema = Type.Object(
   {
     $schema: Type.Optional(NonEmptyStringSchema),
-    version: Type.Literal(GAUSSIAN_SEQUENCE_MANIFEST_VERSION),
+    version: Type.Literal("1.0"),
     id: NonEmptyStringSchema,
     durationSeconds: PositiveNumberSchema,
     frameRate: PositiveNumberSchema,
@@ -152,12 +154,76 @@ export const GaussianSequenceManifestSchema = Type.Object(
   },
 );
 
+/** Values shared by matching quality levels; assets and measured sizes stay per frame. */
+export const GaussianQualityDefaultsSchema = Type.Pick(GaussianQualityLevelSchema, [
+  "level",
+  "codec",
+  "detailLevel",
+  "minimumPlayable",
+  "metadata",
+]);
+
+export const CompactGaussianFrameSourceSchema = Type.Object(
+  {
+    ...GaussianFrameSourceSchema.properties,
+    frameIndex: Type.Optional(NonNegativeIntegerSchema),
+    timestampSeconds: Type.Optional(NonNegativeNumberSchema),
+    url: Type.Optional(NonEmptyStringSchema),
+  },
+  { additionalProperties: false },
+);
+
+export const CompactDynamicGaussianSequenceSchema = Type.Object(
+  {
+    ...DynamicGaussianSequenceSchema.properties,
+    codec: Type.Optional(NonEmptyStringSchema),
+    regularTiming: Type.Optional(Type.Boolean()),
+    qualityDefaults: Type.Optional(Type.Array(GaussianQualityDefaultsSchema)),
+    frames: Type.Array(CompactGaussianFrameSourceSchema, { minItems: 1 }),
+  },
+  { additionalProperties: false },
+);
+
+export const CompactGaussianSequenceManifestSchema = Type.Object(
+  {
+    ...LegacyGaussianSequenceManifestSchema.properties,
+    version: Type.Literal(GAUSSIAN_SEQUENCE_MANIFEST_VERSION),
+    dynamicSequences: Type.Array(CompactDynamicGaussianSequenceSchema, { minItems: 1 }),
+  },
+  { additionalProperties: false },
+);
+
+/** The on-disk contract accepts both legacy and compact documents. */
+export const GaussianSequenceManifestSchema = Type.Union(
+  [LegacyGaussianSequenceManifestSchema, CompactGaussianSequenceManifestSchema],
+  {
+    $id: GAUSSIAN_SEQUENCE_MANIFEST_SCHEMA_ID,
+    $schema: "http://json-schema.org/draft-07/schema#",
+    title: "Adaptive Gaussian Splat Sequence Manifest",
+  },
+);
+
 export type GaussianQualityLevel = Type.Static<typeof GaussianQualityLevelSchema>;
 export type GaussianFrameSource = Type.Static<typeof GaussianFrameSourceSchema>;
 export type StaticSceneObject = Type.Static<typeof StaticSceneObjectSchema>;
 export type DynamicGaussianSequence = Type.Static<typeof DynamicGaussianSequenceSchema>;
 export type MeshSceneObject = Type.Static<typeof MeshSceneObjectSchema>;
 export type MediaTrack = Type.Static<typeof MediaTrackSchema>;
-export type GaussianSequenceManifest = Type.Static<
+export type GaussianQualityDefaults = Type.Static<typeof GaussianQualityDefaultsSchema>;
+export type CompactGaussianFrameSource = Type.Static<
+  typeof CompactGaussianFrameSourceSchema
+>;
+export type CompactDynamicGaussianSequence = Type.Static<
+  typeof CompactDynamicGaussianSequenceSchema
+>;
+export type CompactGaussianSequenceManifest = Type.Static<
+  typeof CompactGaussianSequenceManifestSchema
+>;
+export type GaussianSequenceManifestDocument = Type.Static<
   typeof GaussianSequenceManifestSchema
 >;
+/** Expanded runtime shape: indices, timestamps and fallback URLs are always explicit. */
+export type GaussianSequenceManifest = Omit<
+  Type.Static<typeof LegacyGaussianSequenceManifestSchema>,
+  "version"
+> & { version: "1.0" | "1.1" };

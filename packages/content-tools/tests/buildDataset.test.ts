@@ -2,6 +2,7 @@ import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { assertValidManifest } from "@6g-path/gaussian-player";
 import { describe, expect, it, vi } from "vitest";
 
 import { buildDataset } from "../src/build-dataset/buildDataset.js";
@@ -21,7 +22,7 @@ function createIo() {
   };
 }
 
-async function fixture(outputFormat: "sog" | "spz" = "sog") {
+async function fixture(outputFormat: "sog" | "spz" = "sog", regularTiming?: boolean) {
   const root = await mkdtemp(join(tmpdir(), "gs-content-build-"));
   const inputDir = join(root, "inputs");
   await mkdir(inputDir);
@@ -35,6 +36,7 @@ async function fixture(outputFormat: "sog" | "spz" = "sog") {
     JSON.stringify({
       audio: { contentType: "audio/ogg", input: "inputs/track.ogg" },
       dynamic: {
+        ...(regularTiming === undefined ? {} : { regularTiming }),
         frameWorkers: 2,
         frames: ["inputs/frame0001.ply", "inputs/frame0002.spz"],
         id: "actor",
@@ -358,32 +360,15 @@ describe("buildDataset", () => {
         tiers: { minimum: 0.25, full: 1 },
       }),
     ]);
-    const manifest = JSON.parse(
-      await readFile(join(input.outputDir, "manifest.json"), "utf8"),
-    ) as {
-      audio: { url: string };
-      dynamicSequences: Array<{
-        frames: Array<{
-          codec: string;
-          qualityLevels: Array<{ byteSize: number }>;
-          url: string;
-        }>;
-        transform: {
-          position: { x: number; y: number; z: number };
-          rotation: { w: number; x: number; y: number; z: number };
-          scale: { x: number; y: number; z: number };
-        };
-      }>;
-      staticObjects: Array<{
-        transform: {
-          position: { x: number; y: number; z: number };
-          rotation: { w: number; x: number; y: number; z: number };
-          scale: { x: number; y: number; z: number };
-        };
-        url: string;
-      }>;
-    };
-    expect(manifest.audio.url).toBe("audio/track.ogg");
+    const json = await readFile(join(input.outputDir, "manifest.json"), "utf8");
+    const document: unknown = JSON.parse(json);
+    expect(json.trim().split("\n")).toHaveLength(1);
+    expect(document).toMatchObject({
+      version: "1.1",
+      dynamicSequences: [{ regularTiming: true, codec: "sog-v2" }],
+    });
+    const manifest = assertValidManifest(document);
+    expect(manifest.audio?.url).toBe("audio/track.ogg");
     expect(manifest.dynamicSequences[0]?.frames[0]).toMatchObject({
       codec: "sog-v2",
       qualityLevels: [{ byteSize: 101 }],
@@ -393,18 +378,18 @@ describe("buildDataset", () => {
       position: { x: 1, y: 0.25, z: -2 },
       scale: { x: 0.75, y: 0.75, z: 0.75 },
     });
-    expect(manifest.dynamicSequences[0]?.transform.rotation.x).toBeCloseTo(1);
-    expect(manifest.dynamicSequences[0]?.transform.rotation.w).toBeCloseTo(0);
+    expect(manifest.dynamicSequences[0]?.transform?.rotation?.x).toBeCloseTo(1);
+    expect(manifest.dynamicSequences[0]?.transform?.rotation?.w).toBeCloseTo(0);
     expect(manifest.staticObjects[0]?.url).toBe("static/room/lod-meta.json");
     expect(manifest.staticObjects[0]?.transform).toMatchObject({
       position: { x: 0, y: -1, z: 0 },
       scale: { x: 4, y: 4, z: 4 },
     });
-    expect(manifest.staticObjects[0]?.transform.rotation.x).toBeCloseTo(1);
+    expect(manifest.staticObjects[0]?.transform?.rotation?.x).toBeCloseTo(1);
   });
 
   it("emits an SPZ v4 manifest when dynamic.outputFormat is spz", async () => {
-    const input = await fixture("spz");
+    const input = await fixture("spz", false);
     const output = createIo();
     const exitCode = await buildDataset(
       { ...input, dryRun: false, force: false },
@@ -442,9 +427,18 @@ describe("buildDataset", () => {
     );
 
     expect(exitCode).toBe(0);
-    const manifest = JSON.parse(
+    const document: unknown = JSON.parse(
       await readFile(join(input.outputDir, "manifest.json"), "utf8"),
-    ) as { dynamicSequences: Array<{ frames: Array<{ codec: string }> }> };
+    );
+    expect(document).toMatchObject({
+      dynamicSequences: [
+        {
+          regularTiming: false,
+          frames: [{ timestampSeconds: 0 }, { timestampSeconds: 1 / 30 }],
+        },
+      ],
+    });
+    const manifest = assertValidManifest(document);
     expect(manifest.dynamicSequences[0]?.frames[0]?.codec).toBe("spz-v4");
   });
 

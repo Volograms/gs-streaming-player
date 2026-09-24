@@ -1,4 +1,5 @@
 import { buildDataset } from "../build-dataset/buildDataset.js";
+import { runConvertManifestCli } from "../convert-manifest/runConvertManifestCli.js";
 import { generateDynamicTiers } from "../dynamic-tiers/generateDynamicTiers.js";
 import { runRadQualityCuts } from "../rad-cuts/runRadQualityCuts.js";
 import { convertQualityCutsToSog } from "../sog/convertQualityCutsToSog.js";
@@ -40,12 +41,16 @@ const USAGE = `Usage:
   pnpm gs-content build <dataset-config.json> --output-dir <dir> [--frame-workers <n>] [--max-workers <n>] [--dry-run] [--force]
   pnpm gs-content generate-tiers <frame.ply|frame.spz> [more ...] --output-dir <dir> [options]
   pnpm gs-manifest validate <manifest.json> [--check-assets]
+  pnpm gs-manifest convert-manifest <manifest.json> [--output <path>] [--regular-timing <true|false>] [--pretty] [--force]
   pnpm gs-content extract-rad-cuts <frame.rad> [more.rad ...] --output-dir <dir> [options] # legacy
   pnpm gs-content convert-sog <quality-cuts.json|scene.spz> --output-dir <dir> [options]
   pnpm gs-content export-sog-lod <scene.sog|source> --output-dir <dir> [options]
   pnpm gs-content repack-spz-v4 <quality-cuts.json> --output-dir <dir> --spz-tools-dir <dir> [--force]
 
 Options:
+  --regular-timing <true|false>
+                  Converter timing mode; omitted detects exact regular timing per sequence.
+  --pretty        Pretty-print converted JSON; default output is compact.
   --check-assets  Verify local files and remote URLs referenced by the manifest.
   --format <sog|spz>
                   Dynamic tier output format. Default: sog.
@@ -90,6 +95,7 @@ export async function runCli(
   }
 
   const command = args[0];
+  if (command === "convert-manifest") return runConvertManifestCli(args.slice(1), io);
   if (command === "build") {
     const request = parseBuildDatasetRequest(args.slice(1), io);
     if (request === undefined) {

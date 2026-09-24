@@ -1,8 +1,16 @@
 import Ajv from "ajv";
 
-import { GaussianSequenceManifestSchema } from "./schema.js";
+import { expandManifest } from "./expand.js";
+import {
+  CompactGaussianSequenceManifestSchema,
+  LegacyGaussianSequenceManifestSchema,
+} from "./schema.js";
 
-import type { GaussianQualityLevel, GaussianSequenceManifest } from "./schema.js";
+import type {
+  GaussianQualityLevel,
+  GaussianSequenceManifest,
+  GaussianSequenceManifestDocument,
+} from "./schema.js";
 import type { ErrorObject } from "ajv";
 
 export type ManifestValidationIssueCode =
@@ -39,11 +47,21 @@ const ajv = new Ajv({
   strict: true,
   strictTuples: false,
 });
-const validateSchema = ajv.compile<GaussianSequenceManifest>(
-  GaussianSequenceManifestSchema,
+const validateLegacySchema = ajv.compile<GaussianSequenceManifestDocument>(
+  LegacyGaussianSequenceManifestSchema,
+);
+const validateCompactSchema = ajv.compile<GaussianSequenceManifestDocument>(
+  CompactGaussianSequenceManifestSchema,
 );
 
 export function validateManifest(value: unknown): ManifestValidationResult {
+  const validateSchema =
+    typeof value === "object" &&
+    value !== null &&
+    "version" in value &&
+    value.version === "1.1"
+      ? validateCompactSchema
+      : validateLegacySchema;
   if (!validateSchema(value)) {
     return {
       valid: false,
@@ -51,12 +69,23 @@ export function validateManifest(value: unknown): ManifestValidationResult {
     };
   }
 
-  const issues = validateManifestSemantics(value);
+  const issues: ManifestValidationIssue[] = [];
+  if (value.version === "1.1") {
+    for (const [index, sequence] of value.dynamicSequences.entries()) {
+      validateQualityLevels(
+        sequence.qualityDefaults,
+        `/dynamicSequences/${index}/qualityDefaults`,
+        issues,
+      );
+    }
+  }
+  const manifest = expandManifest(value, issues);
+  if (issues.length === 0) issues.push(...validateManifestSemantics(manifest));
   if (issues.length > 0) {
     return { valid: false, issues };
   }
 
-  return { valid: true, manifest: value, issues: [] };
+  return { valid: true, manifest, issues: [] };
 }
 
 export function assertValidManifest(value: unknown): GaussianSequenceManifest {
@@ -149,7 +178,10 @@ function validateManifestSemantics(
         });
       }
 
-      if (frame.timestampSeconds > manifest.durationSeconds) {
+      if (
+        !Number.isFinite(frame.timestampSeconds) ||
+        frame.timestampSeconds > manifest.durationSeconds
+      ) {
         issues.push({
           code: "timestamp-range",
           message: `must not exceed durationSeconds (${manifest.durationSeconds})`,

@@ -219,8 +219,8 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
           </span>
           <h1 id="manifest-title">Open a 4DGS manifest</h1>
           <p>
-            Enter a version 1.0 manifest URL. Hosted datasets require HTTPS and CORS;
-            local development can use a path such as /manifest.json.
+            Enter a version 1.0 or 1.1 manifest URL. Hosted datasets require HTTPS and
+            CORS; local development can use a path such as /manifest.json.
           </p>
           <form onSubmit={submitManifest}>
             <label htmlFor="manifest-url">Manifest URL</label>
