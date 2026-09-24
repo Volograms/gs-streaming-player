@@ -1,3 +1,7 @@
+import {
+  forwardFrameDelaySeconds,
+  sequencePlaybackDurationSeconds,
+} from "../manifest/timeline.js";
 import { selectFrameTransferQuality } from "../quality/selectFrameTransferQuality.js";
 
 import { CompressedFrameCache } from "./CompressedFrameCache.js";
@@ -22,6 +26,7 @@ import type {
 import type {
   FramePresentationQuality,
   FrameQualityTarget,
+  FrameTransferQuality,
   GaussianRendererAdapter,
   PreparedFrame,
 } from "../renderer/types.js";
@@ -32,6 +37,8 @@ import type {
 import type { Transform } from "@6g-path/shared";
 
 interface FrameRecord {
+  retainTransferUntilPresented: boolean;
+  transferQuality?: FrameTransferQuality;
   controller: AbortController;
   downloadedBytes: number;
   deadlineMs: number;
@@ -53,6 +60,7 @@ export interface FrameRingBufferOptions extends FrameRingBufferConfiguration {
   compressedFrameFetch?: typeof fetch;
   /** Optional renderer-neutral codecs keyed by the frame source's codec identifier. */
   decoderRegistry?: GaussianFrameDecoderRegistry;
+  durationSeconds?: number;
   now?: () => number;
   onTrace?: FrameRingBufferTraceListener;
   presentationQualityTarget?: FrameQualityTarget;
@@ -78,11 +86,13 @@ export class FrameRingBuffer {
   private readonly onTrace: FrameRingBufferTraceListener | undefined;
   private readonly previousFrameCount: number;
   private presentationQualityTarget: FrameQualityTarget;
+  private preservePreparedFrames = false;
   private readonly records = new Map<number, FrameRecord>();
   private readonly renderer: GaussianRendererAdapter;
   private readonly sequence: DynamicGaussianSequence;
   private currentFrameIndexValue: number | undefined;
   private disposed = false;
+  private readonly durationSeconds: number;
   private presentationRequestRevision = 0;
   private transformRevision = 0;
   private transformValue: Transform | undefined;
@@ -92,6 +102,8 @@ export class FrameRingBuffer {
     this.renderer = options.renderer;
     this.decoderRegistry = options.decoderRegistry;
     this.sequence = options.sequence;
+    this.durationSeconds =
+      options.durationSeconds ?? sequencePlaybackDurationSeconds(options.sequence);
     this.transformValue = options.sequence.transform;
     this.futureFrameCount = options.futureFrameCount ?? 3;
     this.previousFrameCount = options.previousFrameCount ?? 1;
@@ -179,21 +191,38 @@ export class FrameRingBuffer {
     this.emit();
   }
 
-  setPresentationQualityTarget(target: FrameQualityTarget): void {
+  setPresentationQualityTarget(
+    target: FrameQualityTarget,
+    options: { preservePreparedFrames?: boolean } = {},
+  ): void {
     this.assertNotDisposed();
     this.validatePresentationQualityTarget(target);
     if (
+      (options.preservePreparedFrames ?? false) === this.preservePreparedFrames &&
       target.detailLevel === this.presentationQualityTarget.detailLevel &&
       target.minimumSplatCount === this.presentationQualityTarget.minimumSplatCount
     ) {
       return;
     }
     this.presentationQualityTarget = { ...target };
+    this.preservePreparedFrames = options.preservePreparedFrames ?? false;
     for (const [frameIndex, record] of [...this.records]) {
       const selectedTransfer = selectFrameTransferQuality(
         record.source,
         target.detailLevel,
       );
+      if (
+        this.preservePreparedFrames &&
+        selectedTransfer !== undefined &&
+        selectedTransfer.source.url !== record.preparedSource.url &&
+        record.preparedFrame !== undefined
+      ) {
+        // Consume this usable representation once; new window entries use the new tier.
+        record.retainTransferUntilPresented =
+          frameIndex !== this.currentFrameIndexValue;
+        continue;
+      }
+      record.retainTransferUntilPresented = false;
       if (
         selectedTransfer !== undefined &&
         selectedTransfer.source.url !== record.preparedSource.url &&
@@ -336,6 +365,7 @@ export class FrameRingBuffer {
       throw this.presentationAbortError();
     }
     const record = this.requireRecord(frameIndex);
+    record.retainTransferUntilPresented = false;
     record.status = "presented";
     record.targetQualityLevel = this.presentationQualityTarget.detailLevel;
     this.currentFrameIndexValue = frameIndex;
@@ -371,7 +401,7 @@ export class FrameRingBuffer {
     }
     const quality = this.renderer.getFramePresentationQuality(record.preparedFrame);
     this.applyQualitySnapshot(record, quality);
-    if (this.meetsPresentationTarget(quality)) {
+    if (this.meetsPresentationTarget(quality, record)) {
       return true;
     }
     if (record.refinement === undefined) {
@@ -480,11 +510,13 @@ export class FrameRingBuffer {
     const baseRequestedAtMs = this.now();
     const requestedTransform = this.transformValue;
     const requestedTransformRevision = this.transformRevision;
-    const temporalDistance = this.temporalDistance(frameIndex);
     const record = {} as FrameRecord;
+    record.retainTransferUntilPresented = false;
+    if (selectedTransfer !== undefined)
+      record.transferQuality = selectedTransfer.quality;
     record.controller = controller;
     record.deadlineMs =
-      baseRequestedAtMs + (temporalDistance / this.sequence.frameRate) * 1000;
+      baseRequestedAtMs + this.preparationDelaySeconds(frameIndex) * 1000;
     record.downloadedBytes = 0;
     record.qualityLevel = -1;
     record.refinementEnabled = false;
@@ -709,7 +741,7 @@ export class FrameRingBuffer {
 
   private reconcileWindow(frameIndex: number, preservedFrameIndex?: number): void {
     this.windowFrameIndexValue = frameIndex;
-    this.updateCompressedPrefetchPlan(frameIndex);
+    this.compressedFrameCache?.setPlan(this.compressedPrefetchRequests(frameIndex));
     const desired = this.desiredFrameIndices(frameIndex);
     if (preservedFrameIndex !== undefined) {
       desired.add(preservedFrameIndex);
@@ -718,6 +750,7 @@ export class FrameRingBuffer {
     for (const [bufferedFrameIndex, record] of [...this.records]) {
       if (
         bufferedFrameIndex !== this.currentFrameIndexValue &&
+        !record.retainTransferUntilPresented &&
         this.selectedTransferUrl(record.source) !== record.preparedSource.url
       ) {
         record.controller.abort();
@@ -746,12 +779,17 @@ export class FrameRingBuffer {
         continue;
       }
       const forwardDistance = this.forwardDistanceFrom(frameIndex, bufferedFrameIndex);
-      const deadlineDistance =
-        forwardDistance >= 0 && forwardDistance <= this.futureFrameCount
-          ? forwardDistance
-          : 0;
       record.deadlineMs =
-        this.now() + (deadlineDistance / this.sequence.frameRate) * 1000;
+        this.now() +
+        (forwardDistance >= 0 && forwardDistance <= this.futureFrameCount
+          ? forwardFrameDelaySeconds(
+              this.sequence,
+              frameIndex,
+              bufferedFrameIndex,
+              this.loop,
+              this.durationSeconds,
+            ) * 1000
+          : 0);
     }
     this.basePreparationScheduler.reprioritise();
     this.applyRefinementPolicies();
@@ -772,11 +810,9 @@ export class FrameRingBuffer {
     );
   }
 
-  private updateCompressedPrefetchPlan(frameIndex: number): void {
-    if (this.compressedFrameCache === undefined) {
-      return;
-    }
-    const requests: CompressedFrameRequest[] = [];
+  private *compressedPrefetchRequests(
+    frameIndex: number,
+  ): Generator<CompressedFrameRequest> {
     for (let offset = 0; offset < this.sequence.frameCount; offset += 1) {
       const requestedFrameIndex = this.offsetFrameIndex(frameIndex, offset);
       if (requestedFrameIndex === undefined) {
@@ -790,13 +826,20 @@ export class FrameRingBuffer {
         source,
         this.presentationQualityTarget.detailLevel,
       );
-      const preparedSource = selectedTransfer?.source ?? source;
+      const retained = this.records.get(requestedFrameIndex);
+      const preparedSource =
+        retained?.preparedFrame !== undefined &&
+        (retained.retainTransferUntilPresented ||
+          requestedFrameIndex === this.currentFrameIndexValue)
+          ? retained.preparedSource
+          : (selectedTransfer?.source ?? source);
       if (selectedTransfer === undefined && preparedSource.codec === undefined) {
-        continue;
+        // Native progressive frames manage their own reads. Stop at that boundary
+        // instead of scanning the remaining clip for a later compressed frame.
+        return;
       }
-      requests.push(this.toCompressedFrameRequest(requestedFrameIndex, preparedSource));
+      yield this.toCompressedFrameRequest(requestedFrameIndex, preparedSource);
     }
-    this.compressedFrameCache.setPlan(requests);
   }
 
   private toCompressedFrameRequest(
@@ -820,6 +863,7 @@ export class FrameRingBuffer {
             ? "compressed-cache-hit"
             : "compressed-fetch-failed";
     this.trace({
+      ...(event.fromCache === undefined ? {} : { fromCache: event.fromCache }),
       ...(event.bodyReadMs === undefined ? {} : { bodyReadMs: event.bodyReadMs }),
       ...(event.connectionReused === undefined
         ? {}
@@ -969,7 +1013,7 @@ export class FrameRingBuffer {
           return;
         }
         this.applyQualitySnapshot(record, quality);
-        if (!this.meetsPresentationTarget(quality)) {
+        if (!this.meetsPresentationTarget(quality, record)) {
           throw new Error(
             `Frame ${frameIndex} refinement completed below presentation quality.`,
           );
@@ -1027,7 +1071,7 @@ export class FrameRingBuffer {
       }
       const currentQuality = this.renderer.getFramePresentationQuality(preparedFrame);
       this.applyQualitySnapshot(record, currentQuality);
-      if (this.meetsPresentationTarget(currentQuality)) {
+      if (this.meetsPresentationTarget(currentQuality, record)) {
         if (frameIndex !== this.currentFrameIndexValue) {
           record.status = "ready";
         }
@@ -1044,7 +1088,7 @@ export class FrameRingBuffer {
       }
       const settledQuality = this.renderer.getFramePresentationQuality(preparedFrame);
       this.applyQualitySnapshot(record, settledQuality);
-      if (!this.meetsPresentationTarget(settledQuality)) {
+      if (!this.meetsPresentationTarget(settledQuality, record)) {
         // Refinement cancellation is expected when the rolling window or adaptive
         // quality target changes. A superseded refinement settles without making the
         // frame ready, so re-evaluate the current target and start/await its replacement.
@@ -1069,11 +1113,18 @@ export class FrameRingBuffer {
 
   private meetsPresentationTarget(
     quality: Readonly<FramePresentationQuality>,
+    record: FrameRecord,
   ): boolean {
+    const detail =
+      this.preservePreparedFrames && record.transferQuality?.mode === "fixed"
+        ? Math.min(
+            this.presentationQualityTarget.detailLevel,
+            record.transferQuality.detailLevel,
+          )
+        : this.presentationQualityTarget.detailLevel;
     return (
       quality.state === "presentable" &&
-      (quality.achievedDetailLevel ?? quality.detailLevel) >=
-        this.presentationQualityTarget.detailLevel &&
+      (quality.achievedDetailLevel ?? quality.detailLevel) >= detail &&
       (quality.selectedSplatCount ?? 0) >=
         this.presentationQualityTarget.minimumSplatCount
     );
@@ -1158,11 +1209,19 @@ export class FrameRingBuffer {
     return frameIndex;
   }
 
-  private temporalDistance(frameIndex: number): number {
-    if (this.currentFrameIndexValue === undefined) {
-      return frameIndex;
-    }
-    return this.forwardDistance(frameIndex);
+  private preparationDelaySeconds(frameIndex: number): number {
+    const anchorFrameIndex =
+      this.windowFrameIndexValue ?? this.currentFrameIndexValue ?? 0;
+    const forwardDistance = this.forwardDistanceFrom(anchorFrameIndex, frameIndex);
+    return forwardDistance >= 0 && forwardDistance <= this.futureFrameCount
+      ? forwardFrameDelaySeconds(
+          this.sequence,
+          anchorFrameIndex,
+          frameIndex,
+          this.loop,
+          this.durationSeconds,
+        )
+      : 0;
   }
 
   private preparationPriority(frameIndex: number): number {
@@ -1173,11 +1232,6 @@ export class FrameRingBuffer {
       return forwardDistance;
     }
     return 1_000 + Math.abs(frameIndex - anchorFrameIndex);
-  }
-
-  private forwardDistance(frameIndex: number): number {
-    const currentFrameIndex = this.currentFrameIndexValue ?? 0;
-    return this.forwardDistanceFrom(currentFrameIndex, frameIndex);
   }
 
   private forwardDistanceFrom(currentFrameIndex: number, frameIndex: number): number {

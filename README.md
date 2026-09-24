@@ -37,6 +37,15 @@ Open `https://localhost:4180/#/demo` on the development machine or
 `https://<development-machine-ip>:4180/#/demo` on a headset. Dataset settings from
 `.env.local` are retained in HTTPS mode.
 
+> **Quest Browser 146+ WebGPU/WebXR setup:** native WebGPU-backed immersive XR remains
+> experimental and is not enabled by browser version alone. In the headset browser,
+> enable `WebXR/WebGPU Binding`, `WebXR Projection Layers`, and `WebXR Experiments` at
+> `chrome://flags/#webxr-webgpu-binding`, `chrome://flags/#webxr-projection-layers`, and
+> `chrome://flags/#webxr-experiments`, then relaunch the browser. If the browser does
+> not expose `XRGPUBinding`, the showcase uses WebGL2 for XR. See the
+> [Quest/WebXR setup guide](docs/quest-webxr.md#native-webgpu-webxr-on-quest-browser-146)
+> for verification and troubleshooting.
+
 ### Use a local dataset
 
 The browser cannot load a filesystem path directly. For development, let Vite serve the

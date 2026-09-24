@@ -1,12 +1,18 @@
 export type {
+  CompactDynamicGaussianSequence,
+  CompactGaussianFrameSource,
+  CompactGaussianSequenceManifest,
   DynamicGaussianSequence,
   GaussianFrameSource,
   GaussianQualityLevel,
+  GaussianQualityDefaults,
   GaussianSequenceManifest,
+  GaussianSequenceManifestDocument,
   MediaTrack,
   MeshSceneObject,
   StaticSceneObject,
 } from "./manifest/types.js";
+export { compactManifest, type CompactManifestOptions } from "./manifest/compact.js";
 export {
   FrameRingBuffer,
   type FramePresentationOptions,
@@ -93,6 +99,7 @@ export {
   BufferAwareQualityController,
   type BufferAwareQualityControllerConfiguration,
   type BufferQualityTier,
+  type DynamicQualityLevel,
 } from "./quality/BufferAwareQualityController.js";
 export {
   selectFrameTransferQuality,

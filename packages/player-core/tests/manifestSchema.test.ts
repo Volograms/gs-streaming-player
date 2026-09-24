@@ -1,8 +1,13 @@
+import Ajv from "ajv";
 import { describe, expect, it } from "vitest";
 
 import validManifest from "../../../test-data/manifests/minimal-valid.json";
 import committedSchema from "../schemas/gaussian-sequence-manifest.schema.json";
-import { GaussianSequenceManifestSchema, validateManifest } from "../src/index.js";
+import {
+  GaussianSequenceManifestSchema,
+  compactManifest,
+  validateManifest,
+} from "../src/index.js";
 
 describe("GaussianSequenceManifestSchema", () => {
   it("keeps the committed JSON Schema in sync with the typed schema", () => {
@@ -17,6 +22,15 @@ describe("GaussianSequenceManifestSchema", () => {
       manifest: validManifest,
       issues: [],
     });
+  });
+
+  it("supports both document versions in the standalone JSON Schema", () => {
+    const validate = new Ajv({ strict: true, strictTuples: false }).compile(
+      committedSchema,
+    );
+    expect(validate(validManifest)).toBe(true);
+    expect(validate(compactManifest(validManifest))).toBe(true);
+    expect(validate({ ...validManifest, version: "2.0" })).toBe(false);
   });
 
   it("reports exact paths for structural errors", () => {

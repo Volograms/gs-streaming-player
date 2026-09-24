@@ -22,6 +22,41 @@ function response(byteLength: number): Response {
 }
 
 describe("CompressedFrameCache", () => {
+  it.each([
+    [0, 8, true],
+    [0, 0, undefined],
+    [308, 8, false],
+  ])(
+    "distinguishes cache hits from hidden cross-origin sizes (%s / %s)",
+    async (transferSize, decodedBodySize, fromCache) => {
+      const timing = vi.spyOn(performance, "getEntriesByName").mockReturnValue([
+        {
+          startTime: 0,
+          connectStart: 0,
+          connectEnd: 0,
+          nextHopProtocol: "h2",
+          transferSize,
+          decodedBodySize,
+        } as PerformanceResourceTiming,
+      ]);
+      const trace: CompressedFrameCacheTraceEvent[] = [];
+      const cache = new CompressedFrameCache({
+        fetch: vi.fn(async () => response(8)),
+        maximumBytes: 8,
+        now: () => 0,
+        onTrace: (event) => trace.push(event),
+      });
+      try {
+        await cache.get({ frameIndex: 0, url: "/frame.sog" });
+        expect(trace.find(({ type }) => type === "fetch-ready")?.fromCache).toBe(
+          fromCache,
+        );
+      } finally {
+        cache.dispose();
+        timing.mockRestore();
+      }
+    },
+  );
   it("separates response latency from response body processing", async () => {
     let now = 0;
     const trace: CompressedFrameCacheTraceEvent[] = [];
@@ -146,6 +181,95 @@ describe("CompressedFrameCache", () => {
     cache.dispose();
   });
 
+  it.each([
+    [20, 10, 2, 2],
+    [25, 10, 3, 2],
+    [5, 10, 1, 1],
+  ])(
+    "stops consuming a lazy plan at a %s-byte budget with %s-byte frames",
+    (maximumBytes, byteSize, expectedVisits, expectedFetches) => {
+      const fetchImplementation = vi.fn(async () => response(byteSize));
+      const cache = new CompressedFrameCache({
+        fetch: fetchImplementation,
+        maximumBytes,
+        maximumFetchConcurrency: 4,
+      });
+      let visits = 0;
+      let closed = false;
+      function* requests() {
+        try {
+          for (let frameIndex = 0; frameIndex < 3_600; frameIndex += 1) {
+            visits += 1;
+            yield { byteSize, frameIndex, url: `/${frameIndex}.sog` };
+          }
+        } finally {
+          closed = true;
+        }
+      }
+      try {
+        cache.setPlan(requests());
+        expect(visits).toBe(expectedVisits);
+        expect(closed).toBe(true);
+        expect(fetchImplementation).toHaveBeenCalledTimes(expectedFetches);
+      } finally {
+        cache.dispose();
+      }
+    },
+  );
+
+  it.each([undefined, 0])(
+    "bounds speculative lookahead when sizes are %s",
+    (byteSize) => {
+      const fetchImplementation = vi.fn(async () => response(10));
+      const cache = new CompressedFrameCache({
+        fetch: fetchImplementation,
+        maximumBytes: 1_000,
+        maximumFetchConcurrency: 3,
+      });
+      let visits = 0;
+      function* requests() {
+        for (let frameIndex = 0; frameIndex < 3_600; frameIndex += 1) {
+          visits += 1;
+          yield {
+            ...(byteSize === undefined ? {} : { byteSize }),
+            frameIndex,
+            url: `/${frameIndex}.sog`,
+          };
+        }
+      }
+      try {
+        cache.setPlan(requests());
+        expect(visits).toBe(3);
+        expect(fetchImplementation).toHaveBeenCalledTimes(3);
+      } finally {
+        cache.dispose();
+      }
+    },
+  );
+
+  it("uses observed response sizes when planning already cached frames", async () => {
+    const fetchImplementation = vi.fn(async () => response(20));
+    const cache = new CompressedFrameCache({
+      fetch: fetchImplementation,
+      maximumBytes: 20,
+    });
+    try {
+      await cache.get({ frameIndex: 0, byteSize: 1, url: "/0.sog" });
+      let visits = 0;
+      function* requests() {
+        for (let frameIndex = 0; frameIndex < 3_600; frameIndex += 1) {
+          visits += 1;
+          yield { byteSize: 1, frameIndex, url: `/${frameIndex}.sog` };
+        }
+      }
+      cache.setPlan(requests());
+      expect(visits).toBe(1);
+      expect(fetchImplementation).toHaveBeenCalledOnce();
+    } finally {
+      cache.dispose();
+    }
+  });
+
   it("deduplicates demand and does not abort shared prefetch for one caller", async () => {
     const pending = deferred<Response>();
     let fetchSignal: AbortSignal | undefined;
@@ -172,5 +296,25 @@ describe("CompressedFrameCache", () => {
     pending.resolve(response(10));
     await expect(second).resolves.toHaveProperty("byteLength", 10);
     cache.dispose();
+  });
+
+  it("rejects fetching and queued callers when disposed", async () => {
+    const pending = deferred<Response>();
+    const fetchImplementation = vi.fn(async () => pending.promise);
+    const cache = new CompressedFrameCache({
+      fetch: fetchImplementation,
+      maximumBytes: 20,
+      maximumFetchConcurrency: 1,
+    });
+    const first = cache.get({ byteSize: 10, frameIndex: 0, url: "/frame-0.spz" });
+    const second = cache.get({ byteSize: 10, frameIndex: 1, url: "/frame-1.spz" });
+    await vi.waitFor(() => expect(fetchImplementation).toHaveBeenCalledOnce());
+
+    cache.dispose();
+
+    await expect(first).rejects.toMatchObject({ name: "AbortError" });
+    await expect(second).rejects.toMatchObject({ name: "AbortError" });
+    pending.resolve(response(10));
+    await vi.waitFor(() => expect(cache.snapshot.activeFetchCount).toBe(0));
   });
 });

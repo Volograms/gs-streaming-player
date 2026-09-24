@@ -86,6 +86,7 @@ export interface FrameRingBufferTraceFrame {
 export interface FrameRingBufferTraceEvent {
   /** Monotonic timestamp supplied by FrameRingBufferOptions.now. */
   atMs: number;
+  fromCache?: boolean;
   /** Time spent reading the response body into the owned ArrayBuffer. */
   bodyReadMs?: number;
   /** Whether Resource Timing reported no new connection setup for this request. */

@@ -1,10 +1,13 @@
 import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
+import { assertValidManifest } from "@6g-path/gaussian-player";
 import { describe, expect, it, vi } from "vitest";
 
 import { buildDataset } from "../src/build-dataset/buildDataset.js";
+
+import type { BuildDatasetDependencies } from "../src/build-dataset/buildDataset.js";
 
 function createIo() {
   const stdout: string[] = [];
@@ -19,7 +22,7 @@ function createIo() {
   };
 }
 
-async function fixture(outputFormat: "sog" | "spz" = "sog") {
+async function fixture(outputFormat: "sog" | "spz" = "sog", regularTiming?: boolean) {
   const root = await mkdtemp(join(tmpdir(), "gs-content-build-"));
   const inputDir = join(root, "inputs");
   await mkdir(inputDir);
@@ -33,6 +36,7 @@ async function fixture(outputFormat: "sog" | "spz" = "sog") {
     JSON.stringify({
       audio: { contentType: "audio/ogg", input: "inputs/track.ogg" },
       dynamic: {
+        ...(regularTiming === undefined ? {} : { regularTiming }),
         frameWorkers: 2,
         frames: ["inputs/frame0001.ply", "inputs/frame0002.spz"],
         id: "actor",
@@ -62,6 +66,49 @@ async function fixture(outputFormat: "sog" | "spz" = "sog") {
     }),
   );
   return { configPath, outputDir: join(root, "output"), root };
+}
+
+function successfulDependencies(): BuildDatasetDependencies {
+  return {
+    exportStreamedSog: async (request) => {
+      await mkdir(request.outputDir, { recursive: true });
+      await writeFile(join(request.outputDir, "lod-meta.json"), "{}\n");
+      return 0;
+    },
+    generateDynamicTiers: async (request) => {
+      await mkdir(request.outputDir, { recursive: true });
+      const extension = request.outputFormat;
+      const qualityLevels = request.inputPaths.map((_, frameIndex) => ({
+        byteSize: 100 + frameIndex,
+        codec: request.outputFormat === "sog" ? "sog-v2" : "spz-v4",
+        detailLevel: 0.25,
+        level: 0,
+        minimumPlayable: true,
+        splatCount: 25_000,
+        url: `frame-${frameIndex}-minimum.${extension}`,
+      }));
+      await Promise.all(
+        qualityLevels.map(({ url }) =>
+          writeFile(join(request.outputDir, url), `generated ${url}\n`),
+        ),
+      );
+      await writeFile(
+        join(request.outputDir, "quality-cuts.json"),
+        JSON.stringify({
+          format:
+            request.outputFormat === "sog"
+              ? "flat-sog-quality-cuts"
+              : "flat-spz-quality-cuts",
+          frames: request.inputPaths.map((sourceFile, frameIndex) => ({
+            qualityLevels: [qualityLevels[frameIndex]!],
+            sourceFile,
+          })),
+          version: 1,
+        }),
+      );
+      return 0;
+    },
+  };
 }
 
 describe("buildDataset", () => {
@@ -159,6 +206,70 @@ describe("buildDataset", () => {
     await expect(access(input.outputDir)).rejects.toThrow();
   });
 
+  it("force replaces only generated entries and preserves unrelated output", async () => {
+    const input = await fixture();
+    const dependencies = successfulDependencies();
+    const firstOutput = createIo();
+    expect(
+      await buildDataset(
+        { ...input, dryRun: false, force: false },
+        firstOutput.io,
+        dependencies,
+      ),
+    ).toBe(0);
+
+    const sentinelPath = join(input.outputDir, "keep-me.txt");
+    const staleDynamicPath = join(input.outputDir, "dynamic", "stale.sog");
+    await writeFile(sentinelPath, "unrelated\n");
+    await writeFile(staleDynamicPath, "stale\n");
+    const configuration = JSON.parse(await readFile(input.configPath, "utf8")) as {
+      audio?: unknown;
+      staticObjects?: unknown[];
+    };
+    delete configuration.audio;
+    configuration.staticObjects = [];
+    await writeFile(input.configPath, JSON.stringify(configuration));
+
+    const secondOutput = createIo();
+    expect(
+      await buildDataset(
+        { ...input, dryRun: false, force: true },
+        secondOutput.io,
+        dependencies,
+      ),
+    ).toBe(0);
+
+    expect(await readFile(sentinelPath, "utf8")).toBe("unrelated\n");
+    await expect(access(staleDynamicPath)).rejects.toThrow();
+    await expect(access(join(input.outputDir, "audio"))).rejects.toThrow();
+    await expect(access(join(input.outputDir, "static"))).rejects.toThrow();
+    await expect(
+      access(join(input.outputDir, "manifest.json")),
+    ).resolves.toBeUndefined();
+  });
+
+  it("refuses to force-replace generated-looking paths without a valid manifest", async () => {
+    const input = await fixture();
+    const generatedPath = join(input.outputDir, "dynamic", "unrelated.sog");
+    await mkdir(dirname(generatedPath), { recursive: true });
+    await writeFile(generatedPath, "unrelated\n");
+    const output = createIo();
+    const generateDynamicTiers = vi.fn(async () => 0);
+
+    const exitCode = await buildDataset(
+      { ...input, dryRun: false, force: true },
+      output.io,
+      { generateDynamicTiers },
+    );
+
+    expect(exitCode).toBe(1);
+    expect(output.stderr.join("\n")).toContain(
+      "Refusing to replace generated-looking entries without an existing manifest.json",
+    );
+    expect(generateDynamicTiers).not.toHaveBeenCalled();
+    expect(await readFile(generatedPath, "utf8")).toBe("unrelated\n");
+  });
+
   it("rejects path-like static object ids before invoking converters", async () => {
     const input = await fixture();
     const configuration = JSON.parse(await readFile(input.configPath, "utf8")) as {
@@ -249,32 +360,15 @@ describe("buildDataset", () => {
         tiers: { minimum: 0.25, full: 1 },
       }),
     ]);
-    const manifest = JSON.parse(
-      await readFile(join(input.outputDir, "manifest.json"), "utf8"),
-    ) as {
-      audio: { url: string };
-      dynamicSequences: Array<{
-        frames: Array<{
-          codec: string;
-          qualityLevels: Array<{ byteSize: number }>;
-          url: string;
-        }>;
-        transform: {
-          position: { x: number; y: number; z: number };
-          rotation: { w: number; x: number; y: number; z: number };
-          scale: { x: number; y: number; z: number };
-        };
-      }>;
-      staticObjects: Array<{
-        transform: {
-          position: { x: number; y: number; z: number };
-          rotation: { w: number; x: number; y: number; z: number };
-          scale: { x: number; y: number; z: number };
-        };
-        url: string;
-      }>;
-    };
-    expect(manifest.audio.url).toBe("audio/track.ogg");
+    const json = await readFile(join(input.outputDir, "manifest.json"), "utf8");
+    const document: unknown = JSON.parse(json);
+    expect(json.trim().split("\n")).toHaveLength(1);
+    expect(document).toMatchObject({
+      version: "1.1",
+      dynamicSequences: [{ regularTiming: true, codec: "sog-v2" }],
+    });
+    const manifest = assertValidManifest(document);
+    expect(manifest.audio?.url).toBe("audio/track.ogg");
     expect(manifest.dynamicSequences[0]?.frames[0]).toMatchObject({
       codec: "sog-v2",
       qualityLevels: [{ byteSize: 101 }],
@@ -284,18 +378,18 @@ describe("buildDataset", () => {
       position: { x: 1, y: 0.25, z: -2 },
       scale: { x: 0.75, y: 0.75, z: 0.75 },
     });
-    expect(manifest.dynamicSequences[0]?.transform.rotation.x).toBeCloseTo(1);
-    expect(manifest.dynamicSequences[0]?.transform.rotation.w).toBeCloseTo(0);
+    expect(manifest.dynamicSequences[0]?.transform?.rotation?.x).toBeCloseTo(1);
+    expect(manifest.dynamicSequences[0]?.transform?.rotation?.w).toBeCloseTo(0);
     expect(manifest.staticObjects[0]?.url).toBe("static/room/lod-meta.json");
     expect(manifest.staticObjects[0]?.transform).toMatchObject({
       position: { x: 0, y: -1, z: 0 },
       scale: { x: 4, y: 4, z: 4 },
     });
-    expect(manifest.staticObjects[0]?.transform.rotation.x).toBeCloseTo(1);
+    expect(manifest.staticObjects[0]?.transform?.rotation?.x).toBeCloseTo(1);
   });
 
   it("emits an SPZ v4 manifest when dynamic.outputFormat is spz", async () => {
-    const input = await fixture("spz");
+    const input = await fixture("spz", false);
     const output = createIo();
     const exitCode = await buildDataset(
       { ...input, dryRun: false, force: false },
@@ -333,9 +427,18 @@ describe("buildDataset", () => {
     );
 
     expect(exitCode).toBe(0);
-    const manifest = JSON.parse(
+    const document: unknown = JSON.parse(
       await readFile(join(input.outputDir, "manifest.json"), "utf8"),
-    ) as { dynamicSequences: Array<{ frames: Array<{ codec: string }> }> };
+    );
+    expect(document).toMatchObject({
+      dynamicSequences: [
+        {
+          regularTiming: false,
+          frames: [{ timestampSeconds: 0 }, { timestampSeconds: 1 / 30 }],
+        },
+      ],
+    });
+    const manifest = assertValidManifest(document);
     expect(manifest.dynamicSequences[0]?.frames[0]?.codec).toBe("spz-v4");
   });
 

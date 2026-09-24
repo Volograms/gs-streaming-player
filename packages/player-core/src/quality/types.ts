@@ -2,7 +2,11 @@ import type { NetworkState } from "../network/types.js";
 import type { PlaybackState } from "../player/playbackState.js";
 
 export interface PlayerMetrics {
+  /** Monotonic observation time; repeated callbacks at the same time are one sample. */
+  timestampMs?: number;
   bufferOccupancyRatio?: number;
+  /** Attainable forward reserve, accounting for the configured window and clip end. */
+  bufferCapacitySeconds?: number;
   downloadedBytes: number;
   droppedFrames: number;
   estimatedBaseFrameBytes?: number;

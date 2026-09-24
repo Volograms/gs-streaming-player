@@ -9,9 +9,9 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
-import { assertValidManifest } from "@6g-path/gaussian-player";
+import { assertValidManifest, compactManifest } from "@6g-path/gaussian-player";
 
 import { generateDynamicTiers } from "../dynamic-tiers/generateDynamicTiers.js";
 import { exportStreamedSog } from "../sog/exportStreamedSog.js";
@@ -71,6 +71,7 @@ export interface DatasetBuildConfiguration {
     maxSh?: number;
     minimumPlayable?: string;
     outputFormat?: DynamicTierOutputFormat;
+    regularTiming?: boolean;
     tiers?: Record<string, number>;
     transform?: DatasetBuildTransform;
   };
@@ -121,6 +122,13 @@ interface DynamicQualityCutIndex {
   frames: QualityCutFrame[];
   version: 1;
 }
+
+const GENERATED_OUTPUT_ENTRIES = [
+  "manifest.json",
+  "dynamic",
+  "static",
+  "audio",
+] as const;
 
 /** Builds an externally hostable dataset from ordered PLY or SPZ frame sources. */
 export async function buildDataset(
@@ -180,8 +188,11 @@ export async function buildDataset(
       return 0;
     }
 
-    if (!request.force && (await exists(outputDir))) {
-      throw new Error(`Output directory already exists: ${outputDir}`);
+    if (await exists(outputDir)) {
+      if (!request.force) {
+        throw new Error(`Output directory already exists: ${outputDir}`);
+      }
+      await assertSafeGeneratedOutput(outputDir);
     }
 
     stagingDir = `${outputDir}.staging-${process.pid}-${Date.now()}`;
@@ -246,13 +257,10 @@ export async function buildDataset(
     );
     await writeFile(
       join(stagingDir, "manifest.json"),
-      `${JSON.stringify(manifest, null, 2)}\n`,
+      `${JSON.stringify(compactManifest(manifest, { regularTiming: configuration.dynamic.regularTiming ?? true }))}\n`,
     );
-    if (request.force && (await exists(outputDir))) {
-      await rm(outputDir, { force: true, recursive: true });
-    }
     await mkdir(dirname(outputDir), { recursive: true });
-    await rename(stagingDir, outputDir);
+    await promoteStagedDataset(stagingDir, outputDir);
     stagingDir = undefined;
     io.stdout(`Wrote validated dataset '${configuration.id}' to ${outputDir}`);
     return 0;
@@ -345,7 +353,7 @@ function createManifest(
         url: `static/${encodeURIComponent(object.id)}/lod-meta.json`,
       };
     }),
-    version: "1.0",
+    version: "1.1",
   });
 }
 
@@ -361,6 +369,12 @@ function parseConfiguration(value: unknown): DatasetBuildConfiguration {
   }
   if (!isRecord(value.dynamic)) {
     throw new Error("Dataset config dynamic section is required.");
+  }
+  if (
+    value.dynamic.regularTiming !== undefined &&
+    typeof value.dynamic.regularTiming !== "boolean"
+  ) {
+    throw new Error("Dynamic regularTiming must be a boolean.");
   }
   if (typeof value.dynamic.id !== "string" || value.dynamic.id.trim() === "") {
     throw new Error("Dynamic id must be a non-empty string.");
@@ -657,11 +671,108 @@ function compareFrameFilenames(left: string, right: string): number {
 
 function validateOutputDirectory(outputDir: string, configDir: string): void {
   if (outputDir === dirname(outputDir) || outputDir === configDir) {
-    throw new Error("Output directory must be a dedicated child directory.");
+    throw new Error(
+      "Output directory cannot be the filesystem root or config directory.",
+    );
   }
-  if (relative(configDir, outputDir) === "") {
-    throw new Error("Output directory cannot replace the config directory.");
+}
+
+async function assertSafeGeneratedOutput(outputDir: string): Promise<void> {
+  const outputInfo = await stat(outputDir);
+  if (!outputInfo.isDirectory()) {
+    throw new Error(`Output path is not a directory: ${outputDir}`);
   }
+
+  const existingGeneratedEntries = (
+    await Promise.all(
+      GENERATED_OUTPUT_ENTRIES.map(async (entry) => ({
+        entry,
+        exists: await exists(join(outputDir, entry)),
+      })),
+    )
+  ).filter(({ exists: entryExists }) => entryExists);
+  if (existingGeneratedEntries.length === 0) {
+    return;
+  }
+
+  const manifestPath = join(outputDir, "manifest.json");
+  if (!(await exists(manifestPath))) {
+    throw new Error(
+      `Refusing to replace generated-looking entries without an existing manifest.json: ${outputDir}`,
+    );
+  }
+  try {
+    assertValidManifest(JSON.parse(await readFile(manifestPath, "utf8")) as unknown);
+  } catch (cause) {
+    throw new Error(
+      `Refusing to replace generated-looking entries because manifest.json is not a valid Gaussian sequence manifest: ${outputDir}`,
+      { cause },
+    );
+  }
+}
+
+async function promoteStagedDataset(
+  stagingDir: string,
+  outputDir: string,
+): Promise<void> {
+  if (!(await exists(outputDir))) {
+    await rename(stagingDir, outputDir);
+    return;
+  }
+
+  const stagedEntries = await readdir(stagingDir);
+  const unexpectedEntry = stagedEntries.find(
+    (entry) =>
+      !GENERATED_OUTPUT_ENTRIES.includes(
+        entry as (typeof GENERATED_OUTPUT_ENTRIES)[number],
+      ),
+  );
+  if (unexpectedEntry !== undefined) {
+    throw new Error(
+      `Dataset staging produced an unexpected top-level entry: ${unexpectedEntry}`,
+    );
+  }
+
+  const backupDir = `${outputDir}.backup-${process.pid}-${Date.now()}`;
+  await mkdir(backupDir, { recursive: false });
+  const backedUpEntries: string[] = [];
+  const promotedEntries: string[] = [];
+  try {
+    for (const entry of GENERATED_OUTPUT_ENTRIES) {
+      const existingPath = join(outputDir, entry);
+      if (await exists(existingPath)) {
+        await rename(existingPath, join(backupDir, entry));
+        backedUpEntries.push(entry);
+      }
+    }
+    for (const entry of GENERATED_OUTPUT_ENTRIES) {
+      const stagedPath = join(stagingDir, entry);
+      if (await exists(stagedPath)) {
+        await rename(stagedPath, join(outputDir, entry));
+        promotedEntries.push(entry);
+      }
+    }
+  } catch (error) {
+    try {
+      for (const entry of promotedEntries.reverse()) {
+        await rm(join(outputDir, entry), { force: true, recursive: true });
+      }
+      for (const entry of backedUpEntries.reverse()) {
+        await rename(join(backupDir, entry), join(outputDir, entry));
+      }
+    } catch (rollbackError) {
+      throw new AggregateError(
+        [error],
+        `Dataset promotion failed and rollback was incomplete. Recovery files remain in ${backupDir}.`,
+        { cause: rollbackError },
+      );
+    }
+    await rm(backupDir, { force: true, recursive: true }).catch(() => undefined);
+    throw error;
+  }
+
+  await rm(stagingDir, { force: true, recursive: true });
+  await rm(backupDir, { force: true, recursive: true });
 }
 
 function assertStepSucceeded(name: string, exitCode: number): void {

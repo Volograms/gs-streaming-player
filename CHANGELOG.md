@@ -7,6 +7,38 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Redesign the showcase landing page with a restrained dark palette, clearer content
+  hierarchy, a generated volumetric illustration, responsive layouts, a semantic support
+  table, and a copyable dataset build command. Document HTTPS setup for a separate
+  server reached through a VPN.
+- Emit compact manifest `1.1` JSON with shared sequence codec and quality defaults,
+  implicit frame indices and fallback URLs, and optional regular timing derived from
+  FPS. Keep `1.0` readable and add `gs-manifest convert-manifest` to upgrade existing
+  datasets without encoding assets again, preserving irregular timing and measured
+  per-frame data.
+- Load workspace source aliases explicitly in `gs-content` and `gs-manifest` so content
+  preparation works without previously built package `dist` files.
+- Generate compressed prefetch requests lazily so long sequences are inspected only
+  until the cache budget is filled. Use observed sizes for resident assets and bound
+  speculative lookahead when byte-size metadata is missing.
+- Make automatic dynamic quality use the manifest's actual tier ladder and byte costs,
+  with reachable buffer thresholds, timed upgrades through full quality, and downgrades
+  under network or presentation pressure. Preserve prepared frames during automatic
+  switches, aggregate overlapping downloads, and exclude known cached/stale throughput
+  evidence.
+- Keep audio and frame presentation synchronized across loops, seeks, audio starvation,
+  and splat buffering, including non-frame-aligned audio offsets. Cancel pending audio
+  starts on transport changes, preserve mute/volume during silent priming, expose media
+  failures in player snapshots and the showcase, and release media resources on
+  disposal.
+- Make `gs-content build --force` replace only dataset-owned output entries with
+  rollback protection, preserving unrelated files instead of deleting the complete
+  output directory.
+- Schedule dynamic-frame presentation and buffering from manifest timestamps, and keep
+  the final frame active until the selected sequence duration elapses.
+- Cancel Babylon frame handoffs when their prepared frame is released, reject pending
+  compressed-frame reads on cache disposal, and validate all adaptive-quality numeric
+  configuration.
 - Raise the minimum Node.js version to 22.13 and let GitHub Pages use the current
   Node.js 22 release so the pinned pnpm version can start successfully.
 
@@ -253,6 +285,9 @@ All notable changes to this project will be documented here. The project uses
 
 ### Fixed
 
+- Preserve timeline zero for sequences with a nonzero first frame timestamp. Hold frame
+  0 through the leading interval, including seeks and loops, and keep audio, buffered
+  duration, and frame preparation deadlines aligned with that timeline.
 - Vitest now resolves every internal workspace package directly from source, so clean CI
   checkouts can run unit tests before package build artifacts exist.
 - PlayCanvas transform tests now supply their entity's required application context,

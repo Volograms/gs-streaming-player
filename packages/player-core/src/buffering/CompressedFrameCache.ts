@@ -18,6 +18,8 @@ export type CompressedFrameCacheTraceEventType =
 
 export interface CompressedFrameCacheTraceEvent {
   atMs: number;
+  /** True only when browser Resource Timing positively identifies a local cache hit. */
+  fromCache?: boolean;
   bodyReadMs?: number;
   connectionReused?: boolean;
   connectionSetupMs?: number;
@@ -33,6 +35,7 @@ export interface CompressedFrameCacheTraceEvent {
 }
 
 interface FetchedBytes {
+  fromCache?: boolean;
   bodyReadMs: number;
   bytes: ArrayBuffer;
   connectionReused?: boolean;
@@ -42,6 +45,7 @@ interface FetchedBytes {
 }
 
 interface FetchResourceTiming {
+  fromCache?: boolean;
   connectionReused: boolean;
   connectionSetupMs: number;
   networkProtocol?: string;
@@ -139,13 +143,17 @@ export class CompressedFrameCache {
     };
   }
 
-  /** Replace the forward prefetch plan, ordered from nearest to furthest frame. */
-  setPlan(requests: readonly CompressedFrameRequest[]): void {
+  /** Consume a nearest-first plan lazily, stopping when the byte budget is filled. */
+  setPlan(requests: Iterable<CompressedFrameRequest>): void {
     this.assertNotDisposed();
     const plannedUrls = new Set<string>();
     let plannedBytes = 0;
+    let unknownSizeCount = 0;
     for (const request of requests) {
-      const expectedBytes = Math.max(0, request.byteSize ?? 0);
+      const declaredBytes = request.byteSize ?? 0;
+      const expectedBytes =
+        this.entries.get(request.url)?.bytes?.byteLength ??
+        (Number.isFinite(declaredBytes) ? Math.max(0, declaredBytes) : 0);
       if (
         plannedUrls.size > 0 &&
         expectedBytes > 0 &&
@@ -157,6 +165,15 @@ export class CompressedFrameCache {
       plannedBytes += expectedBytes;
       const entry = this.ensureEntry(request);
       entry.planPriority = plannedUrls.size - 1;
+      if (expectedBytes === 0) unknownSizeCount += 1;
+      // Missing sizes must not make an arbitrarily long sequence look free. Allow
+      // one fetch batch; subsequent plans can use the observed response sizes.
+      if (
+        plannedBytes >= this.maximumBytes ||
+        unknownSizeCount >= this.maximumFetchConcurrency
+      ) {
+        break;
+      }
     }
 
     for (const [url, entry] of this.entries) {
@@ -214,6 +231,9 @@ export class CompressedFrameCache {
     this.disposed = true;
     for (const entry of this.entries.values()) {
       entry.controller?.abort();
+      if (entry.state !== "ready") {
+        entry.reject?.(abortError());
+      }
     }
     this.entries.clear();
     this.emitChange();
@@ -309,6 +329,7 @@ export class CompressedFrameCache {
         ({
           bodyReadMs,
           bytes,
+          fromCache,
           connectionReused,
           connectionSetupMs,
           networkProtocol,
@@ -323,6 +344,7 @@ export class CompressedFrameCache {
           this.onTrace?.({
             atMs: this.now(),
             bodyReadMs,
+            ...(fromCache === undefined ? {} : { fromCache }),
             ...(connectionReused === undefined ? {} : { connectionReused }),
             ...(connectionSetupMs === undefined ? {} : { connectionSetupMs }),
             durationMs: this.now() - startedAt,
@@ -380,7 +402,10 @@ export class CompressedFrameCache {
     }
     const bytes = await response.arrayBuffer();
     const completedAt = this.now();
-    const resourceTiming = this.readFetchResourceTiming(response.url || request.url);
+    const resourceTiming = this.readFetchResourceTiming(
+      response.url || request.url,
+      startedAt,
+    );
     return {
       bodyReadMs: completedAt - responseAt,
       bytes,
@@ -389,7 +414,10 @@ export class CompressedFrameCache {
     };
   }
 
-  private readFetchResourceTiming(url: string): FetchResourceTiming | undefined {
+  private readFetchResourceTiming(
+    url: string,
+    startedAt: number,
+  ): FetchResourceTiming | undefined {
     if (
       typeof performance === "undefined" ||
       typeof performance.getEntriesByName !== "function"
@@ -400,12 +428,13 @@ export class CompressedFrameCache {
       typeof location === "undefined" ? url : new URL(url, location.href).toString();
     const entry = performance.getEntriesByName(absoluteUrl, "resource").at(-1) as
       PerformanceResourceTiming | undefined;
-    if (entry === undefined) {
+    if (entry === undefined || entry.startTime < startedAt - 1) {
       return undefined;
     }
     const connectionSetupMs = Math.max(0, entry.connectEnd - entry.connectStart);
     const networkProtocol = entry.nextHopProtocol.trim();
     return {
+      ...(entry.decodedBodySize > 0 ? { fromCache: entry.transferSize === 0 } : {}),
       connectionReused: connectionSetupMs === 0,
       connectionSetupMs,
       ...(networkProtocol.length === 0 ? {} : { networkProtocol }),

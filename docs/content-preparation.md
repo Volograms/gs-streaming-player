@@ -58,6 +58,24 @@ The `tiers` and `minimumPlayable` fields above show the defaults and may be omit
 Tier names are user-defined when custom ratios are useful, but `minimumPlayable` must
 name one of them.
 
+Builds emit compact version `1.1` manifests with shared codec and quality defaults.
+`dynamic.regularTiming` defaults to `true`, so timestamps are derived from frame order
+and `frameRate`. Set it to `false` to write explicit timestamps; the build still uses
+regular timing because the recipe supplies only FPS and ordered frames. For irregular
+timing, author explicit timestamps in the manifest itself. This setting does not change
+encoding or the build recipe's version `1`.
+
+Existing encoded datasets can be upgraded without rebuilding:
+
+```bash
+pnpm gs-manifest convert-manifest path/to/manifest.json
+```
+
+The converter writes a sibling `manifest.v1.1.json`, preserves encoded assets and the
+input file, and auto-detects regular timing. Use `--pretty` for readable output or
+`--output <path>` to choose the destination. See the
+[manifest conversion options](manifest-format.md#convert-an-existing-manifest-without-encoding).
+
 ### Place and orient objects
 
 Give the dynamic sequence and every static object its own transform in the build recipe.
@@ -96,7 +114,7 @@ quaternion as `rotation: { w, x, y, z }`, or a 16-number `matrix`; a matrix take
 precedence when rendered. Do not provide both rotation forms.
 
 These convenience forms belong to the input build recipe, whose `version` is `1`. They
-are not valid in the generated runtime manifest, whose `version` is `"1.0"`:
+are not valid in the generated runtime manifest, whose `version` is `"1.1"`:
 
 | Transform        | Build recipe                                      | Runtime manifest                                 |
 | ---------------- | ------------------------------------------------- | ------------------------------------------------ |
@@ -143,7 +161,9 @@ pressure rises, or concurrent SOG compression contends for the same GPU. Tiers w
 single frame remain sequential to bound peak memory and scratch-file usage. The
 equivalent lower-level option is `--frame-workers <n>`.
 
-Preview and run:
+From the repository root, install dependencies with `pnpm install --frozen-lockfile`,
+then preview and run. The `gs-content` and legacy `gs-manifest` scripts load workspace
+packages directly from source; a separate `pnpm build` is not required.
 
 ```bash
 pnpm gs-content build dataset.json --output-dir dist/content --dry-run
@@ -152,12 +172,15 @@ pnpm gs-content build dataset.json --output-dir dist/content \
   --max-workers 2
 ```
 
-Existing output is protected; pass `--force` only after checking the target. The build
-stages output, generates merge-decimated dynamic tiers, exports static Streamed SOG,
-copies audio, populates exact splat/byte metadata, generates and validates the canonical
-manifest, and then promotes the result. It does not rewrite the input recipe with file
-names. `outputFormat` defaults to `"sog"`; use `"spz"` to produce SPZ v4 tiers for an
-experimental runtime path.
+Existing output is protected. With `--force`, the build replaces only the dataset-owned
+`manifest.json`, `dynamic/`, `static/`, and `audio/` entries; unrelated files in the
+output directory are preserved. Generated-looking entries are replaced only when the
+existing `manifest.json` is a valid Gaussian sequence manifest. The build stages output,
+generates merge-decimated dynamic tiers, exports static Streamed SOG, copies audio,
+populates exact splat/byte metadata, generates and validates the canonical manifest, and
+then promotes the result with rollback protection. It does not rewrite the input recipe
+with file names. `outputFormat` defaults to `"sog"`; use `"spz"` to produce SPZ v4 tiers
+for an experimental runtime path.
 
 To generate tiers without building a complete dataset:
 

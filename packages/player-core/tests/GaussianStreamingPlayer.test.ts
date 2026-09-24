@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { GaussianStreamingPlayer } from "../src/index.js";
+import { GaussianStreamingPlayer, compactManifest } from "../src/index.js";
 
 import type {
   FramePresentationQuality,
@@ -129,32 +129,35 @@ class FakeAudio implements GaussianStreamingMediaElement {
 }
 
 describe("GaussianStreamingPlayer", () => {
-  it("loads a complete manifest and exposes high-level playback controls", async () => {
-    const adapter = renderer();
-    const player = await GaussianStreamingPlayer.create({
-      manifest: manifest(),
-      renderer: adapter,
-    });
+  it.each(["1.0", "1.1"])(
+    "loads a %s manifest and exposes high-level playback controls",
+    async (version) => {
+      const adapter = renderer();
+      const player = await GaussianStreamingPlayer.create({
+        manifest: version === "1.1" ? compactManifest(manifest()) : manifest(),
+        renderer: adapter,
+      });
 
-    expect(adapter.initialise).toHaveBeenCalledOnce();
-    expect(adapter.loadStaticObject).toHaveBeenCalledOnce();
-    expect(adapter.loadMesh).toHaveBeenCalledOnce();
-    expect(player.snapshot).toMatchObject({
-      currentFrameIndex: 0,
-      lifecycle: "READY",
-      manifestId: "preview",
-      sequenceId: "actor-0",
-    });
+      expect(adapter.initialise).toHaveBeenCalledOnce();
+      expect(adapter.loadStaticObject).toHaveBeenCalledOnce();
+      expect(adapter.loadMesh).toHaveBeenCalledOnce();
+      expect(player.snapshot).toMatchObject({
+        currentFrameIndex: 0,
+        lifecycle: "READY",
+        manifestId: "preview",
+        sequenceId: "actor-0",
+      });
 
-    player.setQualityMode({ detailLevel: 0.5, mode: "manual" });
-    await player.seek(2 / 30);
-    expect(player.snapshot.currentFrameIndex).toBe(2);
-    await player.stepFrames(-1);
-    expect(player.snapshot.currentFrameIndex).toBe(1);
+      player.setQualityMode({ detailLevel: 0.5, mode: "manual" });
+      await player.seek(2 / 30);
+      expect(player.snapshot.currentFrameIndex).toBe(2);
+      await player.stepFrames(-1);
+      expect(player.snapshot.currentFrameIndex).toBe(1);
 
-    player.dispose();
-    expect(adapter.dispose).toHaveBeenCalledOnce();
-  });
+      player.dispose();
+      expect(adapter.dispose).toHaveBeenCalledOnce();
+    },
+  );
 
   it("requires a sequence id when a manifest contains multiple sequences", async () => {
     const adapter = renderer();

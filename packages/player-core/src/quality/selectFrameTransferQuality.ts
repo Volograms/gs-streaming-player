@@ -15,14 +15,7 @@ export function selectFrameTransferQuality(
   source: GaussianFrameSource,
   requestedDetailLevel: number,
 ): SelectedFrameTransfer | undefined {
-  const candidates = (source.qualityLevels ?? [])
-    .map((quality) => toCandidate(quality))
-    .filter((candidate): candidate is QualityCandidate => candidate !== undefined)
-    .sort(
-      (left, right) =>
-        left.detailLevel - right.detailLevel ||
-        left.quality.level - right.quality.level,
-    );
+  const candidates = frameTransferQualityCandidates(source);
   if (candidates.length === 0) {
     return undefined;
   }
@@ -66,9 +59,22 @@ export function selectFrameTransferQuality(
   };
 }
 
-interface QualityCandidate {
+export interface QualityCandidate {
   detailLevel: number;
   quality: GaussianQualityLevel & { url: string };
+}
+
+export function frameTransferQualityCandidates(
+  source: GaussianFrameSource,
+): QualityCandidate[] {
+  return (source.qualityLevels ?? [])
+    .map((quality) => toCandidate(quality))
+    .filter((candidate): candidate is QualityCandidate => candidate !== undefined)
+    .sort(
+      (left, right) =>
+        left.detailLevel - right.detailLevel ||
+        left.quality.level - right.quality.level,
+    );
 }
 
 function toCandidate(quality: GaussianQualityLevel): QualityCandidate | undefined {
