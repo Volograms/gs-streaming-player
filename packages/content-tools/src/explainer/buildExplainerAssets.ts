@@ -1,0 +1,272 @@
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+
+import { runSplatTransformCli } from "../sog/runSplatTransformCli.js";
+
+import { parseExplainerAssetsConfig } from "./explainerConfig.js";
+import {
+  createInitialGaussians,
+  INITIAL_GAUSSIAN_PROPERTIES,
+} from "./initialGaussians.js";
+import { readPlyHeader, readPointCloud, writeFloatPly } from "./plyFiles.js";
+import {
+  createStageFrame,
+  isInsideBox,
+  splatTransformStageArgs,
+  toStagePoint,
+} from "./stageFrame.js";
+import { selectStageCameras } from "./trainingCameras.js";
+
+import type {
+  ExplainerAssetsConfig,
+  ExplainerCheckpointConfig,
+} from "./explainerConfig.js";
+import type { PointCloud } from "./plyFiles.js";
+import type { StageBox, StageFrame, Vec3 } from "./stageFrame.js";
+import type { StageCameraSet } from "./trainingCameras.js";
+import type { SplatTransformCliRunner } from "../sog/runSplatTransformCli.js";
+
+export interface BuildExplainerAssetsRequest {
+  configPath: string;
+  force: boolean;
+  maxWorkers: number;
+  outputDir: string;
+  shIterations: number;
+}
+
+export interface BuildExplainerAssetsIo {
+  stderr(message: string): void;
+  stdout(message: string): void;
+}
+
+export interface BuildExplainerAssetsDependencies {
+  runSplatTransform?: SplatTransformCliRunner;
+}
+
+export type BuildExplainerAssetsRunner = (
+  request: BuildExplainerAssetsRequest,
+  io: BuildExplainerAssetsIo,
+) => Promise<number>;
+
+export const EXPLAINER_ASSETS_FILENAME = "explainer-assets.json";
+const CHECKPOINT_DIR = "checkpoints";
+const SPARSE_POINTS_FILENAME = "sparse-points.bin";
+const CHECKPOINT_FILENAME = /^splat_(\d+)\.ply$/;
+
+export interface ExplainerAssetsIndex {
+  cameras: StageCameraSet;
+  checkpoints: {
+    iteration: number;
+    source: ExplainerCheckpointConfig["source"];
+    splatCount: number;
+    trainingSplatCount: number;
+    url: string;
+  }[];
+  cropBox: StageBox;
+  id: string;
+  sourceToStage: StageFrame;
+  sparsePoints: {
+    colorsByteOffset: number;
+    count: number;
+    layout: "float32 xyz positions, then uint8 rgb colours";
+    positionsByteOffset: 0;
+    url: string;
+  };
+  trainingCounts: { iteration: number; splatCount: number }[];
+  version: 1;
+}
+
+/**
+ * Prepares the demo object for the 6G showcase explainer: every configured training
+ * checkpoint is moved into the Y-up stage frame, cropped and encoded as SOG, alongside
+ * the sparse cloud, a subset of training cameras and the real per-iteration counts.
+ */
+export async function buildExplainerAssets(
+  request: BuildExplainerAssetsRequest,
+  io: BuildExplainerAssetsIo,
+  dependencies: BuildExplainerAssetsDependencies = {},
+): Promise<number> {
+  let temporaryDir: string | undefined;
+  try {
+    const configPath = resolve(request.configPath);
+    const config = parseExplainerAssetsConfig(
+      JSON.parse(await readFile(configPath, "utf8")) as unknown,
+    );
+    const datasetDir = resolveFrom(dirname(configPath), config.datasetDir);
+    const outputDir = resolve(request.outputDir);
+    const indexPath = join(outputDir, EXPLAINER_ASSETS_FILENAME);
+    await prepareOutput(outputDir, indexPath, request.force);
+
+    const runSplatTransform = dependencies.runSplatTransform ?? runSplatTransformCli;
+    const frame = createStageFrame(config.stage);
+    const stageArgs = splatTransformStageArgs(frame, config.cropBox);
+    const cloud = await readPointCloud(join(datasetDir, config.sparsePointCloud));
+    const trainingCounts = await collectTrainingCounts(datasetDir, config, cloud.count);
+    temporaryDir = await mkdtemp(join(tmpdir(), "gs-explainer-"));
+
+    const checkpoints: ExplainerAssetsIndex["checkpoints"] = [];
+    for (const checkpoint of config.checkpoints) {
+      let inputPath: string;
+      if (checkpoint.source === "initialisation") {
+        io.stdout("Generating iteration 0 gaussians from the sparse cloud.");
+        inputPath = join(temporaryDir, "initialisation.ply");
+        await writeFloatPly(
+          inputPath,
+          INITIAL_GAUSSIAN_PROPERTIES,
+          createInitialGaussians(cloud),
+        );
+      } else {
+        inputPath = join(datasetDir, checkpoint.input!);
+        await access(inputPath);
+      }
+      const croppedPath = join(temporaryDir, `iteration-${checkpoint.iteration}.ply`);
+      const url = `${CHECKPOINT_DIR}/iteration-${String(checkpoint.iteration).padStart(5, "0")}.sog`;
+      io.stdout(`Cropping iteration ${checkpoint.iteration} into the stage frame.`);
+      await runSplatTransform([
+        inputPath,
+        ...stageArgs,
+        `--filter-harmonics=${config.maxSh}`,
+        croppedPath,
+      ]);
+      const splatCount = (await readPlyHeader(croppedPath)).vertexCount;
+      await runSplatTransform([
+        croppedPath,
+        join(outputDir, url),
+        "--sh-iterations",
+        String(request.shIterations),
+        "--max-workers",
+        String(request.maxWorkers),
+        "--overwrite",
+      ]);
+      const trainingSplatCount =
+        trainingCounts.find(({ iteration }) => iteration === checkpoint.iteration)
+          ?.splatCount ?? (await readPlyHeader(inputPath)).vertexCount;
+      checkpoints.push({
+        iteration: checkpoint.iteration,
+        source: checkpoint.source,
+        splatCount,
+        trainingSplatCount,
+        url,
+      });
+    }
+
+    const sparsePoints = await writeSparsePoints(
+      join(outputDir, SPARSE_POINTS_FILENAME),
+      cloud,
+      frame,
+      config.cropBox,
+    );
+    const cameras = selectStageCameras(
+      JSON.parse(
+        await readFile(join(datasetDir, config.cameraTransforms), "utf8"),
+      ) as unknown,
+      frame,
+      config.cameraCount,
+    );
+    const index: ExplainerAssetsIndex = {
+      cameras,
+      checkpoints,
+      cropBox: config.cropBox,
+      id: config.id,
+      sourceToStage: frame,
+      sparsePoints: {
+        colorsByteOffset: sparsePoints * 12,
+        count: sparsePoints,
+        layout: "float32 xyz positions, then uint8 rgb colours",
+        positionsByteOffset: 0,
+        url: SPARSE_POINTS_FILENAME,
+      },
+      trainingCounts,
+      version: 1,
+    };
+    await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`);
+    io.stdout(
+      `Wrote ${checkpoints.length} checkpoints, ${sparsePoints} sparse points and ` +
+        `${cameras.cameras.length}/${cameras.totalCount} cameras to ${indexPath}`,
+    );
+    return 0;
+  } catch (error) {
+    io.stderr(error instanceof Error ? error.message : String(error));
+    return 1;
+  } finally {
+    if (temporaryDir !== undefined) {
+      await rm(temporaryDir, { force: true, recursive: true });
+    }
+  }
+}
+
+async function prepareOutput(outputDir: string, indexPath: string, force: boolean) {
+  if (await exists(indexPath)) {
+    if (!force) throw new Error(`Output already exists: ${indexPath}`);
+    await Promise.all(
+      [EXPLAINER_ASSETS_FILENAME, CHECKPOINT_DIR, SPARSE_POINTS_FILENAME].map((entry) =>
+        rm(join(outputDir, entry), { force: true, recursive: true }),
+      ),
+    );
+  }
+  await mkdir(join(outputDir, CHECKPOINT_DIR), { recursive: true });
+}
+
+async function collectTrainingCounts(
+  datasetDir: string,
+  config: ExplainerAssetsConfig,
+  initialCount: number,
+): Promise<ExplainerAssetsIndex["trainingCounts"]> {
+  const counts = new Map<number, number>([[0, initialCount]]);
+  for (const dir of config.trainingCountDirs) {
+    const path = join(datasetDir, dir);
+    for (const name of (await readdir(path)).sort()) {
+      const match = CHECKPOINT_FILENAME.exec(name);
+      if (match === null) continue;
+      counts.set(Number(match[1]), (await readPlyHeader(join(path, name))).vertexCount);
+    }
+  }
+  return [...counts]
+    .sort(([left], [right]) => left - right)
+    .map(([iteration, splatCount]) => ({ iteration, splatCount }));
+}
+
+async function writeSparsePoints(
+  path: string,
+  cloud: PointCloud,
+  frame: StageFrame,
+  box: StageBox,
+): Promise<number> {
+  const positions: number[] = [];
+  const colors: number[] = [];
+  for (let point = 0; point < cloud.count; point += 1) {
+    const source = cloud.positions.subarray(point * 3, point * 3 + 3);
+    const stage = toStagePoint(frame, [source[0]!, source[1]!, source[2]!] as Vec3);
+    if (!isInsideBox(box, stage)) continue;
+    positions.push(...stage);
+    colors.push(...cloud.colors.subarray(point * 3, point * 3 + 3));
+  }
+  const bytes = Buffer.concat([
+    Buffer.from(new Float32Array(positions).buffer),
+    Buffer.from(new Uint8Array(colors)),
+  ]);
+  await writeFile(path, bytes);
+  return positions.length / 3;
+}
+
+function resolveFrom(baseDir: string, path: string): string {
+  return isAbsolute(path) ? path : resolve(baseDir, path);
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}

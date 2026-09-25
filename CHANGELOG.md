@@ -49,6 +49,11 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- `gs-content build-explainer` prepares the 6G showcase explainer's demo object from an
+  OpenSplat run. It writes cropped, stage-aligned SOG checkpoints (including a generated
+  iteration-0 state), the sparse cloud, a training-camera subset, and real per-iteration
+  gaussian counts.
+
 - A dedicated `pnpm dev:showcase:https` mode for local WebXR testing. It uses the
   ignored mkcert key pair, binds the showcase to the LAN, enables XR, and retains local
   dataset settings from `apps/showcase/.env.local`.

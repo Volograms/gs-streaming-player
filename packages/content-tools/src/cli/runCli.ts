@@ -1,6 +1,8 @@
 import { buildDataset } from "../build-dataset/buildDataset.js";
 import { runConvertManifestCli } from "../convert-manifest/runConvertManifestCli.js";
 import { generateDynamicTiers } from "../dynamic-tiers/generateDynamicTiers.js";
+import { buildExplainerAssets } from "../explainer/buildExplainerAssets.js";
+import { parseBuildExplainerRequest } from "../explainer/parseBuildExplainerRequest.js";
 import { runRadQualityCuts } from "../rad-cuts/runRadQualityCuts.js";
 import { convertQualityCutsToSog } from "../sog/convertQualityCutsToSog.js";
 import { exportStreamedSog } from "../sog/exportStreamedSog.js";
@@ -18,6 +20,7 @@ import type {
   GenerateDynamicTiersRequest,
   GenerateDynamicTiersRunner,
 } from "../dynamic-tiers/generateDynamicTiers.js";
+import type { BuildExplainerAssetsRunner } from "../explainer/buildExplainerAssets.js";
 import type {
   RadQualityCutsRequest,
   RadQualityCutsRunner,
@@ -39,6 +42,7 @@ export interface CliIo {
 
 const USAGE = `Usage:
   pnpm gs-content build <dataset-config.json> --output-dir <dir> [--frame-workers <n>] [--max-workers <n>] [--dry-run] [--force]
+  pnpm gs-content build-explainer <explainer-config.json> --output-dir <dir> [--max-workers <n>] [--sh-iterations <n>] [--force]
   pnpm gs-content generate-tiers <frame.ply|frame.spz> [more ...] --output-dir <dir> [options]
   pnpm gs-manifest validate <manifest.json> [--check-assets]
   pnpm gs-manifest convert-manifest <manifest.json> [--output <path>] [--regular-timing <true|false>] [--pretty] [--force]
@@ -77,6 +81,7 @@ Options:
 
 export interface CliDependencies {
   buildDataset?: BuildDatasetRunner;
+  buildExplainerAssets?: BuildExplainerAssetsRunner;
   convertQualityCutsToSog?: ConvertQualityCutsToSogRunner;
   exportStreamedSog?: ExportStreamedSogRunner;
   generateDynamicTiers?: GenerateDynamicTiersRunner;
@@ -102,6 +107,15 @@ export async function runCli(
       return 2;
     }
     return (dependencies.buildDataset ?? buildDataset)(request, io);
+  }
+  if (command === "build-explainer") {
+    const request = parseBuildExplainerRequest(args.slice(1));
+    if (typeof request === "string") {
+      io.stderr(request);
+      io.stderr(USAGE);
+      return 2;
+    }
+    return (dependencies.buildExplainerAssets ?? buildExplainerAssets)(request, io);
   }
   if (command === "generate-tiers") {
     const request = parseGenerateDynamicTiersRequest(args.slice(1), io);

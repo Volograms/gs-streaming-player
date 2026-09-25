@@ -25,6 +25,8 @@ apps/showcase/public/assets/
 apps/showcase/public/content/
 apps/6g-showcase/public/assets/
 apps/6g-showcase/public/content/
+# OpenSplat training data (images, poses, checkpoints) for the 6G explainer.
+apps/6g-showcase/gs-truck/
 test-data/
 test-data/
 test-data/

@@ -55,3 +55,10 @@ export type {
   DatasetBuildConfiguration,
   DatasetBuildTransform,
 } from "./build-dataset/buildDataset.js";
+export { buildExplainerAssets } from "./explainer/buildExplainerAssets.js";
+export type {
+  BuildExplainerAssetsDependencies,
+  BuildExplainerAssetsRequest,
+  BuildExplainerAssetsRunner,
+  ExplainerAssetsIndex,
+} from "./explainer/buildExplainerAssets.js";

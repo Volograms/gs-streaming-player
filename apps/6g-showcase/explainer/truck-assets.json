@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "id": "truck",
+  "datasetDir": "../gs-truck",
+  "sparsePointCloud": "sparse_pc.ply",
+  "cameraTransforms": "transforms.json",
+  "cameraCount": 20,
+  "maxSh": 1,
+  "stage": {
+    "origin": [0.4, 0.2, -1.2434],
+    "up": [-0.005, -0.078, 1],
+    "forward": [-0.886204, 0.463296, 0]
+  },
+  "cropBox": {
+    "min": [-2.6, 0.12, -0.85],
+    "max": [2.95, 1.85, 1.25]
+  },
+  "trainingCountDirs": ["checkpoints", "early"],
+  "checkpoints": [
+    { "iteration": 0, "source": "initialisation" },
+    { "iteration": 50, "input": "early/splat_50.ply" },
+    { "iteration": 100, "input": "early/splat_100.ply" },
+    { "iteration": 200, "input": "early/splat_200.ply" },
+    { "iteration": 300, "input": "early/splat_300.ply" },
+    { "iteration": 500, "input": "checkpoints/splat_500.ply" },
+    { "iteration": 2000, "input": "checkpoints/splat_2000.ply" },
+    { "iteration": 7000, "input": "checkpoints/splat_7000.ply" },
+    { "iteration": 15000, "input": "checkpoints/splat_15000.ply" },
+    { "iteration": 30000, "input": "checkpoints/splat_30000.ply" }
+  ]
+}
