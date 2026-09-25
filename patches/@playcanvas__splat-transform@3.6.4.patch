@@ -1,0 +1,16 @@
+diff --git a/dist/cli.mjs b/dist/cli.mjs
+index c4456c2ac1bb4f9ae64979480b3738650317beb2..9f2d7ab57ab22588d047791f28ee85d197e7eb9d 100644
+--- a/dist/cli.mjs
++++ b/dist/cli.mjs
+@@ -52252,6 +52252,11 @@ const main = async () => {
+             await combined.close();
+             phase.end();
+             reportDone();
++            // Let CPU inspection drain native handles before Node shuts down on Windows.
++            if (isNullOutput && !cachedDevice) {
++                process$1.exitCode = 0;
++                return;
++            }
+             exit(0);
+         }
+         // LOD-meta output: keep every level, structurally separate — LODs are

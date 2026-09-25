@@ -7,6 +7,11 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Upgrade SplatTransform from 3.0.0 to 3.6.4 and use adaptive decimation for dynamic
+  quality tiers and static Streamed SOG levels. Generated quality metadata identifies
+  the adaptive strategy; existing datasets require regeneration to use it. Patch the
+  upstream CLI's forced exit that crashes SOG inspection on Windows.
+
 - Normalize component-transform quaternions consistently in PlayCanvas, Spark, and
   Babylon to prevent unintended stretching. Treat zero-length rotations as identity and
   document local scale, rotation, then translation order and quaternion authoring.

@@ -6,6 +6,7 @@ settings:
 
 patchedDependencies:
   '@babylonjs/core@9.17.0': 0fbb9dd141c3be5b3842448541df237339181f75d5f0a6009031f909b777db77
+  '@playcanvas/splat-transform@3.6.4': b8ccbedd6f4e18f143e58b528f77883af2aa9ec3612c1e7b1f84768772c5ddc2
   '@sparkjsdev/spark@2.1.0': beed064d4b2527b4ae517fc33e4295a748225a3a2fc5dd859d50ef37286e4f3c
 
 importers:
@@ -184,8 +185,8 @@ importers:
         specifier: workspace:*
         version: link:../player-core
       '@playcanvas/splat-transform':
-        specifier: 3.0.0
-        version: 3.0.0(playcanvas@2.21.0)
+        specifier: 3.6.4
+        version: 3.6.4(patch_hash=b8ccbedd6f4e18f143e58b528f77883af2aa9ec3612c1e7b1f84768772c5ddc2)(playcanvas@2.21.0)
 
   packages/demo-support:
     dependencies:
@@ -276,8 +277,8 @@ importers:
 
 packages:
 
-  '@adobe/spz@0.2.2':
-    resolution: {integrity: sha512-KUCw5R52rCBnfyvOOIa9nUQGfR6TEcHjYzuWDYRGb1fpkpnkci6VXFqCx/xFJ1yEN7V5gc9YxU2zIY6sEjIbhw==}
+  '@adobe/spz@0.2.3':
+    resolution: {integrity: sha512-iMiIB+FUxQ2vaNxP012fdIVd4yugyq0PUXBaknGfYDE3xpTNU5PrhbLtnDTGFE9anKOwjneOuanSKqaaNpC68Q==}
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -776,8 +777,8 @@ packages:
   '@oxc-project/types@0.139.0':
     resolution: {integrity: sha512-r9gHphtCs+1M7J0pw6Sn/hh/Wpa/iQrOOkrNAlVLF/gHq+/CJmHIWKKUUhdWjcD6CIa8idarspCsASiXCXvFUw==}
 
-  '@playcanvas/splat-transform@3.0.0':
-    resolution: {integrity: sha512-z2vMqlaiSxdRK0iA9snmNxjvw0tMBrF56bVRzUkGLz1n1nF8pdEprjK+F5mH6bpV37EYIyJ5c4bV7IC66beeCg==}
+  '@playcanvas/splat-transform@3.6.4':
+    resolution: {integrity: sha512-7/hlyr88z+9aefI9FAlrElTsEVsYbWuZjIwJonmpomjeYdEwZiEG2fa0gpgGFmr8Ge+rIgDCnNdq7I2VnDCQ+g==}
     engines: {node: '>=22.0.0'}
     hasBin: true
     peerDependencies:
@@ -2218,7 +2219,7 @@ packages:
 
 snapshots:
 
-  '@adobe/spz@0.2.2': {}
+  '@adobe/spz@0.2.3': {}
 
   '@babel/code-frame@7.29.7':
     dependencies:
@@ -2604,9 +2605,9 @@ snapshots:
 
   '@oxc-project/types@0.139.0': {}
 
-  '@playcanvas/splat-transform@3.0.0(playcanvas@2.21.0)':
+  '@playcanvas/splat-transform@3.6.4(patch_hash=b8ccbedd6f4e18f143e58b528f77883af2aa9ec3612c1e7b1f84768772c5ddc2)(playcanvas@2.21.0)':
     dependencies:
-      '@adobe/spz': 0.2.2
+      '@adobe/spz': 0.2.3
       playcanvas: 2.21.0
       webgpu: 0.4.0
     transitivePeerDependencies:

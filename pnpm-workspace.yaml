@@ -10,4 +10,5 @@ allowBuilds:
 
 patchedDependencies:
   "@babylonjs/core@9.17.0": patches/@babylonjs__core@9.17.0.patch
+  "@playcanvas/splat-transform@3.6.4": patches/@playcanvas__splat-transform@3.6.4.patch
   "@sparkjsdev/spark@2.1.0": patches/@sparkjsdev__spark@2.1.0.patch
