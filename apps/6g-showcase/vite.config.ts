@@ -31,6 +31,9 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     resolve: {
       alias: {
+        "@6g-path/cue-timeline": fileURLToPath(
+          new URL("../../packages/cue-timeline/src/index.ts", import.meta.url),
+        ),
         "@6g-path/gaussian-codec": fileURLToPath(
           new URL("../../packages/codec-core/src/index.ts", import.meta.url),
         ),

@@ -71,6 +71,9 @@ shared ← codec-core ← codec-spz
                    ← apps/*
 ```
 
+`cue-timeline` has no workspace dependencies. It is the explainer's time-driven cue
+evaluation, consumed by `apps/6g-showcase`.
+
 - **`player-core`** owns time and policy, not pixels or payload formats. The public
   facade `player/GaussianStreamingPlayer.ts` owns the whole lifecycle: manifest
   load/validation (`manifest/`, TypeBox + Ajv schema, compact↔expanded forms), sequence

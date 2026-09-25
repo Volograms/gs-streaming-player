@@ -1,0 +1,189 @@
+{
+  "version": 1,
+  "durationSeconds": 132.19,
+  "strings": {
+    "label.position": "Posición",
+    "label.scale": "Escala",
+    "label.opacity": "Opacidad",
+    "label.color": "Color",
+    "label.iteration": "Iteración",
+    "label.gaussians": "Gaussianas",
+    "label.densify": "Densificación",
+    "label.prune": "Poda",
+    "label.real": "Imagen real",
+    "label.render": "Render",
+    "label.error": "Error"
+  },
+  "cues": [
+    { "id": "stage", "type": "stage.show", "start": 0, "end": 132.19, "fadeIn": 1.5 },
+
+    {
+      "id": "b1-reveal",
+      "type": "demo-object.reveal",
+      "start": 20,
+      "end": 23,
+      "params": { "iteration": 30000 }
+    },
+    {
+      "id": "b1-turntable",
+      "type": "demo-object.turntable",
+      "start": 23,
+      "end": 28,
+      "params": { "turns": 1 }
+    },
+
+    { "id": "b2-dissolve", "type": "demo-object.dissolve", "start": 28, "end": 30 },
+    {
+      "id": "b2-cloud",
+      "type": "sparse-cloud.show",
+      "start": 28,
+      "end": 65,
+      "fadeIn": 1,
+      "fadeOut": 1
+    },
+    {
+      "id": "b2-cameras",
+      "type": "camera-ring.show",
+      "start": 29,
+      "end": 82,
+      "fadeIn": 1,
+      "fadeOut": 1
+    },
+    { "id": "b2-swell", "type": "sparse-cloud.swell", "start": 35, "end": 38 },
+
+    {
+      "id": "b3-dim",
+      "type": "sparse-cloud.dim",
+      "start": 40,
+      "end": 63,
+      "fadeIn": 1,
+      "fadeOut": 1
+    },
+    {
+      "id": "b3-hero",
+      "type": "hero-gaussian.show",
+      "start": 41,
+      "end": 64,
+      "fadeIn": 1,
+      "fadeOut": 1
+    },
+    {
+      "id": "b3-position",
+      "type": "hero-gaussian.parameter",
+      "start": 52.5,
+      "end": 54.5,
+      "params": { "parameter": "position", "label": "label.position" }
+    },
+    {
+      "id": "b3-scale",
+      "type": "hero-gaussian.parameter",
+      "start": 54.5,
+      "end": 56,
+      "params": { "parameter": "scale", "label": "label.scale" }
+    },
+    {
+      "id": "b3-opacity",
+      "type": "hero-gaussian.parameter",
+      "start": 56,
+      "end": 57.5,
+      "params": { "parameter": "opacity", "label": "label.opacity" }
+    },
+    {
+      "id": "b3-color",
+      "type": "hero-gaussian.parameter",
+      "start": 57.5,
+      "end": 59.5,
+      "params": { "parameter": "color", "label": "label.color" }
+    },
+
+    {
+      "id": "b4-highlight",
+      "type": "camera-ring.highlight",
+      "start": 65,
+      "end": 82,
+      "params": { "camera": 0 }
+    },
+    {
+      "id": "b4-panels",
+      "type": "comparison-panels.show",
+      "start": 66,
+      "end": 82,
+      "fadeIn": 1,
+      "fadeOut": 1,
+      "params": {
+        "realLabel": "label.real",
+        "renderLabel": "label.render",
+        "errorLabel": "label.error"
+      }
+    },
+    {
+      "id": "b4-training",
+      "type": "training.progress",
+      "start": 66,
+      "end": 81,
+      "params": { "fromIteration": 0, "toIteration": 7000 }
+    },
+    {
+      "id": "b4-iteration-counter",
+      "type": "counter.iteration",
+      "start": 65,
+      "end": 108,
+      "fadeIn": 0.5,
+      "fadeOut": 1,
+      "params": { "label": "label.iteration" }
+    },
+
+    {
+      "id": "b5-gaussian-counter",
+      "type": "counter.gaussians",
+      "start": 82,
+      "end": 108,
+      "fadeIn": 0.5,
+      "fadeOut": 1,
+      "params": { "label": "label.gaussians" }
+    },
+    {
+      "id": "b5-training",
+      "type": "training.progress",
+      "start": 84,
+      "end": 106,
+      "params": { "fromIteration": 7000, "toIteration": 30000 }
+    },
+    {
+      "id": "b5-split",
+      "type": "hero-gaussian.split",
+      "start": 88,
+      "end": 93,
+      "fadeIn": 0.5,
+      "fadeOut": 0.5,
+      "params": { "label": "label.densify" }
+    },
+    {
+      "id": "b5-prune",
+      "type": "hero-gaussian.prune",
+      "start": 96,
+      "end": 101,
+      "fadeIn": 0.5,
+      "fadeOut": 0.5,
+      "params": { "label": "label.prune" }
+    },
+
+    {
+      "id": "b6-ellipsoids",
+      "type": "demo-object.ellipsoid-view",
+      "start": 110,
+      "end": 115,
+      "fadeIn": 0.8,
+      "fadeOut": 0.8
+    },
+
+    {
+      "id": "b7-projection",
+      "type": "projection.show",
+      "start": 117,
+      "end": 131,
+      "fadeIn": 1,
+      "fadeOut": 1.5
+    }
+  ]
+}

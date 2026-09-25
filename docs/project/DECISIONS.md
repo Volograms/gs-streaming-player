@@ -22,6 +22,7 @@ used during day-to-day implementation.
 | 0014 | Use native PlayCanvas SOG ingestion                   | Accepted   |
 | 0015 | Define the source-only public-preview product surface | Accepted   |
 | 0016 | Generate public dynamic tiers from PLY or SPZ         | Accepted   |
+| 0017 | Drive the 6G explainer from the presented frame time  | Accepted   |
 
 ## Working conventions
 

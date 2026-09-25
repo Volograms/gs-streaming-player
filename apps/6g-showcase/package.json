@@ -12,6 +12,7 @@
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
+    "@6g-path/cue-timeline": "workspace:*",
     "@6g-path/gaussian-player": "workspace:*",
     "@6g-path/gaussian-renderer-playcanvas": "workspace:*",
     "react": "^19.2.7",

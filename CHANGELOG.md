@@ -49,6 +49,11 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- `@6g-path/cue-timeline`: a renderer-independent, data-driven cue timeline. It is
+  evaluated purely from the media time of the presenter frame on screen, so seeking,
+  pausing and stalls always give a consistent state. The 6G showcase has a draft
+  `explainer/cues.json` for the explainer beats.
+
 - `gs-content build-explainer` prepares the 6G showcase explainer's demo object from an
   OpenSplat run. It writes cropped, stage-aligned SOG checkpoints (including a generated
   iteration-0 state), the sparse cloud, a training-camera subset, and real per-iteration

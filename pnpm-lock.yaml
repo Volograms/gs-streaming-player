@@ -75,6 +75,9 @@ importers:
 
   apps/6g-showcase:
     dependencies:
+      '@6g-path/cue-timeline':
+        specifier: workspace:*
+        version: link:../../packages/cue-timeline
       '@6g-path/gaussian-player':
         specifier: workspace:*
         version: link:../../packages/player-core
@@ -201,6 +204,8 @@ importers:
       '@playcanvas/splat-transform':
         specifier: 3.0.0
         version: 3.0.0(playcanvas@2.21.0)
+
+  packages/cue-timeline: {}
 
   packages/demo-support:
     dependencies:

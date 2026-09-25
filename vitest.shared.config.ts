@@ -2,6 +2,9 @@ import { fileURLToPath } from "node:url";
 
 export const workspaceResolve = {
   alias: {
+    "@6g-path/cue-timeline": fileURLToPath(
+      new URL("./packages/cue-timeline/src/index.ts", import.meta.url),
+    ),
     "@6g-path/gaussian-codec": fileURLToPath(
       new URL("./packages/codec-core/src/index.ts", import.meta.url),
     ),
