@@ -7,6 +7,10 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Normalize component-transform quaternions consistently in PlayCanvas, Spark, and
+  Babylon to prevent unintended stretching. Treat zero-length rotations as identity and
+  document local scale, rotation, then translation order and quaternion authoring.
+
 - Redesign the showcase landing page with a restrained dark palette, clearer content
   hierarchy, a generated volumetric illustration, responsive layouts, a semantic support
   table, and a copyable dataset build command. Document HTTPS setup for a separate

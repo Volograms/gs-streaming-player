@@ -1,3 +1,4 @@
+import { normalizeRotation } from "@6g-path/shared";
 import { Mat4, Quat, Vec3 } from "playcanvas";
 
 import type { Transform } from "@6g-path/shared";
@@ -23,12 +24,8 @@ export function applyPlayCanvasTransform(
     transform?.position?.y ?? 0,
     transform?.position?.z ?? 0,
   );
-  entity.setLocalRotation(
-    transform?.rotation?.x ?? 0,
-    transform?.rotation?.y ?? 0,
-    transform?.rotation?.z ?? 0,
-    transform?.rotation?.w ?? 1,
-  );
+  const rotation = normalizeRotation(transform?.rotation);
+  entity.setLocalRotation(rotation.x, rotation.y, rotation.z, rotation.w);
   entity.setLocalScale(
     transform?.scale?.x ?? 1,
     transform?.scale?.y ?? 1,
