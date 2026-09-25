@@ -5,7 +5,15 @@ export {
 export { queryPlayCanvasImmersiveVrSupport } from "./graphicsBackend.js";
 export { applyPlayCanvasTransform } from "./transform.js";
 // Exposed for renderer-specific integrations that build native world-space XR UI.
-export { Color, Entity, StandardMaterial, Texture, Vec3 } from "playcanvas";
+export {
+  BLEND_NONE,
+  BLEND_NORMAL,
+  Color,
+  Entity,
+  StandardMaterial,
+  Texture,
+  Vec3,
+} from "playcanvas";
 export type { XrInput, XrInputSource } from "playcanvas";
 export type {
   PlayCanvasGraphicsBackend,

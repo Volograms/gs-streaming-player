@@ -1,0 +1,94 @@
+import sceneDocument from "../../explainer/scene.json";
+
+type Vec3Tuple = readonly [number, number, number];
+
+/** Placement of the explainer stage in the showcase world (Y-up, metres). */
+export interface ExplainerSceneConfig {
+  assetsUrl: string;
+  counters: { offset: Vec3Tuple; width: number };
+  /** Close-up pose in front of the presenter, used while a focus cue is active. */
+  focus: {
+    /** Counter panel position relative to the object base at the close-up pose. */
+    countersOffset: Vec3Tuple;
+    objectScale: number;
+    /** Object base (its ground contact centre) in world metres. */
+    position: Vec3Tuple;
+    yawDegrees: number;
+  };
+  stage: {
+    /** Demo-object stage metres to world metres. */
+    objectScale: number;
+    /** Height of the pedestal top above the stage origin. */
+    pedestalHeight: number;
+    pedestalRadius: number;
+    /** Stage origin on the floor, beside the presenter. */
+    position: Vec3Tuple;
+    /** Rotation of the stage about world +Y. */
+    yawDegrees: number;
+  };
+}
+
+export const explainerSceneConfig: ExplainerSceneConfig = parseExplainerSceneConfig(
+  sceneDocument,
+  import.meta.env.VITE_EXPLAINER_ASSETS_URL,
+);
+
+export function parseExplainerSceneConfig(
+  value: unknown,
+  assetsUrlOverride?: string,
+): ExplainerSceneConfig {
+  if (!isRecord(value) || value.version !== 1) {
+    throw new Error("Explainer scene config must be version 1.");
+  }
+  const stage = isRecord(value.stage) ? value.stage : {};
+  const counters = isRecord(value.counters) ? value.counters : {};
+  const focus = isRecord(value.focus) ? value.focus : {};
+  const assetsUrl = assetsUrlOverride?.trim() || value.assetsUrl;
+  if (typeof assetsUrl !== "string" || assetsUrl === "") {
+    throw new Error("Explainer scene config needs an assetsUrl.");
+  }
+  return {
+    assetsUrl,
+    counters: {
+      offset: vec3(counters.offset, "counters.offset"),
+      width: positive(counters.width, "counters.width"),
+    },
+    focus: {
+      countersOffset: vec3(focus.countersOffset, "focus.countersOffset"),
+      objectScale: positive(focus.objectScale, "focus.objectScale"),
+      position: vec3(focus.position, "focus.position"),
+      yawDegrees: finite(focus.yawDegrees, "focus.yawDegrees"),
+    },
+    stage: {
+      objectScale: positive(stage.objectScale, "stage.objectScale"),
+      pedestalHeight: positive(stage.pedestalHeight, "stage.pedestalHeight"),
+      pedestalRadius: positive(stage.pedestalRadius, "stage.pedestalRadius"),
+      position: vec3(stage.position, "stage.position"),
+      yawDegrees: finite(stage.yawDegrees, "stage.yawDegrees"),
+    },
+  };
+}
+
+function vec3(value: unknown, label: string): Vec3Tuple {
+  if (!Array.isArray(value) || value.length !== 3) {
+    throw new Error(`${label} must be [x, y, z].`);
+  }
+  return [finite(value[0], label), finite(value[1], label), finite(value[2], label)];
+}
+
+function positive(value: unknown, label: string): number {
+  const number = finite(value, label);
+  if (number <= 0) throw new Error(`${label} must be positive.`);
+  return number;
+}
+
+function finite(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`${label} must be a finite number.`);
+  }
+  return value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

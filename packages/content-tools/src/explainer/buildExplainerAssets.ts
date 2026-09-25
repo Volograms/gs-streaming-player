@@ -71,7 +71,7 @@ export interface ExplainerAssetsIndex {
     trainingSplatCount: number;
     url: string;
   }[];
-  cropBox: StageBox;
+  cropBoxes: StageBox[];
   id: string;
   sourceToStage: StageFrame;
   sparsePoints: {
@@ -108,7 +108,7 @@ export async function buildExplainerAssets(
 
     const runSplatTransform = dependencies.runSplatTransform ?? runSplatTransformCli;
     const frame = createStageFrame(config.stage);
-    const stageArgs = splatTransformStageArgs(frame, config.cropBox);
+    const boxArgs = config.cropBoxes.map((box) => splatTransformStageArgs(frame, box));
     const cloud = await readPointCloud(join(datasetDir, config.sparsePointCloud));
     const trainingCounts = await collectTrainingCounts(datasetDir, config, cloud.count);
     temporaryDir = await mkdtemp(join(tmpdir(), "gs-explainer-"));
@@ -131,12 +131,23 @@ export async function buildExplainerAssets(
       const croppedPath = join(temporaryDir, `iteration-${checkpoint.iteration}.ply`);
       const url = `${CHECKPOINT_DIR}/iteration-${String(checkpoint.iteration).padStart(5, "0")}.sog`;
       io.stdout(`Cropping iteration ${checkpoint.iteration} into the stage frame.`);
-      await runSplatTransform([
-        inputPath,
-        ...stageArgs,
-        `--filter-harmonics=${config.maxSh}`,
-        croppedPath,
-      ]);
+      const parts = boxArgs.map((_, index) =>
+        boxArgs.length === 1
+          ? croppedPath
+          : join(temporaryDir!, `iteration-${checkpoint.iteration}-box-${index}.ply`),
+      );
+      for (const [index, args] of boxArgs.entries()) {
+        await runSplatTransform([
+          inputPath,
+          ...args,
+          `--filter-harmonics=${config.maxSh}`,
+          parts[index]!,
+        ]);
+      }
+      if (parts.length > 1) {
+        // Multiple inputs are concatenated into one working set by SplatTransform.
+        await runSplatTransform([...parts, croppedPath]);
+      }
       const splatCount = (await readPlyHeader(croppedPath)).vertexCount;
       await runSplatTransform([
         croppedPath,
@@ -163,7 +174,7 @@ export async function buildExplainerAssets(
       join(outputDir, SPARSE_POINTS_FILENAME),
       cloud,
       frame,
-      config.cropBox,
+      config.cropBoxes,
     );
     const cameras = selectStageCameras(
       JSON.parse(
@@ -175,7 +186,7 @@ export async function buildExplainerAssets(
     const index: ExplainerAssetsIndex = {
       cameras,
       checkpoints,
-      cropBox: config.cropBox,
+      cropBoxes: config.cropBoxes,
       id: config.id,
       sourceToStage: frame,
       sparsePoints: {
@@ -239,14 +250,14 @@ async function writeSparsePoints(
   path: string,
   cloud: PointCloud,
   frame: StageFrame,
-  box: StageBox,
+  boxes: readonly StageBox[],
 ): Promise<number> {
   const positions: number[] = [];
   const colors: number[] = [];
   for (let point = 0; point < cloud.count; point += 1) {
     const source = cloud.positions.subarray(point * 3, point * 3 + 3);
     const stage = toStagePoint(frame, [source[0]!, source[1]!, source[2]!] as Vec3);
-    if (!isInsideBox(box, stage)) continue;
+    if (!boxes.some((box) => isInsideBox(box, stage))) continue;
     positions.push(...stage);
     colors.push(...cloud.colors.subarray(point * 3, point * 3 + 3));
   }

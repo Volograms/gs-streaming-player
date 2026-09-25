@@ -88,7 +88,10 @@ async function createFixture() {
         { iteration: 0, source: "initialisation" },
         { input: "checkpoints/splat_500.ply", iteration: 500 },
       ],
-      cropBox: { max: [1, 1, 1], min: [-1, 0, -1] },
+      cropBoxes: [
+        { max: [1, 0.4, 1], min: [-1, 0, -1] },
+        { max: [1, 1, 1], min: [-1, 0.4, -1] },
+      ],
       datasetDir: "dataset",
       id: "fixture",
       sparsePointCloud: "sparse_pc.ply",
@@ -110,9 +113,9 @@ async function createFixture() {
   const calls: string[][] = [];
   const runSplatTransform = async (args: readonly string[]) => {
     calls.push([...args]);
-    const output = args.find(
-      (arg, index) => index > 0 && !arg.startsWith("--") && /\.(ply|sog)$/.test(arg),
-    );
+    const output = [...args]
+      .reverse()
+      .find((arg) => !arg.startsWith("--") && /\.(ply|sog)$/.test(arg));
     if (output?.endsWith(".ply")) {
       await writeFloatPly(output, ["x", "y", "z"], new Float32Array(9));
     } else if (output !== undefined) {
@@ -141,14 +144,19 @@ describe("buildExplainerAssets", () => {
     expect(fixture.stderr).toEqual([]);
     expect(exitCode).toBe(0);
 
-    const initialisation = fixture.calls[0]!;
-    expect(initialisation[0]).toMatch(/initialisation\.ply$/);
-    expect(initialisation).toContain("--filter-harmonics=1");
-    expect(initialisation.some((arg) => arg.startsWith("--filter-box="))).toBe(true);
-    expect(fixture.calls[1]).toEqual(
+    // Per checkpoint: one crop per box, a merge of the parts, then the SOG encode.
+    const [lowerBox, upperBox, merge, encode] = fixture.calls;
+    expect(lowerBox![0]).toMatch(/initialisation\.ply$/);
+    expect(lowerBox).toContain("--filter-harmonics=1");
+    const filterBox = (args: string[]) =>
+      args.find((arg) => arg.startsWith("--filter-box="));
+    expect(filterBox(lowerBox!)).not.toBe(filterBox(upperBox!));
+    expect(merge).toHaveLength(3);
+    expect(merge![2]).toMatch(/iteration-0\.ply$/);
+    expect(encode).toEqual(
       expect.arrayContaining(["--sh-iterations", "5", "--max-workers", "2"]),
     );
-    expect(fixture.calls).toHaveLength(4);
+    expect(fixture.calls).toHaveLength(8);
 
     const index = JSON.parse(
       await readFile(join(fixture.outputDir, "explainer-assets.json"), "utf8"),

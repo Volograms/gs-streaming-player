@@ -49,6 +49,14 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- The 6G showcase explainer layer. A pedestal beside the presenter shows the demo object
+  revealed, turned, dissolved and stepped through its training checkpoints. During the
+  training beats it glides to a larger close-up in front of the presenter. World-space
+  iteration and gaussian counters show the real training counts. Everything follows the
+  presenter frame on screen through the cue timeline, and a `?debug=1` panel shows cue
+  state and offers jumps and toggles. `gs-content build-explainer` now accepts a union
+  of crop boxes to trim ground beside the object.
+
 - `@6g-path/cue-timeline`: a renderer-independent, data-driven cue timeline. It is
   evaluated purely from the media time of the presenter frame on screen, so seeking,
   pausing and stalls always give a consistent state. The 6G showcase has a draft

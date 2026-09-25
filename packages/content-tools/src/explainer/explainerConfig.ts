@@ -12,7 +12,8 @@ export interface ExplainerAssetsConfig {
   cameraCount: number;
   cameraTransforms: string;
   checkpoints: ExplainerCheckpointConfig[];
-  cropBox: StageBox;
+  /** Union of non-overlapping stage-frame boxes kept after cropping. */
+  cropBoxes: StageBox[];
   datasetDir: string;
   id: string;
   maxSh: number;
@@ -33,15 +34,7 @@ export function parseExplainerAssetsConfig(value: unknown): ExplainerAssetsConfi
     );
   }
   if (!isRecord(value.stage)) throw new Error("Explainer config stage is required.");
-  if (!isRecord(value.cropBox))
-    throw new Error("Explainer config cropBox is required.");
-  const cropBox = {
-    max: requireVec3(value.cropBox.max, "cropBox.max"),
-    min: requireVec3(value.cropBox.min, "cropBox.min"),
-  };
-  if (cropBox.min.some((minimum, axis) => minimum >= cropBox.max[axis]!)) {
-    throw new Error("cropBox.min must be smaller than cropBox.max on every axis.");
-  }
+  const cropBoxes = parseCropBoxes(value.cropBoxes);
   const maxSh = value.maxSh ?? 1;
   if (typeof maxSh !== "number" || !Number.isInteger(maxSh) || maxSh < 0 || maxSh > 3) {
     throw new Error("maxSh must be an integer between 0 and 3.");
@@ -61,7 +54,7 @@ export function parseExplainerAssetsConfig(value: unknown): ExplainerAssetsConfi
     cameraCount,
     cameraTransforms: requireString(value.cameraTransforms, "cameraTransforms"),
     checkpoints: parseCheckpoints(value.checkpoints),
-    cropBox,
+    cropBoxes,
     datasetDir: requireString(value.datasetDir, "datasetDir"),
     id,
     maxSh,
@@ -75,6 +68,40 @@ export function parseExplainerAssetsConfig(value: unknown): ExplainerAssetsConfi
       requireString(dir, `trainingCountDirs[${index}]`),
     ),
   };
+}
+
+function parseCropBoxes(value: unknown): StageBox[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error("cropBoxes must be a non-empty list of { min, max } boxes.");
+  }
+  const boxes = value.map((entry, index): StageBox => {
+    const label = `cropBoxes[${index}]`;
+    if (!isRecord(entry)) throw new Error(`${label} must be an object.`);
+    const box = {
+      max: requireVec3(entry.max, `${label}.max`),
+      min: requireVec3(entry.min, `${label}.min`),
+    };
+    if (box.min.some((minimum, axis) => minimum >= box.max[axis]!)) {
+      throw new Error(`${label}.min must be smaller than max on every axis.`);
+    }
+    return box;
+  });
+  // Each box is cropped separately and the parts are concatenated, so an overlap would
+  // duplicate gaussians.
+  boxes.forEach((box, index) => {
+    boxes.slice(index + 1).forEach((other, offset) => {
+      const overlaps = box.min.every(
+        (minimum, axis) =>
+          minimum < other.max[axis]! && other.min[axis]! < box.max[axis]!,
+      );
+      if (overlaps) {
+        throw new Error(
+          `cropBoxes[${index}] overlaps cropBoxes[${index + offset + 1}].`,
+        );
+      }
+    });
+  });
+  return boxes;
 }
 
 function parseCheckpoints(value: unknown): ExplainerCheckpointConfig[] {

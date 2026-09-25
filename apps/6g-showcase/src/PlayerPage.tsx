@@ -7,6 +7,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { chooseShowcaseBackend } from "./backendSelection.js";
 import { describeShowcaseError } from "./describeError.js";
+import { loadExplainerAssets } from "./explainer/explainerAssets.js";
+import { ExplainerController } from "./explainer/ExplainerController.js";
+import { ExplainerDebugPanel } from "./explainer/ExplainerDebugPanel.js";
+import { explainerSceneConfig } from "./explainer/explainerSceneConfig.js";
 import { PauseIcon, PlayIcon, SoundIcon, VrIcon } from "./icons.js";
 import { collectShowcaseQualityOptions } from "./qualityOptions.js";
 import { XrTransportPanel } from "./XrTransportPanel.js";
@@ -30,6 +34,7 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
   const playerRef = useRef<GaussianStreamingPlayer | undefined>(undefined);
   const adapterRef = useRef<PlayCanvasAdapter | undefined>(undefined);
   const panelRef = useRef<XrTransportPanel | undefined>(undefined);
+  const explainerRef = useRef<ExplainerController | undefined>(undefined);
   const snapshotRef = useRef<GaussianStreamingPlayerSnapshot | undefined>(undefined);
   const initialUrl = requestedManifestUrl ?? configuredManifestUrl ?? "";
   const [manifestInput, setManifestInput] = useState(initialUrl);
@@ -45,6 +50,9 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
   >([]);
   const [xrAvailable, setXrAvailable] = useState(false);
   const [xrActive, setXrActive] = useState(false);
+  const [explainer, setExplainer] = useState<ExplainerController>();
+  const [explainerError, setExplainerError] = useState<string>();
+  const explainerDebug = isExplainerDebugEnabled();
 
   useEffect(() => {
     snapshotRef.current = snapshot;
@@ -79,6 +87,12 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
         }
         playerRef.current = result.player;
         adapterRef.current = result.adapter;
+        if (import.meta.env.DEV) {
+          // Development-only handle for scene inspection from the console or tests.
+          Object.assign(window, {
+            __showcase: { adapter: result.adapter, player: result.player },
+          });
+        }
         setQualityOptions(collectShowcaseQualityOptions(result.player.sequence));
         setBackend(result.backend);
         unsubscribe = result.player.subscribe((next) => {
@@ -89,17 +103,52 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
         if (!active) return;
         setXrAvailable(support.available);
         setLoadState("ready");
+        void startExplainer(result.adapter, result.player);
       } catch (caught) {
         if (!active || abortController.signal.aborted) return;
         setError(describeShowcaseError(caught));
         setLoadState("error");
       }
     }
+    async function startExplainer(
+      adapter: PlayCanvasAdapter,
+      player: GaussianStreamingPlayer,
+    ) {
+      try {
+        const assets = await loadExplainerAssets(
+          explainerSceneConfig.assetsUrl,
+          abortController.signal,
+        );
+        const controller = await ExplainerController.create(
+          adapter,
+          player,
+          assets,
+          explainerSceneConfig,
+          abortController.signal,
+        );
+        if (!active) {
+          controller.dispose();
+          return;
+        }
+        explainerRef.current = controller;
+        setExplainer(controller);
+      } catch (caught) {
+        if (!active || abortController.signal.aborted) return;
+        // The explainer is an optional layer; the presenter keeps playing without it.
+        console.warn("Explainer disabled:", caught);
+        setExplainerError(describeShowcaseError(caught));
+      }
+    }
+
     void initialise();
     return () => {
       active = false;
       abortController.abort();
       unsubscribe?.();
+      explainerRef.current?.dispose();
+      explainerRef.current = undefined;
+      setExplainer(undefined);
+      setExplainerError(undefined);
       panelRef.current?.dispose();
       panelRef.current = undefined;
       playerRef.current?.dispose();
@@ -355,6 +404,14 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
         </section>
       ) : null}
 
+      {loadState === "ready" && explainerDebug ? (
+        <ExplainerDebugPanel
+          controller={explainer}
+          error={explainerError}
+          seek={seek}
+        />
+      ) : null}
+
       {loadState === "ready" && error ? (
         <button type="button" className="toast" onClick={() => setError(undefined)}>
           {error}
@@ -407,6 +464,13 @@ async function selectBackend(): Promise<PlayCanvasGraphicsBackend> {
   }
   const support = await queryPlayCanvasImmersiveVrSupport("webgpu");
   return chooseShowcaseBackend(hasWebGpu, false, support.reason);
+}
+
+function isExplainerDebugEnabled(): boolean {
+  if (import.meta.env.VITE_EXPLAINER_DEBUG === "true") return true;
+  if (typeof window === "undefined") return false;
+  const query = window.location.hash.split("?", 2)[1] ?? "";
+  return new URLSearchParams(query).has("debug");
 }
 
 function validateManifestUrl(value: string): void {

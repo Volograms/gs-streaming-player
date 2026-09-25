@@ -97,6 +97,14 @@
     },
 
     {
+      "id": "b4-focus",
+      "type": "demo-object.focus",
+      "start": 64,
+      "end": 108,
+      "fadeIn": 2,
+      "fadeOut": 2
+    },
+    {
       "id": "b4-highlight",
       "type": "camera-ring.highlight",
       "start": 65,

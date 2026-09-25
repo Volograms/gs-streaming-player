@@ -23,16 +23,16 @@ training and stop it early. OpenSplat decays learning rates over `-n`, so a shor
 `apps/6g-showcase/explainer/truck-assets.json` is the reference. Paths are relative to
 the config, and `datasetDir` is relative to the config file.
 
-| Field               | Meaning                                                                                                                              |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `stage.origin`      | Ground point under the object, in the training frame. Becomes the stage origin.                                                      |
-| `stage.up`          | Ground normal in the training frame. Becomes stage `+Y`.                                                                             |
-| `stage.forward`     | Object's long axis in the training frame. It is projected onto the ground and becomes stage `+X`.                                    |
-| `cropBox`           | `min`/`max` in stage metres (Y-up). Everything outside is removed from every checkpoint and from the sparse cloud.                   |
-| `maxSh`             | Spherical-harmonic bands kept (default `1`).                                                                                         |
-| `checkpoints`       | Ordered iterations to ship. `{ "iteration": 0, "source": "initialisation" }` generates the pre-training state from the sparse cloud. |
-| `trainingCountDirs` | Directories scanned for `splat_<n>.ply` headers; their real counts drive the explainer's gaussian counter.                           |
-| `cameraCount`       | Training cameras kept for the frustum ring, spread evenly by azimuth (default `20`).                                                 |
+| Field               | Meaning                                                                                                                                                                                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stage.origin`      | Ground point under the object, in the training frame. Becomes the stage origin.                                                                                                                                                                       |
+| `stage.up`          | Ground normal in the training frame. Becomes stage `+Y`.                                                                                                                                                                                              |
+| `stage.forward`     | Object's long axis in the training frame. It is projected onto the ground and becomes stage `+X`.                                                                                                                                                     |
+| `cropBoxes`         | Non-overlapping `{ min, max }` boxes in stage metres (Y-up), kept as a union. Everything outside them is removed from every checkpoint and from the sparse cloud. Use a narrower low slab to trim ground next to the object without cutting its body. |
+| `maxSh`             | Spherical-harmonic bands kept (default `1`).                                                                                                                                                                                                          |
+| `checkpoints`       | Ordered iterations to ship. `{ "iteration": 0, "source": "initialisation" }` generates the pre-training state from the sparse cloud.                                                                                                                  |
+| `trainingCountDirs` | Directories scanned for `splat_<n>.ply` headers; their real counts drive the explainer's gaussian counter.                                                                                                                                            |
+| `cameraCount`       | Training cameras kept for the frustum ring, spread evenly by azimuth (default `20`).                                                                                                                                                                  |
 
 ## Build
 

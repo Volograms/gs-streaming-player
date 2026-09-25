@@ -265,7 +265,7 @@ describe("explainer config", () => {
       { iteration: 0, source: "initialisation" },
       { input: "checkpoints/splat_500.ply", iteration: 500 },
     ],
-    cropBox: { max: [1, 1, 1], min: [-1, 0, -1] },
+    cropBoxes: [{ max: [1, 1, 1], min: [-1, 0, -1] }],
     datasetDir: "../data",
     id: "truck",
     sparsePointCloud: "sparse_pc.ply",
@@ -292,7 +292,17 @@ describe("explainer config", () => {
       /above/,
     ],
     [{ checkpoints: [{ iteration: 3, source: "initialisation" }] }, /iteration 0/],
-    [{ cropBox: { max: [1, 1, 1], min: [1, 0, 0] } }, /smaller/],
+    [{ cropBoxes: [{ max: [1, 1, 1], min: [1, 0, 0] }] }, /smaller/],
+    [
+      {
+        cropBoxes: [
+          { max: [1, 1, 1], min: [-1, 0, -1] },
+          { max: [2, 2, 2], min: [0.5, 0.5, 0.5] },
+        ],
+      },
+      /overlaps/,
+    ],
+    [{ cropBoxes: [] }, /non-empty/],
     [{ stage: { ...TRUCK_STAGE, up: [0, 1] } }, /stage.up/],
     [{ maxSh: 4 }, /maxSh/],
   ])("rejects invalid configs", (override, message) => {

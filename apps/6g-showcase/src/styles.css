@@ -510,3 +510,40 @@ button {
     transition-duration: 0.01ms !important;
   }
 }
+
+.explainer-debug {
+  position: absolute;
+  z-index: 2;
+  top: 76px;
+  left: 20px;
+  width: min(340px, calc(100% - 40px));
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #100b19e6;
+  color: #d1cadb;
+  font-size: 12px;
+}
+.explainer-debug p {
+  margin: 6px 0;
+}
+.explainer-debug-time {
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+.explainer-debug-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  margin: 8px 0;
+}
+.explainer-debug-row select {
+  flex: 1;
+  min-width: 0;
+}
+.explainer-debug ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  color: var(--muted);
+}
