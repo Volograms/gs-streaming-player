@@ -12,6 +12,7 @@ target/
 .pnpm-store/
 !.env.example
 !apps/showcase/.env.https
+!apps/6g-showcase/.env.https
 .cert/
 
 # Developer-provided renderer fixtures are staged here for local smoke tests only.
@@ -22,6 +23,8 @@ apps/demo/public/assets/local-dynamic-cuts-v4
 apps/demo/public/assets/local-dynamic-cuts*/
 apps/showcase/public/assets/
 apps/showcase/public/content/
+apps/6g-showcase/public/assets/
+apps/6g-showcase/public/content/
 test-data/
 test-data/
 test-data/

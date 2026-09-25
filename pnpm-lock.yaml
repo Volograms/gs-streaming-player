@@ -73,6 +73,21 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@26.1.1)(@vitest/coverage-v8@4.1.10)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.27.7)(tsx@4.23.1))
 
+  apps/6g-showcase:
+    dependencies:
+      '@6g-path/gaussian-player':
+        specifier: workspace:*
+        version: link:../../packages/player-core
+      '@6g-path/gaussian-renderer-playcanvas':
+        specifier: workspace:*
+        version: link:../../packages/renderer-playcanvas
+      react:
+        specifier: ^19.2.7
+        version: 19.2.7
+      react-dom:
+        specifier: ^19.2.7
+        version: 19.2.7(react@19.2.7)
+
   apps/demo:
     dependencies:
       '@6g-path/gaussian-codec':
