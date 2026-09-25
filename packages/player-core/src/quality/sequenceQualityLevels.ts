@@ -42,12 +42,39 @@ export function sequenceQualityLevels(
   const common = [...levels.values()]
     .filter(({ count }) => count === sequence.frameCount)
     .sort((left, right) => left.detailLevel - right.detailLevel);
+  const distinct: Array<DynamicQualityLevel & { minimumPlayable: boolean }> = [];
+  for (const { bytes, byteCount, count, detailLevel, minimumPlayable } of common) {
+    const estimatedFrameBytes = byteCount === count ? bytes / count : undefined;
+    const previous = distinct.at(-1);
+    if (previous?.detailLevel === detailLevel) {
+      // Equal ratios can belong to different authored IDs, including the playable
+      // floor. Keep the most expensive estimate, or unknown if any tier is unmeasured.
+      previous.minimumPlayable ||= minimumPlayable;
+      if (
+        previous.estimatedFrameBytes === undefined ||
+        estimatedFrameBytes === undefined
+      ) {
+        delete previous.estimatedFrameBytes;
+      } else {
+        previous.estimatedFrameBytes = Math.max(
+          previous.estimatedFrameBytes,
+          estimatedFrameBytes,
+        );
+      }
+    } else {
+      distinct.push({
+        detailLevel,
+        minimumPlayable,
+        ...(estimatedFrameBytes === undefined ? {} : { estimatedFrameBytes }),
+      });
+    }
+  }
   const floor = Math.max(
     0,
-    common.findIndex(({ minimumPlayable }) => minimumPlayable),
+    distinct.findIndex(({ minimumPlayable }) => minimumPlayable),
   );
-  return common.slice(floor).map(({ bytes, byteCount, count, detailLevel }) => ({
+  return distinct.slice(floor).map(({ detailLevel, estimatedFrameBytes }) => ({
     detailLevel,
-    ...(byteCount === count ? { estimatedFrameBytes: bytes / count } : {}),
+    ...(estimatedFrameBytes === undefined ? {} : { estimatedFrameBytes }),
   }));
 }

@@ -7,6 +7,10 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Collapse equal authored detail levels before creating the automatic quality controller
+  so valid datasets with duplicate ratios load correctly. Preserve the playable floor
+  and conservative byte estimates when merging tiers.
+
 - Upgrade SplatTransform from 3.0.0 to 3.6.4 and use adaptive decimation for dynamic
   quality tiers and static Streamed SOG levels. Generated quality metadata identifies
   the adaptive strategy; existing datasets require regeneration to use it. Patch the

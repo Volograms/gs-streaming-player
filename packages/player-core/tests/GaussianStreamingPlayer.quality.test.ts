@@ -16,7 +16,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-async function harness(frameRate: number) {
+async function harness(frameRate: number, detailLevels = [0.1, 0.25, 0.5, 1]) {
   vi.useFakeTimers({ toFake: ["performance", "setTimeout", "clearTimeout"] });
   let fetchDelay = 10;
   let renderFps = 90;
@@ -95,7 +95,7 @@ async function harness(frameRate: number) {
           timestampSeconds: frameIndex / frameRate,
           codec: "sog",
           url: `/${frameIndex}-10000.sog`,
-          qualityLevels: [0.1, 0.25, 0.5, 1].map((detailLevel, level) => ({
+          qualityLevels: detailLevels.map((detailLevel, level) => ({
             level,
             detailLevel,
             minimumPlayable: level === 1,
@@ -138,6 +138,22 @@ async function harness(frameRate: number) {
 }
 
 describe("GaussianStreamingPlayer automatic quality", () => {
+  it.each([
+    { detailLevels: [0.1, 0.25, 0.25, 1], floor: 0.25 },
+    { detailLevels: [1, 1, 1, 1], floor: 1 },
+  ])(
+    "loads and plays duplicate authored details: $detailLevels",
+    async ({ detailLevels, floor }) => {
+      const result = await harness(30, detailLevels);
+      await result.player.play();
+      await vi.advanceTimersByTimeAsync(200);
+      expect(result.lastDetail).toBe(floor);
+      expect(result.presented).toContain(floor);
+      expect(Math.min(...result.decisions)).toBe(floor);
+      expect(result.player.snapshot.error).toBeUndefined();
+    },
+  );
+
   it.each([25, 30])(
     "presents full tiers at %i fps, reduces quality on a slow link, and recovers",
     async (fps) => {
