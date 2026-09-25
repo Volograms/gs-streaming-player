@@ -1,6 +1,7 @@
 export type { Disposable } from "./disposable.js";
 export {
   createIdentityTransform,
+  normalizeRotation,
   type QuaternionTuple,
   type Transform,
   type Vector3Tuple,

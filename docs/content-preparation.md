@@ -196,10 +196,25 @@ pnpm gs-content generate-tiers frame-0000.ply \
   --format spz
 ```
 
-The first tier at ratio `1` is a format conversion; smaller ratios are public
-SplatTransform merge-decimation passes. Each generated tier is inspected again so
-`quality-cuts.json` contains the actual splat count and file size. Existing lower-level
-commands remain available from `pnpm gs-content help`.
+The first tier at ratio `1` is a format conversion; smaller ratios use SplatTransform
+3.6.4's `--decimate-adaptive` to allocate reduction according to local error. Static
+Streamed SOG coarse levels use the same adaptive decimator. Existing datasets are not
+changed by upgrading the tool: regenerate from the original inputs to use it. Compare
+the resulting tiers on representative frames; adaptive merging does not guarantee
+gap-free coverage.
+
+Upstream recommends comparing uniform decimation (`--decimate`) for single objects with
+similarly sized Gaussians and adaptive decimation for mixed-scale scenes. Our commands
+use adaptive decimation; retained-count settings are unchanged.
+
+The pinned tool includes a pnpm patch letting metadata-only CLI commands without a GPU
+device exit naturally. The upstream forced exit can trigger a native shutdown assertion
+during SOG inspection on Windows with Node 24. Keep the patch until an upstream release
+fixes that shutdown and passes the conversion smoke check.
+
+Each generated tier is inspected again so `quality-cuts.json` contains the actual splat
+count and file size. Existing lower-level commands remain available from
+`pnpm gs-content help`.
 
 ### Legacy RAD datasets
 

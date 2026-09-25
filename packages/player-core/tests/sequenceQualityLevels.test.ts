@@ -42,6 +42,41 @@ describe("sequenceQualityLevels", () => {
     expect(sequenceQualityLevels(source)[1]).toEqual({ detailLevel: 0.5 });
   });
 
+  it("collapses equal tier minima and retains the largest mean byte estimate", () => {
+    const source = sequence();
+    source.frames[0]!.qualityLevels![1]!.detailLevel = 0.5;
+    source.frames[1]!.qualityLevels![1]!.detailLevel = 0.51;
+    source.frames[0]!.qualityLevels![2]!.detailLevel = 0.52;
+    expect(sequenceQualityLevels(source)).toEqual([
+      { detailLevel: 0.5, estimatedFrameBytes: 310 },
+      { detailLevel: 1, estimatedFrameBytes: 410 },
+    ]);
+  });
+
+  it("merges equal details across the playable floor before excluding previews", () => {
+    const source = sequence();
+    for (const frame of source.frames) {
+      frame.qualityLevels![0]!.detailLevel = 0.25;
+      frame.qualityLevels![0]!.byteSize = 500;
+      frame.qualityLevels![1]!.detailLevel = 0.25;
+    }
+    expect(sequenceQualityLevels(source)).toEqual([
+      { detailLevel: 0.25, estimatedFrameBytes: 500 },
+      { detailLevel: 0.5, estimatedFrameBytes: 310 },
+      { detailLevel: 1, estimatedFrameBytes: 410 },
+    ]);
+  });
+
+  it.each([1, 2])("keeps bytes unknown if duplicate tier %i is unmeasured", (level) => {
+    const source = sequence();
+    for (const frame of source.frames) frame.qualityLevels![1]!.detailLevel = 0.5;
+    delete source.frames[0]!.qualityLevels![level]!.byteSize;
+    expect(sequenceQualityLevels(source)).toEqual([
+      { detailLevel: 0.5 },
+      { detailLevel: 1, estimatedFrameBytes: 410 },
+    ]);
+  });
+
   it("supports legacy ratio metadata and excludes incomplete tiers", () => {
     const source = sequence();
     for (const frame of source.frames)

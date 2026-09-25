@@ -74,7 +74,7 @@ describe("generateDynamicTiers", () => {
     expect(output.stderr).toEqual([]);
     expect(fake.calls).toHaveLength(3);
     expect(fake.calls[0]).toEqual(
-      expect.arrayContaining(["--decimate", "25%", "--filter-harmonics", "1"]),
+      expect.arrayContaining(["--decimate-adaptive", "25%", "--filter-harmonics", "1"]),
     );
     expect(fake.calls[1]).toEqual(
       expect.arrayContaining(["--sh-iterations", "6", "--max-workers", "2"]),
@@ -95,7 +95,7 @@ describe("generateDynamicTiers", () => {
       }>;
     };
     expect(index).toMatchObject({
-      cutStrategy: "splat-transform-merge-decimation-v1",
+      cutStrategy: "splat-transform-adaptive-decimation-v1",
       format: "flat-sog-quality-cuts",
     });
     expect(index.frames[0]?.qualityLevels).toMatchObject([
