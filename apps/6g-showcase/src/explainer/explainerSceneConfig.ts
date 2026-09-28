@@ -13,6 +13,7 @@ export interface ExplainerSceneConfig {
   assetsUrl: string;
   /** Photo / render / error panels for the highlighted camera (beat 4). */
   comparison: ComparisonConfig;
+  /** Counter panel offset from the object base (world metres), and its width. */
   counters: { offset: Vec3Tuple; width: number };
   /** Split and prune demonstration group, in the demo object's stage frame. */
   densify: DensifyConfig;
@@ -21,22 +22,10 @@ export interface ExplainerSceneConfig {
   hero: HeroGaussianConfig;
   /** Screen that receives the 2D projection (beat 7), in world metres. */
   projection: ProjectionConfig;
-  /** Close-up pose in front of the presenter, used while a focus cue is active. */
-  focus: {
-    /** Counter panel position relative to the object base at the close-up pose. */
-    countersOffset: Vec3Tuple;
-    objectScale: number;
-    /** Object base (its ground contact centre) in world metres. */
-    position: Vec3Tuple;
-    yawDegrees: number;
-  };
   stage: {
     /** Demo-object stage metres to world metres. */
     objectScale: number;
-    /** Height of the pedestal top above the stage origin. */
-    pedestalHeight: number;
-    pedestalRadius: number;
-    /** Stage origin on the floor, beside the presenter. */
+    /** Where the object stands: its ground contact centre on the floor (world). */
     position: Vec3Tuple;
     /** Rotation of the stage about world +Y. */
     yawDegrees: number;
@@ -57,7 +46,6 @@ export function parseExplainerSceneConfig(
   }
   const stage = isRecord(value.stage) ? value.stage : {};
   const counters = isRecord(value.counters) ? value.counters : {};
-  const focus = isRecord(value.focus) ? value.focus : {};
   const hero = isRecord(value.hero) ? value.hero : {};
   const densify = isRecord(value.densify) ? value.densify : {};
   const projection = isRecord(value.projection) ? value.projection : {};
@@ -102,16 +90,8 @@ export function parseExplainerSceneConfig(
       sigma: positive(hero.sigma, "hero.sigma"),
       tiltDegrees: finite(hero.tiltDegrees, "hero.tiltDegrees"),
     },
-    focus: {
-      countersOffset: vec3(focus.countersOffset, "focus.countersOffset"),
-      objectScale: positive(focus.objectScale, "focus.objectScale"),
-      position: vec3(focus.position, "focus.position"),
-      yawDegrees: finite(focus.yawDegrees, "focus.yawDegrees"),
-    },
     stage: {
       objectScale: positive(stage.objectScale, "stage.objectScale"),
-      pedestalHeight: positive(stage.pedestalHeight, "stage.pedestalHeight"),
-      pedestalRadius: positive(stage.pedestalRadius, "stage.pedestalRadius"),
       position: vec3(stage.position, "stage.position"),
       yawDegrees: finite(stage.yawDegrees, "stage.yawDegrees"),
     },

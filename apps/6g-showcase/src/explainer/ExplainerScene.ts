@@ -1,4 +1,4 @@
-import { BLEND_NONE, BLEND_NORMAL, Color, Entity, StandardMaterial } from "playcanvas";
+import { Entity } from "playcanvas";
 
 import { CameraRigView } from "./visuals/CameraRigView.js";
 import { ComparisonPanels } from "./visuals/ComparisonPanels.js";
@@ -36,7 +36,6 @@ export interface ExplainerVisualToggles {
   ellipsoids: boolean;
   hero: boolean;
   projection: boolean;
-  stage: boolean;
 }
 
 /** Where the demo object (and everything expressed in its stage frame) is placed. */
@@ -48,9 +47,10 @@ interface ObjectPose {
 }
 
 /**
- * PlayCanvas side of the explainer: a pedestal beside the presenter, every demo-object
- * checkpoint preloaded as a hidden static splat, and a world-space counter panel. It
- * only applies an {@link ExplainerFrameState}; all timing decisions happen upstream.
+ * PlayCanvas side of the explainer: the demo object standing on the floor beside the
+ * presenter (every checkpoint preloaded as a hidden static splat), the visuals that
+ * explain it, and a world-space counter panel. It only applies an
+ * {@link ExplainerFrameState}; all timing decisions happen upstream.
  */
 export class ExplainerScene {
   private readonly adapter: PlayCanvasGaussianRendererAdapter;
@@ -69,8 +69,6 @@ export class ExplainerScene {
   private readonly hero: HeroGaussianView;
   /** Beat 7; absent when the assets were built without a projection view. */
   private readonly projection: ProjectionView | undefined;
-  private readonly pedestal: Entity;
-  private readonly pedestalMaterial: StandardMaterial;
   private readonly sparseCloud: SparseCloudView;
   private visibleCheckpoint: number | undefined;
 
@@ -116,27 +114,6 @@ export class ExplainerScene {
     this.checkpointIds = checkpointIds;
     this.config = config;
     const application = adapter.application;
-    const { stage } = config;
-
-    this.pedestalMaterial = unlitMaterial(new Color(0.11, 0.1, 0.14));
-    this.pedestal = new Entity("explainer-pedestal", application);
-    this.pedestal.addComponent("render", {
-      castShadows: false,
-      material: this.pedestalMaterial,
-      type: "cylinder",
-    });
-    this.pedestal.setLocalScale(
-      stage.pedestalRadius * 2,
-      stage.pedestalHeight,
-      stage.pedestalRadius * 2,
-    );
-    this.pedestal.setPosition(
-      stage.position[0],
-      stage.position[1] + stage.pedestalHeight / 2,
-      stage.position[2],
-    );
-    application.root.addChild(this.pedestal);
-
     // Transparent meshes in the world layer are sorted with the (non-depth-writing)
     // splats and can be overdrawn by the environment; the UI layer draws after them.
     const overlayLayer = application.scene.layers.getLayerByName("UI");
@@ -196,7 +173,6 @@ export class ExplainerScene {
 
   apply(frame: ExplainerFrameState, toggles: ExplainerVisualToggles): void {
     if (this.disposed) return;
-    this.applyStage(toggles.stage ? frame.stage.visibility : 0);
     const pose = this.objectPose(frame.demo);
     this.anchor.setPosition(...pose.base);
     this.anchor.setEulerAngles(0, pose.yawDegrees, 0);
@@ -222,11 +198,7 @@ export class ExplainerScene {
       this.anchor,
       viewer,
     );
-    this.applyCounters(
-      toggles.counters ? frame.counters : undefined,
-      frame.demo.focus,
-      viewer,
-    );
+    this.applyCounters(toggles.counters ? frame.counters : undefined, pose, viewer);
     this.adapter.application.renderNextFrame = true;
   }
 
@@ -242,14 +214,7 @@ export class ExplainerScene {
     this.projection?.dispose();
     this.comparison?.dispose();
     this.anchor.destroy();
-    this.pedestal.destroy();
     this.counters.dispose();
-    this.pedestalMaterial.destroy();
-  }
-
-  private applyStage(visibility: number): void {
-    this.pedestal.enabled = visibility > 0.001;
-    setOpacity(this.pedestalMaterial, visibility);
   }
 
   private applyDemoObject(
@@ -277,28 +242,19 @@ export class ExplainerScene {
     });
   }
 
-  /** Pedestal pose blended towards the close-up pose, plus any turntable rotation. */
+  /** The object's place on the floor, plus any turntable rotation. */
   private objectPose(demo: ExplainerFrameState["demo"]): ObjectPose {
-    const { focus, stage } = this.config;
-    const blend = smootherBlend(demo.focus);
+    const { stage } = this.config;
     return {
-      base: mix(this.pedestalTop(), focus.position, blend),
-      scale: stage.objectScale + (focus.objectScale - stage.objectScale) * blend,
-      yawDegrees:
-        stage.yawDegrees +
-        shortestTurn(stage.yawDegrees, focus.yawDegrees) * blend +
-        demo.yawDegrees,
+      base: stage.position,
+      scale: stage.objectScale,
+      yawDegrees: stage.yawDegrees + demo.yawDegrees,
     };
-  }
-
-  private pedestalTop(): Vec3Tuple {
-    const { position, pedestalHeight } = this.config.stage;
-    return [position[0], position[1] + pedestalHeight, position[2]];
   }
 
   private applyCounters(
     counters: ExplainerFrameState["counters"] | undefined,
-    focusBlend: number,
+    pose: ObjectPose,
     viewer: { x: number; z: number },
   ): void {
     const lines =
@@ -307,10 +263,7 @@ export class ExplainerScene {
       this.counters.hide();
       return;
     }
-    const { counters: layout, focus } = this.config;
-    const onStage = add(this.pedestalTop(), layout.offset);
-    const inFocus = add(focus.position, focus.countersOffset);
-    this.counters.place(mix(onStage, inFocus, smootherBlend(focusBlend)), viewer);
+    this.counters.place(add(pose.base, this.config.counters.offset), viewer);
     const key = lines
       .map(
         ({ label, value, visibility }) =>
@@ -329,25 +282,6 @@ type Vec3Tuple = readonly [number, number, number];
 
 function add(left: Vec3Tuple, right: Vec3Tuple): Vec3Tuple {
   return [left[0] + right[0], left[1] + right[1], left[2] + right[2]];
-}
-
-function mix(from: Vec3Tuple, to: Vec3Tuple, amount: number): Vec3Tuple {
-  return [
-    from[0] + (to[0] - from[0]) * amount,
-    from[1] + (to[1] - from[1]) * amount,
-    from[2] + (to[2] - from[2]) * amount,
-  ];
-}
-
-/** Signed degrees from one yaw to another along the shorter way round. */
-function shortestTurn(from: number, to: number): number {
-  return ((((to - from) % 360) + 540) % 360) - 180;
-}
-
-/** Extra easing on top of the cue envelope so the glide starts and lands gently. */
-function smootherBlend(value: number): number {
-  const t = Math.min(Math.max(value, 0), 1);
-  return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
 function drawCounters(
@@ -374,25 +308,4 @@ function drawCounters(
     context.textAlign = "right";
     context.fillText(value.toLocaleString("es-ES"), canvas.width - 48, baseline);
   });
-}
-
-function unlitMaterial(color: Color): StandardMaterial {
-  const material = new StandardMaterial();
-  material.diffuse = new Color(0, 0, 0);
-  material.emissive = color;
-  material.useLighting = false;
-  material.blendType = BLEND_NORMAL;
-  material.depthWrite = false;
-  material.update();
-  return material;
-}
-
-/** Blends only while fading so the settled pedestal stays an ordinary opaque mesh. */
-function setOpacity(material: StandardMaterial, opacity: number): void {
-  if (Math.abs(material.opacity - opacity) < 0.002) return;
-  const opaque = opacity >= 0.998;
-  material.opacity = opaque ? 1 : opacity;
-  material.blendType = opaque ? BLEND_NONE : BLEND_NORMAL;
-  material.depthWrite = opaque;
-  material.update();
 }

@@ -38,7 +38,6 @@ export class ExplainerController {
     ellipsoids: true,
     hero: true,
     projection: true,
-    stage: true,
   };
   private readonly adapter: PlayCanvasGaussianRendererAdapter;
   private readonly assets: ExplainerAssets;

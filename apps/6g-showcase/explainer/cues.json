@@ -17,8 +17,6 @@
     "label.ellipsoids": "Sin malla: solo gaussianas"
   },
   "cues": [
-    { "id": "stage", "type": "stage.show", "start": 0, "end": 132.19, "fadeIn": 1.5 },
-
     {
       "id": "b1-reveal",
       "type": "demo-object.reveal",
@@ -106,14 +104,6 @@
       "params": { "parameter": "color", "label": "label.color" }
     },
 
-    {
-      "id": "b4-focus",
-      "type": "demo-object.focus",
-      "start": 64,
-      "end": 129,
-      "fadeIn": 2,
-      "fadeOut": 2
-    },
     {
       "id": "b4-panels",
       "type": "comparison-panels.show",

@@ -19,7 +19,6 @@ const TOGGLE_LABELS: Record<keyof ExplainerVisualToggles, string> = {
   ellipsoids: "Ellipsoids",
   hero: "Hero gaussian",
   projection: "Projection",
-  stage: "Pedestal",
 };
 
 /** Development overlay: explainer time, active cues, beat jumps and visual toggles. */

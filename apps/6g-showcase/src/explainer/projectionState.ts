@@ -5,7 +5,7 @@ import type { CueTimeline, TimelineState } from "@6g-path/cue-timeline";
 /** Beat 7: gaussians projected onto a 2D screen. */
 export interface ProjectionState {
   label: { text: string; visibility: number } | undefined;
-  /** 0 above the pedestal, 1 brought to the front for a closer look. */
+  /** 0 at its first place, 1 brought to the front for a closer look. */
   present: number;
   /** 0..1 through the beat; each gaussian's flight is staggered within it. */
   progress: number;

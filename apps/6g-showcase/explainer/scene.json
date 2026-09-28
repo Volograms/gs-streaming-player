@@ -2,21 +2,13 @@
   "version": 1,
   "assetsUrl": "assets/explainer/truck/explainer-assets.json",
   "stage": {
-    "position": [0.88, -0.2, 1.58],
-    "yawDegrees": -130,
-    "pedestalHeight": 1.2,
-    "pedestalRadius": 0.32,
-    "objectScale": 0.1
+    "position": [2.6, -0.2, -0.5],
+    "yawDegrees": -100,
+    "objectScale": 0.45
   },
   "counters": {
-    "offset": [0, 0.42, 0],
-    "width": 0.46
-  },
-  "focus": {
-    "position": [0.9, 0.92, 0.54],
-    "yawDegrees": -125,
-    "objectScale": 0.2,
-    "countersOffset": [-0.6, 0.8, 0.55]
+    "offset": [0, 1.45, 0],
+    "width": 1.1
   },
   "hero": {
     "position": [0, 2.3, 2.4],

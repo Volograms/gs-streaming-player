@@ -203,7 +203,7 @@ export class ProjectionView {
       this.label.hide();
       return;
     }
-    // Glide from above the pedestal to the front, growing on the way.
+    // Glide from its first place to the front, growing on the way.
     const { position, presentPosition, presentScale } = this.config;
     const present = smoothstep(0, 1, state.present);
     const [px, py, pz] = [0, 1, 2].map(

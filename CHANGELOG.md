@@ -49,20 +49,19 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
-- The 6G showcase explainer layer. A pedestal beside the presenter shows the demo object
-  revealed, turned, dissolved and stepped through its training checkpoints. During the
-  training beats it glides to a larger close-up in front of the presenter. The model
-  dissolves into its SfM sparse cloud, shown with a ring of capture-camera frusta, and
-  the points swell into initial gaussians at their real starting size. During the
-  training loop, panels show a real training photo, the current render from the same
-  camera and an error heatmap that cools as training progresses. A hero gaussian then
-  leaves the cloud and demonstrates position, scale, opacity and colour with Spanish
-  labels. A patch of about 50 gaussians then shows densification (the worst ones light
-  up and split in two) and pruning (faint ones are marked and vanish one by one). Its
-  own gaussians then stand in for the final model as solid ellipsoids. Finally gaussians
-  fly from the object onto a screen and flatten into 2D splats, the full render of the
-  final model resolves over them, and the image is brought to the front while the object
-  returns to its pedestal. World-space iteration and gaussian counters show the real
+- The 6G showcase explainer layer. The demo object stands large on the floor beside the
+  presenter and is revealed, turned, dissolved and stepped through its training
+  checkpoints. The model dissolves into its SfM sparse cloud, shown with a ring of
+  capture-camera frusta, and the points swell into initial gaussians at their real
+  starting size. During the training loop, panels show a real training photo, the
+  current render from the same camera and an error heatmap that cools as training
+  progresses. A hero gaussian then leaves the cloud and demonstrates position, scale,
+  opacity and colour with Spanish labels. A patch of about 50 gaussians then shows
+  densification (the worst ones light up and split in two) and pruning (faint ones are
+  marked and vanish one by one). Its own gaussians then stand in for the final model as
+  solid ellipsoids. Finally gaussians fly from the object onto a screen and flatten into
+  2D splats, the full render of the final model resolves over them, and the image is
+  brought to the front. World-space iteration and gaussian counters show the real
   training counts. Everything follows the presenter frame on screen through the cue
   timeline, and a `?debug=1` panel shows cue state and offers jumps and toggles.
   `gs-content build-explainer` now accepts a union of crop boxes to trim ground beside

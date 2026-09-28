@@ -47,8 +47,8 @@ interface SplitMember {
 
 /**
  * Densification and pruning on one persistent patch of gaussians in the demo object's
- * colours. It is placed in world space (by default just above the pedestal, which is
- * empty while the object is in its close-up) and turned towards the viewer.
+ * colours. It is placed in world space (by default beside the presenter, opposite the
+ * object) and turned towards the viewer.
  */
 export class DensifyView {
   readonly entity: Entity;

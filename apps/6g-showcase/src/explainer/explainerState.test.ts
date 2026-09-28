@@ -47,9 +47,7 @@ const at = (time: number) =>
   computeExplainerState(timeline, evaluateTimeline(timeline, time), assets);
 
 describe("computeExplainerState with the talk's cues", () => {
-  it("fades the stage in and keeps the object hidden before the reveal", () => {
-    expect(at(0).stage.visibility).toBe(0);
-    expect(at(2).stage.visibility).toBe(1);
+  it("keeps the object hidden before the reveal", () => {
     expect(at(19).demo).toMatchObject({ iteration: undefined, scale: 0 });
   });
 
@@ -79,7 +77,7 @@ describe("computeExplainerState with the talk's cues", () => {
 
   it("shows the camera ring, then one highlighted training camera", () => {
     expect(at(40).cameras).toMatchObject({ highlight: undefined, ringVisibility: 1 });
-    // No single-camera highlight in the close-up: the training cameras used for the
+    // No single-camera highlight during training: the training cameras used for the
     // comparison panels sit on the viewer's side and would land in front of them.
     expect(at(70).cameras).toMatchObject({ highlight: undefined, ringVisibility: 0 });
   });
@@ -99,16 +97,6 @@ describe("computeExplainerState with the talk's cues", () => {
     expect(start.counters.iteration).toMatchObject({ label: "Iteración", value: 0 });
     expect(at(70).demo.iteration).toBe(50);
     expect(at(82.5).demo.iteration).toBe(7000);
-  });
-
-  it("brings the object to the close-up pose for the training beats", () => {
-    expect(at(60).demo.focus).toBe(0);
-    expect(at(65).demo.focus).toBeGreaterThan(0);
-    expect(at(65).demo.focus).toBeLessThan(1);
-    expect(at(90).demo.focus).toBe(1);
-    // The close-up lasts through the final beats and returns at the end of the talk.
-    expect(at(120).demo.focus).toBe(1);
-    expect(at(131).demo.focus).toBeLessThan(1);
   });
 
   it("shows real gaussian counts at the densification peak", () => {
@@ -224,16 +212,8 @@ describe("explainer configuration", () => {
           sigma: 0.3,
           tiltDegrees: 20,
         },
-        focus: {
-          countersOffset: [0, 0.5, 0],
-          objectScale: 0.25,
-          position: [0.7, 0.6, 0.4],
-          yawDegrees: -120,
-        },
         stage: {
-          objectScale: 0.1,
-          pedestalHeight: 1.2,
-          pedestalRadius: 0.3,
+          objectScale: 0.35,
           position: [1, 0, 1],
           yawDegrees: -90,
         },

@@ -33,8 +33,6 @@ export interface ExplainerFrameState {
     iteration: CounterState;
   };
   demo: {
-    /** 0 on the pedestal, 1 at the close-up pose in front of the presenter. */
-    focus: number;
     /** Checkpoint iteration shown, or undefined when the object is hidden. */
     iteration: number | undefined;
     /** Uniform grow factor used by the reveal (0..1). */
@@ -46,7 +44,6 @@ export interface ExplainerFrameState {
   ellipsoids: EllipsoidState;
   hero: HeroGaussianState;
   projection: ProjectionState;
-  stage: { visibility: number };
 }
 
 export interface CounterState {
@@ -105,13 +102,11 @@ export function computeExplainerState(
       ...demoObject,
       // Hidden while its own gaussians, drawn as ellipsoids, stand in for it.
       scale: ellipsoids.replacesObject ? 0 : demoObject.scale,
-      focus: maxEnvelope(state, "demo-object.focus"),
     },
     densify: densifyState(timeline, state),
     ellipsoids,
     hero: heroGaussianState(timeline, state),
     projection: projectionState(timeline, state),
-    stage: { visibility: maxEnvelope(state, "stage.show") },
   };
 }
 
@@ -143,7 +138,7 @@ export function trainingIterationAt(
 function demoObjectState(
   state: TimelineState,
   iterations: readonly number[],
-): Omit<ExplainerFrameState["demo"], "focus"> {
+): ExplainerFrameState["demo"] {
   const yawDegrees = state.cues
     .filter(
       ({ cue, phase }) => cue.type === "demo-object.turntable" && phase !== "pending",
