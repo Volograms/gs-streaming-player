@@ -2,10 +2,12 @@ import { cueString, easeInOutCubic, sampleKeyframes } from "@6g-path/cue-timelin
 
 import { densifyState } from "./densifyState.js";
 import { heroGaussianState } from "./heroGaussianState.js";
+import { projectionState } from "./projectionState.js";
 
 import type { DensifyState } from "./densifyState.js";
 import type { ExplainerAssets } from "./explainerAssets.js";
 import type { HeroGaussianState } from "./heroGaussianState.js";
+import type { ProjectionState } from "./projectionState.js";
 import type { CueState, CueTimeline, TimelineState } from "@6g-path/cue-timeline";
 
 /** Everything the explainer scene draws at one instant; derived from time alone. */
@@ -36,6 +38,7 @@ export interface ExplainerFrameState {
   };
   densify: DensifyState;
   hero: HeroGaussianState;
+  projection: ProjectionState;
   stage: { visibility: number };
 }
 
@@ -94,6 +97,7 @@ export function computeExplainerState(
     },
     densify: densifyState(timeline, state),
     hero: heroGaussianState(timeline, state),
+    projection: projectionState(timeline, state),
     stage: { visibility: maxEnvelope(state, "stage.show") },
   };
 }

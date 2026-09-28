@@ -57,10 +57,13 @@ All notable changes to this project will be documented here. The project uses
   then leaves the cloud and demonstrates position, scale, opacity and colour with
   Spanish labels. A patch of about 50 gaussians then shows densification (the worst ones
   light up and split in two) and pruning (faint ones are marked and vanish one by one).
-  World-space iteration and gaussian counters show the real training counts. Everything
-  follows the presenter frame on screen through the cue timeline, and a `?debug=1` panel
-  shows cue state and offers jumps and toggles. `gs-content build-explainer` now accepts
-  a union of crop boxes to trim ground beside the object.
+  Finally gaussians fly from the object onto a screen and flatten into 2D splats, the
+  full render of the final model resolves over them, and the image is brought to the
+  front while the object returns to its pedestal. World-space iteration and gaussian
+  counters show the real training counts. Everything follows the presenter frame on
+  screen through the cue timeline, and a `?debug=1` panel shows cue state and offers
+  jumps and toggles. `gs-content build-explainer` now accepts a union of crop boxes to
+  trim ground beside the object.
 
 - `@6g-path/cue-timeline`: a renderer-independent, data-driven cue timeline. It is
   evaluated purely from the media time of the presenter frame on screen, so seeking,
@@ -70,7 +73,8 @@ All notable changes to this project will be documented here. The project uses
 - `gs-content build-explainer` prepares the 6G showcase explainer's demo object from an
   OpenSplat run. It writes cropped, stage-aligned SOG checkpoints (including a generated
   iteration-0 state), the sparse cloud, a training-camera subset, and real per-iteration
-  gaussian counts.
+  gaussian counts. An optional `projectionView` renders a checkpoint from a virtual
+  camera into a PNG with a built-in CPU 3D Gaussian Splatting rasteriser.
 
 - A dedicated `pnpm dev:showcase:https` mode for local WebXR testing. It uses the
   ignored mkcert key pair, binds the showcase to the LAN, enables XR, and retains local

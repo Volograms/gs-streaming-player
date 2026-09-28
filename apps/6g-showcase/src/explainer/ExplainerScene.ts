@@ -3,6 +3,7 @@ import { BLEND_NONE, BLEND_NORMAL, Color, Entity, StandardMaterial } from "playc
 import { CameraRigView } from "./visuals/CameraRigView.js";
 import { DensifyView } from "./visuals/DensifyView.js";
 import { HeroGaussianView } from "./visuals/HeroGaussianView.js";
+import { ProjectionView } from "./visuals/ProjectionView.js";
 import { SparseCloudView } from "./visuals/SparseCloudView.js";
 import { paintPlate, TextPanel } from "./visuals/TextPanel.js";
 
@@ -18,6 +19,7 @@ export interface ExplainerVisualToggles {
   demo: boolean;
   densify: boolean;
   hero: boolean;
+  projection: boolean;
   stage: boolean;
 }
 
@@ -45,6 +47,8 @@ export class ExplainerScene {
   private readonly densify: DensifyView;
   private disposed = false;
   private readonly hero: HeroGaussianView;
+  /** Beat 7; absent when the assets were built without a projection view. */
+  private readonly projection: ProjectionView | undefined;
   private readonly pedestal: Entity;
   private readonly pedestalMaterial: StandardMaterial;
   private readonly sparseCloud: SparseCloudView;
@@ -54,6 +58,7 @@ export class ExplainerScene {
     adapter: PlayCanvasGaussianRendererAdapter,
     assets: ExplainerAssets,
     sparsePoints: SparsePoints,
+    projectionImage: ImageBitmap | undefined,
     config: ExplainerSceneConfig,
     signal?: AbortSignal,
   ): Promise<ExplainerScene> {
@@ -77,7 +82,14 @@ export class ExplainerScene {
       for (const id of loaded) adapter.releaseObject(id);
       throw error;
     }
-    return new ExplainerScene(adapter, ids, assets, sparsePoints, config);
+    return new ExplainerScene(
+      adapter,
+      ids,
+      assets,
+      sparsePoints,
+      projectionImage,
+      config,
+    );
   }
 
   private constructor(
@@ -85,6 +97,7 @@ export class ExplainerScene {
     checkpointIds: ReadonlyMap<number, string>,
     assets: ExplainerAssets,
     sparsePoints: SparsePoints,
+    projectionImage: ImageBitmap | undefined,
     config: ExplainerSceneConfig,
   ) {
     this.adapter = adapter;
@@ -126,6 +139,17 @@ export class ExplainerScene {
     this.anchor = new Entity("explainer-anchor", application);
     this.sparseCloud = new SparseCloudView(application, sparsePoints, overlayLayerId);
     this.cameraRig = new CameraRigView(application, assets.cameras, overlayLayerId);
+    this.projection =
+      assets.projectionView === undefined || projectionImage === undefined
+        ? undefined
+        : new ProjectionView(
+            application,
+            sparsePoints,
+            assets.projectionView,
+            projectionImage,
+            config.projection,
+            overlayLayerId,
+          );
     this.hero = new HeroGaussianView(
       application,
       sparsePoints,
@@ -161,6 +185,11 @@ export class ExplainerScene {
     const viewer = this.adapter.cameraEntity.getPosition();
     this.hero.apply(toggles.hero ? frame.hero : undefined, viewer);
     this.densify.apply(toggles.densify ? frame.densify : undefined, viewer);
+    this.projection?.apply(
+      toggles.projection ? frame.projection : undefined,
+      this.anchor,
+      viewer,
+    );
     this.applyCounters(
       toggles.counters ? frame.counters : undefined,
       frame.demo.focus,
@@ -177,6 +206,7 @@ export class ExplainerScene {
     this.cameraRig.dispose();
     this.hero.dispose();
     this.densify.dispose();
+    this.projection?.dispose();
     this.anchor.destroy();
     this.pedestal.destroy();
     this.counters.dispose();

@@ -33,6 +33,7 @@ the config, and `datasetDir` is relative to the config file.
 | `checkpoints`       | Ordered iterations to ship. `{ "iteration": 0, "source": "initialisation" }` generates the pre-training state from the sparse cloud.                                                                                                                  |
 | `trainingCountDirs` | Directories scanned for `splat_<n>.ply` headers; their real counts drive the explainer's gaussian counter.                                                                                                                                            |
 | `cameraCount`       | Training cameras kept for the frustum ring, spread evenly by azimuth (default `20`).                                                                                                                                                                  |
+| `projectionView`    | Optional `{ iteration, eye, lookAt, verticalFovDegrees, width, height }` in stage metres and pixels: renders that checkpoint (normally the final one) from a virtual look-at camera into `projection.png`, the image that beat 7 resolves into.       |
 
 ## Build
 
@@ -49,10 +50,15 @@ Output (the `public/assets/` output directory is ignored by Git):
   every point, then `float32` initial gaussian sigma (mean distance to the three nearest
   points, as OpenSplat initialises), then `uint8` rgb. The index gives each block's byte
   offset;
+- `projection.png`, when `projectionView` is set: a render of every gaussian of that
+  checkpoint (straight alpha, transparent background). It comes from the command's CPU
+  3D Gaussian Splatting rasteriser (`renderGaussians.ts`): EWA projection of each 3D
+  covariance, a depth sort, front-to-back alpha compositing and spherical harmonics up
+  to degree 1. It needs no GPU or browser;
 - `explainer-assets.json`: checkpoint URLs with cropped and training splat counts, the
   full training-count curve, the camera subset (stage-frame position, camera-to-stage
   quaternion `[w, x, y, z]` looking down `-Z`, vertical FOV, source image), the crop
-  box, and the source-to-stage transform.
+  box, the source-to-stage transform, and the projection camera with its image URL.
 
 The stage frame follows `docs/coordinate-system.md` (right-handed, `+Y` up, metres when
 the reconstruction is metric). Place the stage in the scene with the explainer's own

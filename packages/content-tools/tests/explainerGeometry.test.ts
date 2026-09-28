@@ -305,6 +305,19 @@ describe("explainer config", () => {
     [{ cropBoxes: [] }, /non-empty/],
     [{ stage: { ...TRUCK_STAGE, up: [0, 1] } }, /stage.up/],
     [{ maxSh: 4 }, /maxSh/],
+    [
+      {
+        projectionView: {
+          eye: [0, 1, 5],
+          height: 8,
+          iteration: 0,
+          lookAt: [0, 0, 0],
+          verticalFovDegrees: 30,
+          width: 64,
+        },
+      },
+      /pixels/,
+    ],
   ])("rejects invalid configs", (override, message) => {
     expect(() => parseExplainerAssetsConfig({ ...valid, ...override })).toThrow(
       message,

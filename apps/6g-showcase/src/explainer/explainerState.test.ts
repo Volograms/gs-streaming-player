@@ -98,7 +98,9 @@ describe("computeExplainerState with the talk's cues", () => {
     expect(at(65).demo.focus).toBeGreaterThan(0);
     expect(at(65).demo.focus).toBeLessThan(1);
     expect(at(90).demo.focus).toBe(1);
-    expect(at(110).demo.focus).toBe(0);
+    // The close-up lasts through the final beats and returns at the end of the talk.
+    expect(at(120).demo.focus).toBe(1);
+    expect(at(131).demo.focus).toBeLessThan(1);
   });
 
   it("shows real gaussian counts at the densification peak", () => {
@@ -181,6 +183,13 @@ describe("explainer configuration", () => {
         assetsUrl: "a.json",
         counters: { offset: [0, 0.4, 0], width: 0.5 },
         densify: { labelOffset: [0, 0.3, 0], position: [3, 1, 0], scale: 1 },
+        projection: {
+          labelOffset: [0, 0.3, 0],
+          position: [1, 1.3, 1.5],
+          presentPosition: [0.8, 1.2, 0.5],
+          presentScale: 1.4,
+          width: 0.6,
+        },
         hero: {
           labelOffset: [0, 0.15, 0],
           position: [0, 2, 2],

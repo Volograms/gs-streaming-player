@@ -34,6 +34,7 @@ export class ExplainerController {
     demo: true,
     densify: true,
     hero: true,
+    projection: true,
     stage: true,
   };
   private readonly adapter: PlayCanvasGaussianRendererAdapter;
@@ -58,11 +59,17 @@ export class ExplainerController {
   ): Promise<ExplainerController> {
     const timeline = parseCueTimeline(cueDocument);
     validateAcrossTimeline(timeline, assets);
-    const sparsePoints = await loadSparsePoints(assets.sparsePoints, signal);
+    const [sparsePoints, projectionImage] = await Promise.all([
+      loadSparsePoints(assets.sparsePoints, signal),
+      assets.projectionView === undefined
+        ? Promise.resolve(undefined)
+        : loadImage(assets.projectionView.url, signal),
+    ]);
     const scene = await ExplainerScene.create(
       adapter,
       assets,
       sparsePoints,
+      projectionImage,
       config,
       signal,
     );
@@ -128,6 +135,18 @@ export class ExplainerController {
       timeSeconds,
     };
   }
+}
+
+/** Decodes to an ImageBitmap, which both the WebGPU and WebGL2 uploads accept. */
+async function loadImage(url: string, signal?: AbortSignal): Promise<ImageBitmap> {
+  const response = await fetch(url, signal === undefined ? {} : { signal });
+  if (!response.ok) {
+    throw new Error(`Projection image unavailable (${response.status}): ${url}`);
+  }
+  return createImageBitmap(await response.blob(), {
+    colorSpaceConversion: "none",
+    premultiplyAlpha: "none",
+  });
 }
 
 /** Fails at load, not mid-talk, if a cue's params do not fit the shipped assets. */

@@ -16,6 +16,7 @@ const TOGGLE_LABELS: Record<keyof ExplainerVisualToggles, string> = {
   demo: "Demo object",
   densify: "Split / prune",
   hero: "Hero gaussian",
+  projection: "Projection",
   stage: "Pedestal",
 };
 

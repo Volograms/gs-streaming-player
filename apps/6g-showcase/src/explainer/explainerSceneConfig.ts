@@ -2,6 +2,7 @@ import sceneDocument from "../../explainer/scene.json";
 
 import type { DensifyConfig } from "./visuals/DensifyView.js";
 import type { HeroGaussianConfig } from "./visuals/HeroGaussianView.js";
+import type { ProjectionConfig } from "./visuals/ProjectionView.js";
 
 type Vec3Tuple = readonly [number, number, number];
 
@@ -12,6 +13,8 @@ export interface ExplainerSceneConfig {
   /** Split and prune demonstration group, in the demo object's stage frame. */
   densify: DensifyConfig;
   hero: HeroGaussianConfig;
+  /** Screen that receives the 2D projection (beat 7), in world metres. */
+  projection: ProjectionConfig;
   /** Close-up pose in front of the presenter, used while a focus cue is active. */
   focus: {
     /** Counter panel position relative to the object base at the close-up pose. */
@@ -51,6 +54,7 @@ export function parseExplainerSceneConfig(
   const focus = isRecord(value.focus) ? value.focus : {};
   const hero = isRecord(value.hero) ? value.hero : {};
   const densify = isRecord(value.densify) ? value.densify : {};
+  const projection = isRecord(value.projection) ? value.projection : {};
   const assetsUrl = assetsUrlOverride?.trim() || value.assetsUrl;
   if (typeof assetsUrl !== "string" || assetsUrl === "") {
     throw new Error("Explainer scene config needs an assetsUrl.");
@@ -65,6 +69,13 @@ export function parseExplainerSceneConfig(
       labelOffset: vec3(densify.labelOffset, "densify.labelOffset"),
       position: vec3(densify.position, "densify.position"),
       scale: positive(densify.scale, "densify.scale"),
+    },
+    projection: {
+      labelOffset: vec3(projection.labelOffset, "projection.labelOffset"),
+      position: vec3(projection.position, "projection.position"),
+      presentPosition: vec3(projection.presentPosition, "projection.presentPosition"),
+      presentScale: positive(projection.presentScale, "projection.presentScale"),
+      width: positive(projection.width, "projection.width"),
     },
     hero: {
       labelOffset: vec3(hero.labelOffset, "hero.labelOffset"),

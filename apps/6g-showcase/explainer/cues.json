@@ -12,7 +12,8 @@
     "label.prune": "Poda",
     "label.real": "Imagen real",
     "label.render": "Render",
-    "label.error": "Error"
+    "label.error": "Error",
+    "label.projection": "Proyección 2D"
   },
   "cues": [
     { "id": "stage", "type": "stage.show", "start": 0, "end": 132.19, "fadeIn": 1.5 },
@@ -108,7 +109,7 @@
       "id": "b4-focus",
       "type": "demo-object.focus",
       "start": 64,
-      "end": 109.5,
+      "end": 129,
       "fadeIn": 2,
       "fadeOut": 2
     },
@@ -207,9 +208,17 @@
       "id": "b7-projection",
       "type": "projection.show",
       "start": 117,
-      "end": 131,
+      "end": 132.19,
       "fadeIn": 1,
-      "fadeOut": 1.5
+      "fadeOut": 0.8,
+      "params": { "label": "label.projection" }
+    },
+    {
+      "id": "b7-present",
+      "type": "projection.present",
+      "start": 127.5,
+      "end": 132.19,
+      "fadeIn": 2
     }
   ]
 }

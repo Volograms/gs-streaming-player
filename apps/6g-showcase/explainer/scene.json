@@ -28,5 +28,12 @@
     "position": [0.9, 1.36, 1.5],
     "scale": 0.3,
     "labelOffset": [0.05, 0.34, 0]
+  },
+  "projection": {
+    "position": [0.9, 1.36, 1.5],
+    "width": 0.62,
+    "labelOffset": [0, -0.23, 0],
+    "presentPosition": [0.85, 1.1, 0.55],
+    "presentScale": 1.4
   }
 }

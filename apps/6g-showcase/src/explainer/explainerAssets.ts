@@ -5,6 +5,8 @@ export interface ExplainerAssets {
   /** Capture cameras in the stage frame (camera looks down its local -Z). */
   cameras: StageCameraSet;
   checkpoints: ExplainerCheckpoint[];
+  /** Offline render of the final model from a virtual camera, if the assets have one. */
+  projectionView: ProjectionView | undefined;
   sparsePoints: SparsePointsIndex;
   /** Real gaussian counts during training, keyed by iteration. */
   trainingCounts: Keyframe[];
@@ -15,6 +17,17 @@ export interface ExplainerCheckpoint {
   splatCount: number;
   /** Absolute URL of the stage-frame SOG. */
   url: string;
+}
+
+/** A look-at pinhole camera in the stage frame and the image it rendered. */
+export interface ProjectionView {
+  eye: readonly [number, number, number];
+  height: number;
+  lookAt: readonly [number, number, number];
+  /** Absolute URL of the rendered PNG. */
+  url: string;
+  verticalFovDegrees: number;
+  width: number;
 }
 
 export interface StageCameraSet {
@@ -120,8 +133,35 @@ export function parseExplainerAssets(value: unknown, baseUrl: string): Explainer
   return {
     cameras: parseCameras(value.cameras),
     checkpoints,
+    projectionView: parseProjectionView(value.projectionView, baseUrl),
     sparsePoints: parseSparsePointsIndex(value.sparsePoints, baseUrl),
     trainingCounts,
+  };
+}
+
+function parseProjectionView(
+  value: unknown,
+  baseUrl: string,
+): ProjectionView | undefined {
+  if (value === undefined) return undefined;
+  if (
+    !isRecord(value) ||
+    typeof value.url !== "string" ||
+    !isNumberList(value.eye, 3) ||
+    !isNumberList(value.lookAt, 3) ||
+    !isCount(value.width) ||
+    !isCount(value.height) ||
+    typeof value.verticalFovDegrees !== "number"
+  ) {
+    throw new Error("Explainer projection view is malformed; rebuild the assets.");
+  }
+  return {
+    eye: value.eye as unknown as ProjectionView["eye"],
+    height: value.height,
+    lookAt: value.lookAt as unknown as ProjectionView["lookAt"],
+    url: new URL(value.url, baseUrl).href,
+    verticalFovDegrees: value.verticalFovDegrees,
+    width: value.width,
   };
 }
 

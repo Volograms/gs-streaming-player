@@ -107,6 +107,28 @@ export async function readPointCloud(path: string): Promise<PointCloud> {
   return { colors, count: header.vertexCount, positions };
 }
 
+/** Every vertex property as float32, row-major (`data[vertex * names.length + i]`). */
+export interface PlyVertices {
+  count: number;
+  data: Float32Array;
+  names: readonly string[];
+}
+
+export async function readPlyVertices(path: string): Promise<PlyVertices> {
+  const bytes = await readFile(path);
+  const header = parsePlyHeader(bytes.subarray(0, MAX_HEADER_BYTES), path);
+  const names = header.properties.map(({ name }) => name);
+  const rows = readRows(bytes.subarray(header.byteLength), header, path);
+  const data = new Float32Array(header.vertexCount * names.length);
+  for (let vertex = 0; vertex < header.vertexCount; vertex += 1) {
+    const row = rows(vertex);
+    for (let property = 0; property < names.length; property += 1) {
+      data[vertex * names.length + property] = row(property);
+    }
+  }
+  return { count: header.vertexCount, data, names };
+}
+
 /** Writes a binary little-endian PLY whose vertex properties are all float32. */
 export async function writeFloatPly(
   path: string,

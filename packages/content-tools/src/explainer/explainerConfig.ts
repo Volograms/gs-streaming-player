@@ -17,10 +17,22 @@ export interface ExplainerAssetsConfig {
   datasetDir: string;
   id: string;
   maxSh: number;
+  /** Optional render of one checkpoint from a virtual camera (the explainer's 2D image). */
+  projectionView: ProjectionViewConfig | undefined;
   sparsePointCloud: string;
   stage: StageFrameDefinition;
   /** Directories scanned for splat_<iteration>.ply headers to build the counter curve. */
   trainingCountDirs: string[];
+}
+
+/** A look-at pinhole camera in stage metres and the checkpoint it renders. */
+export interface ProjectionViewConfig {
+  eye: Vec3;
+  height: number;
+  iteration: number;
+  lookAt: Vec3;
+  verticalFovDegrees: number;
+  width: number;
 }
 
 export function parseExplainerAssetsConfig(value: unknown): ExplainerAssetsConfig {
@@ -58,6 +70,7 @@ export function parseExplainerAssetsConfig(value: unknown): ExplainerAssetsConfi
     datasetDir: requireString(value.datasetDir, "datasetDir"),
     id,
     maxSh,
+    projectionView: parseProjectionView(value.projectionView),
     sparsePointCloud: requireString(value.sparsePointCloud, "sparsePointCloud"),
     stage: {
       forward: requireVec3(value.stage.forward, "stage.forward"),
@@ -145,6 +158,41 @@ function requireString(value: unknown, label: string): string {
     throw new Error(`${label} must be a non-empty string.`);
   }
   return value;
+}
+
+function parseProjectionView(value: unknown): ProjectionViewConfig | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new Error("projectionView must be an object.");
+  const size = (field: "height" | "width") => {
+    const pixels = value[field];
+    if (
+      typeof pixels !== "number" ||
+      !Number.isInteger(pixels) ||
+      pixels < 16 ||
+      pixels > 4096
+    ) {
+      throw new Error(
+        `projectionView.${field} must be an integer number of pixels (16-4096).`,
+      );
+    }
+    return pixels;
+  };
+  const fov = value.verticalFovDegrees;
+  if (typeof fov !== "number" || !(fov > 1 && fov < 170)) {
+    throw new Error("projectionView.verticalFovDegrees must be between 1 and 170.");
+  }
+  const iteration = value.iteration;
+  if (typeof iteration !== "number" || !Number.isInteger(iteration)) {
+    throw new Error("projectionView.iteration must name a configured checkpoint.");
+  }
+  return {
+    eye: requireVec3(value.eye, "projectionView.eye"),
+    height: size("height"),
+    iteration,
+    lookAt: requireVec3(value.lookAt, "projectionView.lookAt"),
+    verticalFovDegrees: fov,
+    width: size("width"),
+  };
 }
 
 function requireVec3(value: unknown, label: string): Vec3 {

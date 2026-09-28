@@ -12,13 +12,20 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { runSplatTransformCli } from "../sog/runSplatTransformCli.js";
 
+import { encodePng } from "./encodePng.js";
 import { parseExplainerAssetsConfig } from "./explainerConfig.js";
 import {
   createInitialGaussians,
   initialScales,
   INITIAL_GAUSSIAN_PROPERTIES,
 } from "./initialGaussians.js";
-import { readPlyHeader, readPointCloud, writeFloatPly } from "./plyFiles.js";
+import {
+  readPlyHeader,
+  readPlyVertices,
+  readPointCloud,
+  writeFloatPly,
+} from "./plyFiles.js";
+import { gaussiansFromPly, renderGaussians } from "./renderGaussians.js";
 import {
   createStageFrame,
   isInsideBox,
@@ -31,6 +38,7 @@ import type {
   ExplainerAssetsConfig,
   ExplainerCheckpointConfig,
 } from "./explainerConfig.js";
+import type { ProjectionViewConfig } from "./explainerConfig.js";
 import type { PointCloud } from "./plyFiles.js";
 import type { StageBox, StageFrame, Vec3 } from "./stageFrame.js";
 import type { StageCameraSet } from "./trainingCameras.js";
@@ -61,6 +69,7 @@ export type BuildExplainerAssetsRunner = (
 export const EXPLAINER_ASSETS_FILENAME = "explainer-assets.json";
 const CHECKPOINT_DIR = "checkpoints";
 const SPARSE_POINTS_FILENAME = "sparse-points.bin";
+const PROJECTION_FILENAME = "projection.png";
 const CHECKPOINT_FILENAME = /^splat_(\d+)\.ply$/;
 
 export interface ExplainerAssetsIndex {
@@ -74,6 +83,8 @@ export interface ExplainerAssetsIndex {
   }[];
   cropBoxes: StageBox[];
   id: string;
+  /** Render of one checkpoint from a virtual stage-frame camera, when configured. */
+  projectionView?: ProjectionViewConfig & { url: string };
   sourceToStage: StageFrame;
   sparsePoints: {
     colorsByteOffset: number;
@@ -118,6 +129,7 @@ export async function buildExplainerAssets(
     temporaryDir = await mkdtemp(join(tmpdir(), "gs-explainer-"));
 
     const checkpoints: ExplainerAssetsIndex["checkpoints"] = [];
+    let renderedProjection = false;
     for (const checkpoint of config.checkpoints) {
       let inputPath: string;
       if (checkpoint.source === "initialisation") {
@@ -153,6 +165,21 @@ export async function buildExplainerAssets(
         await runSplatTransform([...parts, croppedPath]);
       }
       const splatCount = (await readPlyHeader(croppedPath)).vertexCount;
+      if (config.projectionView?.iteration === checkpoint.iteration) {
+        io.stdout(
+          `Rendering iteration ${checkpoint.iteration} for the projection view.`,
+        );
+        const view = config.projectionView;
+        const pixels = renderGaussians(
+          gaussiansFromPly(await readPlyVertices(croppedPath)),
+          view,
+        );
+        await writeFile(
+          join(outputDir, PROJECTION_FILENAME),
+          encodePng(pixels, view.width, view.height),
+        );
+        renderedProjection = true;
+      }
       await runSplatTransform([
         croppedPath,
         join(outputDir, url),
@@ -174,6 +201,11 @@ export async function buildExplainerAssets(
       });
     }
 
+    if (config.projectionView !== undefined && !renderedProjection) {
+      throw new Error(
+        `projectionView.iteration ${config.projectionView.iteration} is not a configured checkpoint.`,
+      );
+    }
     const sparsePoints = await writeSparsePoints(
       join(outputDir, SPARSE_POINTS_FILENAME),
       cloud,
@@ -204,6 +236,9 @@ export async function buildExplainerAssets(
       },
       trainingCounts,
       version: 1,
+      ...(config.projectionView === undefined
+        ? {}
+        : { projectionView: { ...config.projectionView, url: PROJECTION_FILENAME } }),
     };
     await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`);
     io.stdout(
@@ -225,9 +260,12 @@ async function prepareOutput(outputDir: string, indexPath: string, force: boolea
   if (await exists(indexPath)) {
     if (!force) throw new Error(`Output already exists: ${indexPath}`);
     await Promise.all(
-      [EXPLAINER_ASSETS_FILENAME, CHECKPOINT_DIR, SPARSE_POINTS_FILENAME].map((entry) =>
-        rm(join(outputDir, entry), { force: true, recursive: true }),
-      ),
+      [
+        EXPLAINER_ASSETS_FILENAME,
+        CHECKPOINT_DIR,
+        SPARSE_POINTS_FILENAME,
+        PROJECTION_FILENAME,
+      ].map((entry) => rm(join(outputDir, entry), { force: true, recursive: true })),
     );
   }
   await mkdir(join(outputDir, CHECKPOINT_DIR), { recursive: true });
