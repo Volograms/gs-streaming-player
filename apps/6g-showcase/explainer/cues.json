@@ -13,7 +13,8 @@
     "label.real": "Imagen real",
     "label.render": "Render",
     "label.error": "Error",
-    "label.projection": "Proyección 2D"
+    "label.projection": "Proyección 2D",
+    "label.ellipsoids": "Sin malla: solo gaussianas"
   },
   "cues": [
     { "id": "stage", "type": "stage.show", "start": 0, "end": 132.19, "fadeIn": 1.5 },
@@ -198,10 +199,11 @@
     {
       "id": "b6-ellipsoids",
       "type": "demo-object.ellipsoid-view",
-      "start": 110,
-      "end": 115,
-      "fadeIn": 0.8,
-      "fadeOut": 0.8
+      "start": 109.5,
+      "end": 116.5,
+      "fadeIn": 1.8,
+      "fadeOut": 1.8,
+      "params": { "label": "label.ellipsoids" }
     },
 
     {

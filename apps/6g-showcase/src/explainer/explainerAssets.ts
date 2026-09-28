@@ -5,6 +5,8 @@ export interface ExplainerAssets {
   /** Capture cameras in the stage frame (camera looks down its local -Z). */
   cameras: StageCameraSet;
   checkpoints: ExplainerCheckpoint[];
+  /** Opaque gaussians of the final model for the ellipsoid view, if the assets have them. */
+  ellipsoids: { count: number; url: string } | undefined;
   /** Offline render of the final model from a virtual camera, if the assets have one. */
   projectionView: ProjectionView | undefined;
   sparsePoints: SparsePointsIndex;
@@ -133,10 +135,40 @@ export function parseExplainerAssets(value: unknown, baseUrl: string): Explainer
   return {
     cameras: parseCameras(value.cameras),
     checkpoints,
+    ellipsoids: parseEllipsoidsIndex(value.ellipsoids, baseUrl),
     projectionView: parseProjectionView(value.projectionView, baseUrl),
     sparsePoints: parseSparsePointsIndex(value.sparsePoints, baseUrl),
     trainingCounts,
   };
+}
+
+/** Floats per ellipsoid: position (3), rotation w,x,y,z (4), sigma (3), colour (3). */
+export const ELLIPSOID_STRIDE = 13;
+
+export async function loadEllipsoids(
+  index: { count: number; url: string },
+  signal?: AbortSignal,
+): Promise<Float32Array> {
+  const response = await fetch(index.url, signal === undefined ? {} : { signal });
+  if (!response.ok) {
+    throw new Error(`Ellipsoids unavailable (${response.status}): ${index.url}`);
+  }
+  const buffer = await response.arrayBuffer();
+  if (buffer.byteLength !== index.count * ELLIPSOID_STRIDE * 4) {
+    throw new Error("Ellipsoids file does not match its index; rebuild the assets.");
+  }
+  return new Float32Array(buffer);
+}
+
+function parseEllipsoidsIndex(
+  value: unknown,
+  baseUrl: string,
+): { count: number; url: string } | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || typeof value.url !== "string" || !isCount(value.count)) {
+    throw new Error("Explainer ellipsoids index is malformed; rebuild the assets.");
+  }
+  return { count: value.count, url: new URL(value.url, baseUrl).href };
 }
 
 function parseProjectionView(

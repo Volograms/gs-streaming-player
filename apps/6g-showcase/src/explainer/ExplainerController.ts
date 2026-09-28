@@ -2,7 +2,7 @@ import { evaluateTimeline, parseCueTimeline } from "@6g-path/cue-timeline";
 
 import cueDocument from "../../explainer/cues.json";
 
-import { loadSparsePoints } from "./explainerAssets.js";
+import { loadEllipsoids, loadSparsePoints } from "./explainerAssets.js";
 import { explainerTimeSeconds } from "./explainerClock.js";
 import { ExplainerScene } from "./ExplainerScene.js";
 import { computeExplainerState } from "./explainerState.js";
@@ -33,6 +33,7 @@ export class ExplainerController {
     counters: true,
     demo: true,
     densify: true,
+    ellipsoids: true,
     hero: true,
     projection: true,
     stage: true,
@@ -59,17 +60,21 @@ export class ExplainerController {
   ): Promise<ExplainerController> {
     const timeline = parseCueTimeline(cueDocument);
     validateAcrossTimeline(timeline, assets);
-    const [sparsePoints, projectionImage] = await Promise.all([
+    const [sparsePoints, projectionImage, ellipsoids] = await Promise.all([
       loadSparsePoints(assets.sparsePoints, signal),
       assets.projectionView === undefined
         ? Promise.resolve(undefined)
         : loadImage(assets.projectionView.url, signal),
+      assets.ellipsoids === undefined
+        ? Promise.resolve(undefined)
+        : loadEllipsoids(assets.ellipsoids, signal),
     ]);
     const scene = await ExplainerScene.create(
       adapter,
       assets,
       sparsePoints,
       projectionImage,
+      ellipsoids,
       config,
       signal,
     );

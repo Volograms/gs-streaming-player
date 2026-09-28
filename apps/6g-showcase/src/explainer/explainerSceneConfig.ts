@@ -1,6 +1,7 @@
 import sceneDocument from "../../explainer/scene.json";
 
 import type { DensifyConfig } from "./visuals/DensifyView.js";
+import type { EllipsoidConfig } from "./visuals/EllipsoidView.js";
 import type { HeroGaussianConfig } from "./visuals/HeroGaussianView.js";
 import type { ProjectionConfig } from "./visuals/ProjectionView.js";
 
@@ -12,6 +13,8 @@ export interface ExplainerSceneConfig {
   counters: { offset: Vec3Tuple; width: number };
   /** Split and prune demonstration group, in the demo object's stage frame. */
   densify: DensifyConfig;
+  /** Ellipsoid view of the final model (beat 6). */
+  ellipsoids: EllipsoidConfig;
   hero: HeroGaussianConfig;
   /** Screen that receives the 2D projection (beat 7), in world metres. */
   projection: ProjectionConfig;
@@ -55,6 +58,7 @@ export function parseExplainerSceneConfig(
   const hero = isRecord(value.hero) ? value.hero : {};
   const densify = isRecord(value.densify) ? value.densify : {};
   const projection = isRecord(value.projection) ? value.projection : {};
+  const ellipsoids = isRecord(value.ellipsoids) ? value.ellipsoids : {};
   const assetsUrl = assetsUrlOverride?.trim() || value.assetsUrl;
   if (typeof assetsUrl !== "string" || assetsUrl === "") {
     throw new Error("Explainer scene config needs an assetsUrl.");
@@ -64,6 +68,10 @@ export function parseExplainerSceneConfig(
     counters: {
       offset: vec3(counters.offset, "counters.offset"),
       width: positive(counters.width, "counters.width"),
+    },
+    ellipsoids: {
+      labelOffset: vec3(ellipsoids.labelOffset, "ellipsoids.labelOffset"),
+      sigmas: positive(ellipsoids.sigmas, "ellipsoids.sigmas"),
     },
     densify: {
       labelOffset: vec3(densify.labelOffset, "densify.labelOffset"),

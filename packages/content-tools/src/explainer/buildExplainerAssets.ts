@@ -26,6 +26,7 @@ import {
   writeFloatPly,
 } from "./plyFiles.js";
 import { gaussiansFromPly, renderGaussians } from "./renderGaussians.js";
+import { ELLIPSOID_STRIDE, selectEllipsoids } from "./selectEllipsoids.js";
 import {
   createStageFrame,
   isInsideBox,
@@ -70,6 +71,7 @@ export const EXPLAINER_ASSETS_FILENAME = "explainer-assets.json";
 const CHECKPOINT_DIR = "checkpoints";
 const SPARSE_POINTS_FILENAME = "sparse-points.bin";
 const PROJECTION_FILENAME = "projection.png";
+const ELLIPSOIDS_FILENAME = "ellipsoids.bin";
 const CHECKPOINT_FILENAME = /^splat_(\d+)\.ply$/;
 
 export interface ExplainerAssetsIndex {
@@ -83,6 +85,13 @@ export interface ExplainerAssetsIndex {
   }[];
   cropBoxes: StageBox[];
   id: string;
+  /** Opaque gaussians of one checkpoint for the ellipsoid view, when configured. */
+  ellipsoids?: {
+    count: number;
+    iteration: number;
+    layout: "float32 per ellipsoid: position xyz, rotation wxyz, sigma xyz, colour rgb";
+    url: string;
+  };
   /** Render of one checkpoint from a virtual stage-frame camera, when configured. */
   projectionView?: ProjectionViewConfig & { url: string };
   sourceToStage: StageFrame;
@@ -130,6 +139,7 @@ export async function buildExplainerAssets(
 
     const checkpoints: ExplainerAssetsIndex["checkpoints"] = [];
     let renderedProjection = false;
+    let ellipsoidCount: number | undefined;
     for (const checkpoint of config.checkpoints) {
       let inputPath: string;
       if (checkpoint.source === "initialisation") {
@@ -165,6 +175,17 @@ export async function buildExplainerAssets(
         await runSplatTransform([...parts, croppedPath]);
       }
       const splatCount = (await readPlyHeader(croppedPath)).vertexCount;
+      if (config.ellipsoidView?.iteration === checkpoint.iteration) {
+        const values = selectEllipsoids(
+          gaussiansFromPly(await readPlyVertices(croppedPath)),
+          config.ellipsoidView.count,
+        );
+        await writeFile(
+          join(outputDir, ELLIPSOIDS_FILENAME),
+          Buffer.from(values.buffer),
+        );
+        ellipsoidCount = values.length / ELLIPSOID_STRIDE;
+      }
       if (config.projectionView?.iteration === checkpoint.iteration) {
         io.stdout(
           `Rendering iteration ${checkpoint.iteration} for the projection view.`,
@@ -201,6 +222,11 @@ export async function buildExplainerAssets(
       });
     }
 
+    if (config.ellipsoidView !== undefined && ellipsoidCount === undefined) {
+      throw new Error(
+        `ellipsoidView.iteration ${config.ellipsoidView.iteration} is not a configured checkpoint.`,
+      );
+    }
     if (config.projectionView !== undefined && !renderedProjection) {
       throw new Error(
         `projectionView.iteration ${config.projectionView.iteration} is not a configured checkpoint.`,
@@ -236,6 +262,17 @@ export async function buildExplainerAssets(
       },
       trainingCounts,
       version: 1,
+      ...(config.ellipsoidView === undefined || ellipsoidCount === undefined
+        ? {}
+        : {
+            ellipsoids: {
+              count: ellipsoidCount,
+              iteration: config.ellipsoidView.iteration,
+              layout:
+                "float32 per ellipsoid: position xyz, rotation wxyz, sigma xyz, colour rgb",
+              url: ELLIPSOIDS_FILENAME,
+            },
+          }),
       ...(config.projectionView === undefined
         ? {}
         : { projectionView: { ...config.projectionView, url: PROJECTION_FILENAME } }),
@@ -265,6 +302,7 @@ async function prepareOutput(outputDir: string, indexPath: string, force: boolea
         CHECKPOINT_DIR,
         SPARSE_POINTS_FILENAME,
         PROJECTION_FILENAME,
+        ELLIPSOIDS_FILENAME,
       ].map((entry) => rm(join(outputDir, entry), { force: true, recursive: true })),
     );
   }

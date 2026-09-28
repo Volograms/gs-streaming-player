@@ -2,6 +2,7 @@ import { BLEND_NONE, BLEND_NORMAL, Color, Entity, StandardMaterial } from "playc
 
 import { CameraRigView } from "./visuals/CameraRigView.js";
 import { DensifyView } from "./visuals/DensifyView.js";
+import { EllipsoidView } from "./visuals/EllipsoidView.js";
 import { HeroGaussianView } from "./visuals/HeroGaussianView.js";
 import { ProjectionView } from "./visuals/ProjectionView.js";
 import { SparseCloudView } from "./visuals/SparseCloudView.js";
@@ -18,6 +19,7 @@ export interface ExplainerVisualToggles {
   counters: boolean;
   demo: boolean;
   densify: boolean;
+  ellipsoids: boolean;
   hero: boolean;
   projection: boolean;
   stage: boolean;
@@ -45,6 +47,8 @@ export class ExplainerScene {
   private readonly config: ExplainerSceneConfig;
   private readonly counters: TextPanel;
   private readonly densify: DensifyView;
+  /** Beat 6; absent when the assets were built without an ellipsoid view. */
+  private readonly ellipsoids: EllipsoidView | undefined;
   private disposed = false;
   private readonly hero: HeroGaussianView;
   /** Beat 7; absent when the assets were built without a projection view. */
@@ -59,6 +63,7 @@ export class ExplainerScene {
     assets: ExplainerAssets,
     sparsePoints: SparsePoints,
     projectionImage: ImageBitmap | undefined,
+    ellipsoids: Float32Array | undefined,
     config: ExplainerSceneConfig,
     signal?: AbortSignal,
   ): Promise<ExplainerScene> {
@@ -88,6 +93,7 @@ export class ExplainerScene {
       assets,
       sparsePoints,
       projectionImage,
+      ellipsoids,
       config,
     );
   }
@@ -98,6 +104,7 @@ export class ExplainerScene {
     assets: ExplainerAssets,
     sparsePoints: SparsePoints,
     projectionImage: ImageBitmap | undefined,
+    ellipsoids: Float32Array | undefined,
     config: ExplainerSceneConfig,
   ) {
     this.adapter = adapter;
@@ -159,6 +166,11 @@ export class ExplainerScene {
     this.anchor.addChild(this.sparseCloud.entity);
     this.anchor.addChild(this.cameraRig.entity);
     this.anchor.addChild(this.hero.entity);
+    this.ellipsoids =
+      ellipsoids === undefined
+        ? undefined
+        : new EllipsoidView(application, ellipsoids, config.ellipsoids, overlayLayerId);
+    if (this.ellipsoids !== undefined) this.anchor.addChild(this.ellipsoids.entity);
     this.densify = new DensifyView(
       application,
       config.densify,
@@ -185,6 +197,7 @@ export class ExplainerScene {
     const viewer = this.adapter.cameraEntity.getPosition();
     this.hero.apply(toggles.hero ? frame.hero : undefined, viewer);
     this.densify.apply(toggles.densify ? frame.densify : undefined, viewer);
+    this.ellipsoids?.apply(toggles.ellipsoids ? frame.ellipsoids : undefined, viewer);
     this.projection?.apply(
       toggles.projection ? frame.projection : undefined,
       this.anchor,
@@ -206,6 +219,7 @@ export class ExplainerScene {
     this.cameraRig.dispose();
     this.hero.dispose();
     this.densify.dispose();
+    this.ellipsoids?.dispose();
     this.projection?.dispose();
     this.anchor.destroy();
     this.pedestal.destroy();

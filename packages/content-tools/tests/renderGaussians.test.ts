@@ -4,6 +4,10 @@ import { describe, expect, it } from "vitest";
 
 import { encodePng } from "../src/explainer/encodePng.js";
 import { renderGaussians } from "../src/explainer/renderGaussians.js";
+import {
+  ELLIPSOID_STRIDE,
+  selectEllipsoids,
+} from "../src/explainer/selectEllipsoids.js";
 
 import type { GaussianCloud, PinholeCamera } from "../src/explainer/renderGaussians.js";
 
@@ -115,5 +119,24 @@ describe("encodePng", () => {
     expect(png.toString("latin1", 37, 41)).toBe("IDAT");
     const rows = inflateSync(png.subarray(41, 41 + idatLength));
     expect([...rows]).toEqual([0, ...rgba.subarray(0, 8), 0, ...rgba.subarray(8, 16)]);
+  });
+});
+
+describe("selectEllipsoids", () => {
+  it("keeps opaque gaussians only, evenly strided, with DC colours", () => {
+    const gaussians = Array.from({ length: 10 }, (_, i) => ({
+      colour: [i / 10, 0.5, 1] as [number, number, number],
+      opacity: i % 2 === 0 ? 0.9 : 0.1,
+      position: [i, 0, 0] as [number, number, number],
+      sigma: 0.1,
+    }));
+    const values = selectEllipsoids(cloud(gaussians), 3);
+    expect(values.length).toBe(3 * ELLIPSOID_STRIDE);
+    const xs = [0, 1, 2].map((k) => values[k * ELLIPSOID_STRIDE]);
+    expect(xs).toEqual([0, 2, 6]);
+    expect(values[3]).toBe(1); // rotation w
+    expect(values[7]).toBeCloseTo(0.1, 6); // sigma x
+    expect(values[10]).toBeCloseTo(0, 5); // red of gaussian 0
+    expect(values[12]).toBeCloseTo(1, 5); // blue
   });
 });

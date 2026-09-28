@@ -113,10 +113,22 @@ describe("computeExplainerState with the talk's cues", () => {
     });
   });
 
-  it("keeps the final model on the pedestal through the last beats", () => {
-    expect(at(112).demo).toMatchObject({ iteration: 30000, scale: 1 });
+  it("keeps the final model through the last beats", () => {
+    expect(at(109).demo).toMatchObject({ iteration: 30000, scale: 1 });
+    expect(at(118).demo).toMatchObject({ iteration: 30000, scale: 1 });
     expect(at(131).demo.iteration).toBe(30000);
     expect(at(112).counters.iteration.visibility).toBe(0);
+  });
+
+  it("swaps the model for its own gaussians as ellipsoids, then back", () => {
+    const growing = at(110);
+    expect(growing.ellipsoids.grow).toBeGreaterThan(0);
+    expect(growing.demo.scale).toBe(1);
+    const shown = at(113);
+    expect(shown.ellipsoids).toMatchObject({ grow: 1, replacesObject: true });
+    expect(shown.ellipsoids.label?.text).toBe("Sin malla: solo gaussianas");
+    expect(shown.demo.scale).toBe(0);
+    expect(at(117).ellipsoids.grow).toBe(0);
   });
 
   it("gives each shipped checkpoint an equal share of a training cue", () => {
@@ -182,6 +194,7 @@ describe("explainer configuration", () => {
       {
         assetsUrl: "a.json",
         counters: { offset: [0, 0.4, 0], width: 0.5 },
+        ellipsoids: { labelOffset: [0, 0.5, 0], sigmas: 1.6 },
         densify: { labelOffset: [0, 0.3, 0], position: [3, 1, 0], scale: 1 },
         projection: {
           labelOffset: [0, 0.3, 0],

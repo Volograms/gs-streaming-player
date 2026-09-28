@@ -15,6 +15,7 @@ const TOGGLE_LABELS: Record<keyof ExplainerVisualToggles, string> = {
   counters: "Counters",
   demo: "Demo object",
   densify: "Split / prune",
+  ellipsoids: "Ellipsoids",
   hero: "Hero gaussian",
   projection: "Projection",
   stage: "Pedestal",

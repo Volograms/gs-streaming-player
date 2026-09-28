@@ -16,6 +16,8 @@ export interface ExplainerAssetsConfig {
   cropBoxes: StageBox[];
   datasetDir: string;
   id: string;
+  /** Optional export of a checkpoint's opaque gaussians for an ellipsoid view. */
+  ellipsoidView: EllipsoidViewConfig | undefined;
   maxSh: number;
   /** Optional render of one checkpoint from a virtual camera (the explainer's 2D image). */
   projectionView: ProjectionViewConfig | undefined;
@@ -23,6 +25,11 @@ export interface ExplainerAssetsConfig {
   stage: StageFrameDefinition;
   /** Directories scanned for splat_<iteration>.ply headers to build the counter curve. */
   trainingCountDirs: string[];
+}
+
+export interface EllipsoidViewConfig {
+  count: number;
+  iteration: number;
 }
 
 /** A look-at pinhole camera in stage metres and the checkpoint it renders. */
@@ -69,6 +76,7 @@ export function parseExplainerAssetsConfig(value: unknown): ExplainerAssetsConfi
     cropBoxes,
     datasetDir: requireString(value.datasetDir, "datasetDir"),
     id,
+    ellipsoidView: parseEllipsoidView(value.ellipsoidView),
     maxSh,
     projectionView: parseProjectionView(value.projectionView),
     sparsePointCloud: requireString(value.sparsePointCloud, "sparsePointCloud"),
@@ -158,6 +166,24 @@ function requireString(value: unknown, label: string): string {
     throw new Error(`${label} must be a non-empty string.`);
   }
   return value;
+}
+
+function parseEllipsoidView(value: unknown): EllipsoidViewConfig | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new Error("ellipsoidView must be an object.");
+  const { count, iteration } = value;
+  if (
+    typeof count !== "number" ||
+    !Number.isInteger(count) ||
+    count < 1 ||
+    count > 20000
+  ) {
+    throw new Error("ellipsoidView.count must be an integer between 1 and 20000.");
+  }
+  if (typeof iteration !== "number" || !Number.isInteger(iteration)) {
+    throw new Error("ellipsoidView.iteration must name a configured checkpoint.");
+  }
+  return { count, iteration };
 }
 
 function parseProjectionView(value: unknown): ProjectionViewConfig | undefined {

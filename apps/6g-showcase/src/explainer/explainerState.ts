@@ -1,10 +1,12 @@
 import { cueString, easeInOutCubic, sampleKeyframes } from "@6g-path/cue-timeline";
 
 import { densifyState } from "./densifyState.js";
+import { ellipsoidState } from "./ellipsoidState.js";
 import { heroGaussianState } from "./heroGaussianState.js";
 import { projectionState } from "./projectionState.js";
 
 import type { DensifyState } from "./densifyState.js";
+import type { EllipsoidState } from "./ellipsoidState.js";
 import type { ExplainerAssets } from "./explainerAssets.js";
 import type { HeroGaussianState } from "./heroGaussianState.js";
 import type { ProjectionState } from "./projectionState.js";
@@ -37,6 +39,7 @@ export interface ExplainerFrameState {
     yawDegrees: number;
   };
   densify: DensifyState;
+  ellipsoids: EllipsoidState;
   hero: HeroGaussianState;
   projection: ProjectionState;
   stage: { visibility: number };
@@ -65,6 +68,8 @@ export function computeExplainerState(
   const trainingIteration =
     training === undefined ? 0 : trainingIterationAt(training, iterations).continuous;
   const gaussians = sampleKeyframes(assets.trainingCounts, trainingIteration);
+  const demoObject = demoObjectState(state, iterations);
+  const ellipsoids = ellipsoidState(timeline, state);
   const swell = latestStarted(state, "sparse-cloud.swell");
   const highlight = state.cues.find(
     ({ cue, phase }) => cue.type === "camera-ring.highlight" && phase === "active",
@@ -92,10 +97,13 @@ export function computeExplainerState(
       iteration: counter(timeline, state, "counter.iteration", trainingIteration),
     },
     demo: {
-      ...demoObjectState(state, iterations),
+      ...demoObject,
+      // Hidden while its own gaussians, drawn as ellipsoids, stand in for it.
+      scale: ellipsoids.replacesObject ? 0 : demoObject.scale,
       focus: maxEnvelope(state, "demo-object.focus"),
     },
     densify: densifyState(timeline, state),
+    ellipsoids,
     hero: heroGaussianState(timeline, state),
     projection: projectionState(timeline, state),
     stage: { visibility: maxEnvelope(state, "stage.show") },
