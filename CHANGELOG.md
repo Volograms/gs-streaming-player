@@ -53,18 +53,20 @@ All notable changes to this project will be documented here. The project uses
   revealed, turned, dissolved and stepped through its training checkpoints. During the
   training beats it glides to a larger close-up in front of the presenter. The model
   dissolves into its SfM sparse cloud, shown with a ring of capture-camera frusta, and
-  the points swell into initial gaussians at their real starting size. A hero gaussian
-  then leaves the cloud and demonstrates position, scale, opacity and colour with
-  Spanish labels. A patch of about 50 gaussians then shows densification (the worst ones
-  light up and split in two) and pruning (faint ones are marked and vanish one by one).
-  Its own gaussians then stand in for the final model as solid ellipsoids. Finally
-  gaussians fly from the object onto a screen and flatten into 2D splats, the full
-  render of the final model resolves over them, and the image is brought to the front
-  while the object returns to its pedestal. World-space iteration and gaussian counters
-  show the real training counts. Everything follows the presenter frame on screen
-  through the cue timeline, and a `?debug=1` panel shows cue state and offers jumps and
-  toggles. `gs-content build-explainer` now accepts a union of crop boxes to trim ground
-  beside the object.
+  the points swell into initial gaussians at their real starting size. During the
+  training loop, panels show a real training photo, the current render from the same
+  camera and an error heatmap that cools as training progresses. A hero gaussian then
+  leaves the cloud and demonstrates position, scale, opacity and colour with Spanish
+  labels. A patch of about 50 gaussians then shows densification (the worst ones light
+  up and split in two) and pruning (faint ones are marked and vanish one by one). Its
+  own gaussians then stand in for the final model as solid ellipsoids. Finally gaussians
+  fly from the object onto a screen and flatten into 2D splats, the full render of the
+  final model resolves over them, and the image is brought to the front while the object
+  returns to its pedestal. World-space iteration and gaussian counters show the real
+  training counts. Everything follows the presenter frame on screen through the cue
+  timeline, and a `?debug=1` panel shows cue state and offers jumps and toggles.
+  `gs-content build-explainer` now accepts a union of crop boxes to trim ground beside
+  the object.
 
 - `@6g-path/cue-timeline`: a renderer-independent, data-driven cue timeline. It is
   evaluated purely from the media time of the presenter frame on screen, so seeking,
@@ -76,7 +78,8 @@ All notable changes to this project will be documented here. The project uses
   iteration-0 state), the sparse cloud, a training-camera subset, and real per-iteration
   gaussian counts. An optional `projectionView` renders a checkpoint from a virtual
   camera into a PNG with a built-in CPU 3D Gaussian Splatting rasteriser. An optional
-  `ellipsoidView` exports opaque gaussians for an ellipsoid view.
+  `ellipsoidView` exports opaque gaussians for an ellipsoid view, and an optional
+  `comparisonView` renders every checkpoint from a training camera next to its photo.
 
 - A dedicated `pnpm dev:showcase:https` mode for local WebXR testing. It uses the
   ignored mkcert key pair, binds the showcase to the LAN, enables XR, and retains local

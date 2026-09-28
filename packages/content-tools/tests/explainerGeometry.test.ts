@@ -23,7 +23,10 @@ import {
   splatTransformStageArgs,
   toStagePoint,
 } from "../src/explainer/stageFrame.js";
-import { selectStageCameras } from "../src/explainer/trainingCameras.js";
+import {
+  selectStageCameras,
+  stageRasterCamera,
+} from "../src/explainer/trainingCameras.js";
 
 import type { Mat3, Vec3 } from "../src/explainer/stageFrame.js";
 
@@ -256,6 +259,34 @@ describe("training cameras", () => {
   it("rejects transforms without intrinsics", () => {
     expect(() => selectStageCameras({ frames: [] }, frame, 4)).toThrow(/intrinsics/);
   });
+
+  it("turns a training pose into a raster camera with the dataset intrinsics", () => {
+    const camera = stageRasterCamera(
+      { ...transforms, cx: 96, cy: 48, fl_x: 60 },
+      frame,
+      "images/0.jpg",
+    );
+    expect(camera).toMatchObject({
+      cx: 96,
+      cy: 48,
+      fx: 60,
+      fy: 50,
+      height: 100,
+      width: 200,
+    });
+    // Identity OpenGL pose: +X right, +Y up, looking down -Z, at (0, 1.5, 3).
+    [
+      [camera.eye, [0, 1.5, 3]],
+      [camera.forward, [0, 0, -1]],
+      [camera.right, [1, 0, 0]],
+      [camera.up, [0, 1, 0]],
+    ].forEach(([actual, expected]) =>
+      actual!.forEach((value, axis) => expect(value).toBeCloseTo(expected![axis]!, 9)),
+    );
+    expect(() =>
+      stageRasterCamera({ ...transforms, fl_x: 60 }, frame, "x.jpg"),
+    ).toThrow(/No camera frame/);
+  });
 });
 
 describe("explainer config", () => {
@@ -305,6 +336,7 @@ describe("explainer config", () => {
     [{ cropBoxes: [] }, /non-empty/],
     [{ stage: { ...TRUCK_STAGE, up: [0, 1] } }, /stage.up/],
     [{ maxSh: 4 }, /maxSh/],
+    [{ comparisonView: { camera: 20 } }, /camera ring/],
     [
       {
         projectionView: {

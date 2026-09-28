@@ -28,6 +28,42 @@ export interface PinholeCamera {
   width: number;
 }
 
+/** A general pinhole camera: pose axes in world space and pixel intrinsics. */
+export interface RasterCamera {
+  cx: number;
+  cy: number;
+  eye: Vec3;
+  /** Viewing direction (world). */
+  forward: Vec3;
+  fx: number;
+  fy: number;
+  height: number;
+  /** Image right (world). */
+  right: Vec3;
+  /** Image up (world). */
+  up: Vec3;
+  width: number;
+}
+
+export function lookAtCamera(camera: PinholeCamera): RasterCamera {
+  const forward = normalise(subtract(camera.lookAt, camera.eye));
+  const right = normalise(cross(forward, [0, 1, 0]));
+  const focal =
+    camera.height / 2 / Math.tan((camera.verticalFovDegrees * Math.PI) / 360);
+  return {
+    cx: camera.width / 2,
+    cy: camera.height / 2,
+    eye: camera.eye,
+    forward,
+    fx: focal,
+    fy: focal,
+    height: camera.height,
+    right,
+    up: cross(right, forward),
+    width: camera.width,
+  };
+}
+
 const SH_C0 = 0.28209479177387814;
 const SH_C1 = 0.4886025119029199;
 const NEAR = 0.2;
@@ -97,15 +133,9 @@ export function gaussiansFromPly(vertices: PlyVertices): GaussianCloud {
  */
 export function renderGaussians(
   cloud: GaussianCloud,
-  camera: PinholeCamera,
+  camera: RasterCamera,
 ): Uint8ClampedArray {
-  const { height, width } = camera;
-  const forward = normalise(subtract(camera.lookAt, camera.eye));
-  const right = normalise(cross(forward, [0, 1, 0]));
-  const up = cross(right, forward);
-  const focal = height / 2 / Math.tan((camera.verticalFovDegrees * Math.PI) / 360);
-  const cx = width / 2;
-  const cy = height / 2;
+  const { cx, cy, forward, fx, fy, height, right, up, width } = camera;
 
   interface Projected {
     alphaScale: number;
@@ -134,10 +164,10 @@ export function renderGaussians(
     // Rows of the world-to-camera rotation.
     const w: Mat3 = [right, [-up[0], -up[1], -up[2]], forward];
     const cam = congruence(w, covariance);
-    const j00 = focal / zc;
-    const j02 = (-focal * xc) / (zc * zc);
-    const j11 = focal / zc;
-    const j12 = (-focal * yc) / (zc * zc);
+    const j00 = fx / zc;
+    const j02 = (-fx * xc) / (zc * zc);
+    const j11 = fy / zc;
+    const j12 = (-fy * yc) / (zc * zc);
     // Sigma2D = J * cam * J^T for J = [[j00, 0, j02], [0, j11, j12]].
     const a =
       j00 * j00 * cam[0][0] +
@@ -159,8 +189,8 @@ export function renderGaussians(
     const mid = (a + c) / 2;
     const lambda = mid + Math.sqrt(Math.max(0.1, mid * mid - det));
     const radius = Math.ceil(3 * Math.sqrt(lambda));
-    const px = cx + (focal * xc) / zc;
-    const py = cy + (focal * yc) / zc;
+    const px = cx + (fx * xc) / zc;
+    const py = cy + (fy * yc) / zc;
     if (
       px + radius < 0 ||
       px - radius >= width ||

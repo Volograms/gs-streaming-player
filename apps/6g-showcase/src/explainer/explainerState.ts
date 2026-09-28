@@ -1,10 +1,12 @@
 import { cueString, easeInOutCubic, sampleKeyframes } from "@6g-path/cue-timeline";
 
+import { comparisonState } from "./comparisonState.js";
 import { densifyState } from "./densifyState.js";
 import { ellipsoidState } from "./ellipsoidState.js";
 import { heroGaussianState } from "./heroGaussianState.js";
 import { projectionState } from "./projectionState.js";
 
+import type { ComparisonState } from "./comparisonState.js";
 import type { DensifyState } from "./densifyState.js";
 import type { EllipsoidState } from "./ellipsoidState.js";
 import type { ExplainerAssets } from "./explainerAssets.js";
@@ -24,6 +26,8 @@ export interface ExplainerFrameState {
     swell: number;
     visibility: number;
   };
+  /** Photo, render and error panels for the highlighted camera (beat 4). */
+  comparison: ComparisonState;
   counters: {
     gaussians: CounterState;
     iteration: CounterState;
@@ -92,6 +96,7 @@ export function computeExplainerState(
         maxEnvelope(state, "sparse-cloud.show") *
         (1 - 0.75 * maxEnvelope(state, "sparse-cloud.dim")),
     },
+    comparison: comparisonState(timeline, state),
     counters: {
       gaussians: counter(timeline, state, "counter.gaussians", gaussians),
       iteration: counter(timeline, state, "counter.iteration", trainingIteration),

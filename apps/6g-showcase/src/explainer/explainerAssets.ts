@@ -5,6 +5,8 @@ export interface ExplainerAssets {
   /** Capture cameras in the stage frame (camera looks down its local -Z). */
   cameras: StageCameraSet;
   checkpoints: ExplainerCheckpoint[];
+  /** A training photo and each checkpoint rendered from its camera, if the assets have them. */
+  comparison: ComparisonIndex | undefined;
   /** Opaque gaussians of the final model for the ellipsoid view, if the assets have them. */
   ellipsoids: { count: number; url: string } | undefined;
   /** Offline render of the final model from a virtual camera, if the assets have one. */
@@ -19,6 +21,17 @@ export interface ExplainerCheckpoint {
   splatCount: number;
   /** Absolute URL of the stage-frame SOG. */
   url: string;
+}
+
+export interface ComparisonIndex {
+  /** Index into the capture camera list: the camera the explainer highlights. */
+  camera: number;
+  height: number;
+  /** Absolute URL of the real training photo. */
+  photoUrl: string;
+  /** Straight-alpha renders of the object from that camera, by iteration. */
+  renders: { iteration: number; url: string }[];
+  width: number;
 }
 
 /** A look-at pinhole camera in the stage frame and the image it rendered. */
@@ -135,6 +148,7 @@ export function parseExplainerAssets(value: unknown, baseUrl: string): Explainer
   return {
     cameras: parseCameras(value.cameras),
     checkpoints,
+    comparison: parseComparisonIndex(value.comparison, baseUrl),
     ellipsoids: parseEllipsoidsIndex(value.ellipsoids, baseUrl),
     projectionView: parseProjectionView(value.projectionView, baseUrl),
     sparsePoints: parseSparsePointsIndex(value.sparsePoints, baseUrl),
@@ -158,6 +172,40 @@ export async function loadEllipsoids(
     throw new Error("Ellipsoids file does not match its index; rebuild the assets.");
   }
   return new Float32Array(buffer);
+}
+
+function parseComparisonIndex(
+  value: unknown,
+  baseUrl: string,
+): ComparisonIndex | undefined {
+  if (value === undefined) return undefined;
+  if (
+    !isRecord(value) ||
+    !isCount(value.camera) ||
+    !isCount(value.width) ||
+    !isCount(value.height) ||
+    typeof value.photoUrl !== "string" ||
+    !Array.isArray(value.renders)
+  ) {
+    throw new Error("Explainer comparison index is malformed; rebuild the assets.");
+  }
+  const renders = value.renders.map((entry, index) => {
+    if (
+      !isRecord(entry) ||
+      !isCount(entry.iteration) ||
+      typeof entry.url !== "string"
+    ) {
+      throw new Error(`Explainer comparison render ${index} is malformed.`);
+    }
+    return { iteration: entry.iteration, url: new URL(entry.url, baseUrl).href };
+  });
+  return {
+    camera: value.camera,
+    height: value.height,
+    photoUrl: new URL(value.photoUrl, baseUrl).href,
+    renders,
+    width: value.width,
+  };
 }
 
 function parseEllipsoidsIndex(

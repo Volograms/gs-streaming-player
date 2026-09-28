@@ -3,7 +3,7 @@ import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
 import { encodePng } from "../src/explainer/encodePng.js";
-import { renderGaussians } from "../src/explainer/renderGaussians.js";
+import { lookAtCamera, renderGaussians } from "../src/explainer/renderGaussians.js";
 import {
   ELLIPSOID_STRIDE,
   selectEllipsoids,
@@ -12,13 +12,14 @@ import {
 import type { GaussianCloud, PinholeCamera } from "../src/explainer/renderGaussians.js";
 
 const SH_C0 = 0.28209479177387814;
-const camera: PinholeCamera = {
+const pinhole: PinholeCamera = {
   eye: [0, 0, 5],
   height: 32,
   lookAt: [0, 0, 0],
   verticalFovDegrees: 40,
   width: 48,
 };
+const camera = lookAtCamera(pinhole);
 
 /** Isotropic gaussians with SH degree 0 colours given in 0..1. */
 function cloud(

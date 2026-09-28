@@ -1,5 +1,6 @@
 import {
   access,
+  copyFile,
   mkdir,
   mkdtemp,
   readdir,
@@ -25,7 +26,7 @@ import {
   readPointCloud,
   writeFloatPly,
 } from "./plyFiles.js";
-import { gaussiansFromPly, renderGaussians } from "./renderGaussians.js";
+import { gaussiansFromPly, lookAtCamera, renderGaussians } from "./renderGaussians.js";
 import { ELLIPSOID_STRIDE, selectEllipsoids } from "./selectEllipsoids.js";
 import {
   createStageFrame,
@@ -33,7 +34,7 @@ import {
   splatTransformStageArgs,
   toStagePoint,
 } from "./stageFrame.js";
-import { selectStageCameras } from "./trainingCameras.js";
+import { selectStageCameras, stageRasterCamera } from "./trainingCameras.js";
 
 import type {
   ExplainerAssetsConfig,
@@ -72,6 +73,7 @@ const CHECKPOINT_DIR = "checkpoints";
 const SPARSE_POINTS_FILENAME = "sparse-points.bin";
 const PROJECTION_FILENAME = "projection.png";
 const ELLIPSOIDS_FILENAME = "ellipsoids.bin";
+const COMPARISON_DIR = "comparison";
 const CHECKPOINT_FILENAME = /^splat_(\d+)\.ply$/;
 
 export interface ExplainerAssetsIndex {
@@ -83,6 +85,16 @@ export interface ExplainerAssetsIndex {
     trainingSplatCount: number;
     url: string;
   }[];
+  /** A training photo and every checkpoint rendered from that camera, when configured. */
+  comparison?: {
+    /** Index into `cameras.cameras`. */
+    camera: number;
+    height: number;
+    photoUrl: string;
+    /** Straight-alpha RGBA renders of the cropped object, one per checkpoint. */
+    renders: { iteration: number; url: string }[];
+    width: number;
+  };
   cropBoxes: StageBox[];
   id: string;
   /** Opaque gaussians of one checkpoint for the ellipsoid view, when configured. */
@@ -140,6 +152,19 @@ export async function buildExplainerAssets(
     const checkpoints: ExplainerAssetsIndex["checkpoints"] = [];
     let renderedProjection = false;
     let ellipsoidCount: number | undefined;
+    const transforms = JSON.parse(
+      await readFile(join(datasetDir, config.cameraTransforms), "utf8"),
+    ) as unknown;
+    const cameras = selectStageCameras(transforms, frame, config.cameraCount);
+    const comparisonImage =
+      config.comparisonView === undefined
+        ? undefined
+        : cameras.cameras[config.comparisonView.camera]!.image;
+    const comparisonCamera =
+      comparisonImage === undefined
+        ? undefined
+        : stageRasterCamera(transforms, frame, comparisonImage);
+    const comparisonRenders: { iteration: number; url: string }[] = [];
     for (const checkpoint of config.checkpoints) {
       let inputPath: string;
       if (checkpoint.source === "initialisation") {
@@ -175,6 +200,21 @@ export async function buildExplainerAssets(
         await runSplatTransform([...parts, croppedPath]);
       }
       const splatCount = (await readPlyHeader(croppedPath)).vertexCount;
+      if (comparisonCamera !== undefined) {
+        io.stdout(
+          `Rendering iteration ${checkpoint.iteration} from the comparison camera.`,
+        );
+        const render = `${COMPARISON_DIR}/render-${String(checkpoint.iteration).padStart(5, "0")}.png`;
+        const pixels = renderGaussians(
+          gaussiansFromPly(await readPlyVertices(croppedPath)),
+          comparisonCamera,
+        );
+        await writeFile(
+          join(outputDir, render),
+          encodePng(pixels, comparisonCamera.width, comparisonCamera.height),
+        );
+        comparisonRenders.push({ iteration: checkpoint.iteration, url: render });
+      }
       if (config.ellipsoidView?.iteration === checkpoint.iteration) {
         const values = selectEllipsoids(
           gaussiansFromPly(await readPlyVertices(croppedPath)),
@@ -193,7 +233,7 @@ export async function buildExplainerAssets(
         const view = config.projectionView;
         const pixels = renderGaussians(
           gaussiansFromPly(await readPlyVertices(croppedPath)),
-          view,
+          lookAtCamera(view),
         );
         await writeFile(
           join(outputDir, PROJECTION_FILENAME),
@@ -239,13 +279,22 @@ export async function buildExplainerAssets(
       frame,
       config.cropBoxes,
     );
-    const cameras = selectStageCameras(
-      JSON.parse(
-        await readFile(join(datasetDir, config.cameraTransforms), "utf8"),
-      ) as unknown,
-      frame,
-      config.cameraCount,
-    );
+    let comparison: ExplainerAssetsIndex["comparison"];
+    if (
+      config.comparisonView !== undefined &&
+      comparisonCamera !== undefined &&
+      comparisonImage !== undefined
+    ) {
+      const photoUrl = `${COMPARISON_DIR}/photo${extension(comparisonImage)}`;
+      await copyFile(join(datasetDir, comparisonImage), join(outputDir, photoUrl));
+      comparison = {
+        camera: config.comparisonView.camera,
+        height: comparisonCamera.height,
+        photoUrl,
+        renders: comparisonRenders,
+        width: comparisonCamera.width,
+      };
+    }
     const index: ExplainerAssetsIndex = {
       cameras,
       checkpoints,
@@ -262,6 +311,7 @@ export async function buildExplainerAssets(
       },
       trainingCounts,
       version: 1,
+      ...(comparison === undefined ? {} : { comparison }),
       ...(config.ellipsoidView === undefined || ellipsoidCount === undefined
         ? {}
         : {
@@ -303,10 +353,12 @@ async function prepareOutput(outputDir: string, indexPath: string, force: boolea
         SPARSE_POINTS_FILENAME,
         PROJECTION_FILENAME,
         ELLIPSOIDS_FILENAME,
+        COMPARISON_DIR,
       ].map((entry) => rm(join(outputDir, entry), { force: true, recursive: true })),
     );
   }
   await mkdir(join(outputDir, CHECKPOINT_DIR), { recursive: true });
+  await mkdir(join(outputDir, COMPARISON_DIR), { recursive: true });
 }
 
 async function collectTrainingCounts(
@@ -353,6 +405,11 @@ async function writeSparsePoints(
   ]);
   await writeFile(path, bytes);
   return positions.length / 3;
+}
+
+function extension(path: string): string {
+  const match = /\.[a-z0-9]+$/i.exec(path);
+  return match === null ? "" : match[0].toLowerCase();
 }
 
 function resolveFrom(baseDir: string, path: string): string {

@@ -79,10 +79,18 @@ describe("computeExplainerState with the talk's cues", () => {
 
   it("shows the camera ring, then one highlighted training camera", () => {
     expect(at(40).cameras).toMatchObject({ highlight: undefined, ringVisibility: 1 });
-    expect(at(70).cameras).toMatchObject({
-      highlight: { camera: 5, visibility: 1 },
-      ringVisibility: 0,
+    // No single-camera highlight in the close-up: the training cameras used for the
+    // comparison panels sit on the viewer's side and would land in front of them.
+    expect(at(70).cameras).toMatchObject({ highlight: undefined, ringVisibility: 0 });
+  });
+
+  it("shows photo, render and error panels during the training loop", () => {
+    expect(at(60).comparison.visibility).toBe(0);
+    expect(at(74).comparison).toEqual({
+      labels: { error: "Error", photo: "Imagen real", render: "Render" },
+      visibility: 1,
     });
+    expect(at(85).comparison.visibility).toBe(0);
   });
 
   it("steps through the early checkpoints and counts iterations", () => {
@@ -193,6 +201,13 @@ describe("explainer configuration", () => {
     const config = parseExplainerSceneConfig(
       {
         assetsUrl: "a.json",
+        comparison: {
+          gain: 2,
+          gap: 0.03,
+          position: [1, 1.4, 1.5],
+          stack: "row",
+          width: 0.3,
+        },
         counters: { offset: [0, 0.4, 0], width: 0.5 },
         ellipsoids: { labelOffset: [0, 0.5, 0], sigmas: 1.6 },
         densify: { labelOffset: [0, 0.3, 0], position: [3, 1, 0], scale: 1 },

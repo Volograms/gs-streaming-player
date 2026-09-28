@@ -39,5 +39,12 @@
   "ellipsoids": {
     "sigmas": 1.8,
     "labelOffset": [0, 0.5, 0]
+  },
+  "comparison": {
+    "position": [0.62, 1.4, 1.12],
+    "stack": "column",
+    "width": 0.28,
+    "gap": 0.05,
+    "gain": 6
   }
 }

@@ -115,15 +115,6 @@
       "fadeOut": 2
     },
     {
-      "id": "b4-highlight",
-      "type": "camera-ring.highlight",
-      "start": 65,
-      "end": 82,
-      "fadeIn": 1,
-      "fadeOut": 1,
-      "params": { "camera": 5 }
-    },
-    {
       "id": "b4-panels",
       "type": "comparison-panels.show",
       "start": 66,

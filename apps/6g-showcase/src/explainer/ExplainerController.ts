@@ -7,9 +7,10 @@ import { explainerTimeSeconds } from "./explainerClock.js";
 import { ExplainerScene } from "./ExplainerScene.js";
 import { computeExplainerState } from "./explainerState.js";
 
-import type { ExplainerAssets } from "./explainerAssets.js";
+import type { ComparisonIndex, ExplainerAssets } from "./explainerAssets.js";
 import type { ExplainerVisualToggles } from "./ExplainerScene.js";
 import type { ExplainerSceneConfig } from "./explainerSceneConfig.js";
+import type { ComparisonImages } from "./visuals/ComparisonPanels.js";
 import type { CueTimeline } from "@6g-path/cue-timeline";
 import type { GaussianStreamingPlayer } from "@6g-path/gaussian-player";
 import type { PlayCanvasGaussianRendererAdapter } from "@6g-path/gaussian-renderer-playcanvas";
@@ -30,6 +31,7 @@ export class ExplainerController {
   readonly toggles: ExplainerVisualToggles = {
     cameras: true,
     cloud: true,
+    comparison: true,
     counters: true,
     demo: true,
     densify: true,
@@ -60,7 +62,7 @@ export class ExplainerController {
   ): Promise<ExplainerController> {
     const timeline = parseCueTimeline(cueDocument);
     validateAcrossTimeline(timeline, assets);
-    const [sparsePoints, projectionImage, ellipsoids] = await Promise.all([
+    const [sparsePoints, projectionImage, ellipsoids, comparison] = await Promise.all([
       loadSparsePoints(assets.sparsePoints, signal),
       assets.projectionView === undefined
         ? Promise.resolve(undefined)
@@ -68,13 +70,14 @@ export class ExplainerController {
       assets.ellipsoids === undefined
         ? Promise.resolve(undefined)
         : loadEllipsoids(assets.ellipsoids, signal),
+      assets.comparison === undefined
+        ? Promise.resolve(undefined)
+        : loadComparison(assets.comparison, signal),
     ]);
     const scene = await ExplainerScene.create(
       adapter,
       assets,
-      sparsePoints,
-      projectionImage,
-      ellipsoids,
+      { comparison, ellipsoids, projectionImage, sparsePoints },
       config,
       signal,
     );
@@ -142,20 +145,59 @@ export class ExplainerController {
   }
 }
 
-/** Decodes to an ImageBitmap, which both the WebGPU and WebGL2 uploads accept. */
-async function loadImage(url: string, signal?: AbortSignal): Promise<ImageBitmap> {
+/**
+ * Decodes to an ImageBitmap, which both the WebGPU and WebGL2 uploads accept,
+ * optionally downscaled to `width` pixels (keeping the aspect ratio).
+ */
+async function loadImage(
+  url: string,
+  signal?: AbortSignal,
+  width?: number,
+): Promise<ImageBitmap> {
   const response = await fetch(url, signal === undefined ? {} : { signal });
   if (!response.ok) {
-    throw new Error(`Projection image unavailable (${response.status}): ${url}`);
+    throw new Error(`Explainer image unavailable (${response.status}): ${url}`);
   }
   return createImageBitmap(await response.blob(), {
     colorSpaceConversion: "none",
     premultiplyAlpha: "none",
+    ...(width === undefined ? {} : { resizeQuality: "high", resizeWidth: width }),
   });
+}
+
+/** Panels are small, so their images are decoded at reduced size to save memory. */
+const COMPARISON_TEXTURE_WIDTH = 512;
+
+async function loadComparison(
+  index: ComparisonIndex,
+  signal?: AbortSignal,
+): Promise<ComparisonImages> {
+  const width = Math.min(COMPARISON_TEXTURE_WIDTH, index.width);
+  const [photo, ...renders] = await Promise.all([
+    loadImage(index.photoUrl, signal, width),
+    ...index.renders.map(({ url }) => loadImage(url, signal, width)),
+  ]);
+  return {
+    photo: photo!,
+    renders: new Map(
+      index.renders.map(({ iteration }, order) => [iteration, renders[order]!]),
+    ),
+  };
 }
 
 /** Fails at load, not mid-talk, if a cue's params do not fit the shipped assets. */
 function validateAcrossTimeline(timeline: CueTimeline, assets: ExplainerAssets): void {
+  const comparisonCamera = assets.comparison?.camera;
+  for (const cue of timeline.cues) {
+    if (cue.type !== "camera-ring.highlight" || comparisonCamera === undefined)
+      continue;
+    if (cue.params.camera !== comparisonCamera) {
+      throw new Error(
+        `Cue '${cue.id}' highlights camera ${String(cue.params.camera)}, but the ` +
+          `comparison panels show camera ${comparisonCamera}.`,
+      );
+    }
+  }
   const times = timeline.cues.flatMap(({ endSeconds, startSeconds }) => [
     startSeconds,
     (startSeconds + endSeconds) / 2,

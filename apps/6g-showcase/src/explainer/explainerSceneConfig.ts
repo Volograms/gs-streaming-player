@@ -1,5 +1,6 @@
 import sceneDocument from "../../explainer/scene.json";
 
+import type { ComparisonConfig } from "./visuals/ComparisonPanels.js";
 import type { DensifyConfig } from "./visuals/DensifyView.js";
 import type { EllipsoidConfig } from "./visuals/EllipsoidView.js";
 import type { HeroGaussianConfig } from "./visuals/HeroGaussianView.js";
@@ -10,6 +11,8 @@ type Vec3Tuple = readonly [number, number, number];
 /** Placement of the explainer stage in the showcase world (Y-up, metres). */
 export interface ExplainerSceneConfig {
   assetsUrl: string;
+  /** Photo / render / error panels for the highlighted camera (beat 4). */
+  comparison: ComparisonConfig;
   counters: { offset: Vec3Tuple; width: number };
   /** Split and prune demonstration group, in the demo object's stage frame. */
   densify: DensifyConfig;
@@ -59,12 +62,20 @@ export function parseExplainerSceneConfig(
   const densify = isRecord(value.densify) ? value.densify : {};
   const projection = isRecord(value.projection) ? value.projection : {};
   const ellipsoids = isRecord(value.ellipsoids) ? value.ellipsoids : {};
+  const comparison = isRecord(value.comparison) ? value.comparison : {};
   const assetsUrl = assetsUrlOverride?.trim() || value.assetsUrl;
   if (typeof assetsUrl !== "string" || assetsUrl === "") {
     throw new Error("Explainer scene config needs an assetsUrl.");
   }
   return {
     assetsUrl,
+    comparison: {
+      gap: positive(comparison.gap, "comparison.gap"),
+      gain: positive(comparison.gain, "comparison.gain"),
+      position: vec3(comparison.position, "comparison.position"),
+      stack: comparison.stack === "row" ? "row" : "column",
+      width: positive(comparison.width, "comparison.width"),
+    },
     counters: {
       offset: vec3(counters.offset, "counters.offset"),
       width: positive(counters.width, "counters.width"),

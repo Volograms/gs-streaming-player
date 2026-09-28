@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { runCli } from "../src/cli/runCli.js";
 import { buildExplainerAssets } from "../src/explainer/buildExplainerAssets.js";
+import { INITIAL_GAUSSIAN_PROPERTIES } from "../src/explainer/initialGaussians.js";
 import { readPlyHeader, writeFloatPly } from "../src/explainer/plyFiles.js";
 
 import type {
@@ -229,6 +230,61 @@ describe("buildExplainerAssets", () => {
     const forced = { ...fixture.request, force: true };
     expect(await buildExplainerAssets(forced, fixture.io, dependencies)).toBe(0);
     await expect(stat(join(fixture.outputDir, "unrelated.txt"))).resolves.toBeDefined();
+  });
+
+  it("renders every checkpoint from the comparison camera and copies its photo", async () => {
+    const fixture = await createFixture();
+    const config = JSON.parse(await readFile(fixture.request.configPath, "utf8"));
+    await writeFile(
+      fixture.request.configPath,
+      JSON.stringify({ ...config, comparisonView: { camera: 1 } }),
+    );
+    const datasetDir = join(fixture.request.configPath, "..", "dataset");
+    await mkdir(join(datasetDir, "images"), { recursive: true });
+    for (const index of [0, 1, 2]) {
+      await writeFile(join(datasetDir, `images/${index}.jpg`), `photo ${index}`);
+    }
+    const transforms = JSON.parse(
+      await readFile(join(datasetDir, "transforms.json"), "utf8"),
+    );
+    await writeFile(
+      join(datasetDir, "transforms.json"),
+      JSON.stringify({ ...transforms, fl_x: 100 }),
+    );
+    // Crops write one real gaussian, straight in front of every camera.
+    const gaussian = new Float32Array(INITIAL_GAUSSIAN_PROPERTIES.length);
+    gaussian.set([0, 0, 0, 1, 1, 1, 3, -2, -2, -2, 1, 0, 0, 0]);
+    const exitCode = await buildExplainerAssets(fixture.request, fixture.io, {
+      runSplatTransform: async (args) => {
+        const output = [...args].reverse().find((arg) => /\.(ply|sog)$/.test(arg));
+        if (output?.endsWith(".ply")) {
+          await writeFloatPly(output, INITIAL_GAUSSIAN_PROPERTIES, gaussian);
+        } else if (output !== undefined) {
+          await writeFile(output, "sog");
+        }
+      },
+    });
+    expect(fixture.stderr).toEqual([]);
+    expect(exitCode).toBe(0);
+    const index = JSON.parse(
+      await readFile(join(fixture.outputDir, "explainer-assets.json"), "utf8"),
+    ) as ExplainerAssetsIndex;
+    const image = index.cameras.cameras[1]!.image;
+    expect(index.comparison).toEqual({
+      camera: 1,
+      height: 100,
+      photoUrl: "comparison/photo.jpg",
+      renders: [
+        { iteration: 0, url: "comparison/render-00000.png" },
+        { iteration: 500, url: "comparison/render-00500.png" },
+      ],
+      width: 150,
+    });
+    expect(
+      await readFile(join(fixture.outputDir, "comparison/photo.jpg"), "utf8"),
+    ).toBe(`photo ${image.match(/(\d)\.jpg$/)![1]}`);
+    const png = await readFile(join(fixture.outputDir, "comparison/render-00500.png"));
+    expect(png.toString("latin1", 1, 4)).toBe("PNG");
   });
 
   it("is reachable from the CLI", async () => {

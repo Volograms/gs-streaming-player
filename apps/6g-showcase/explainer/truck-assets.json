@@ -18,6 +18,7 @@
     { "min": [1.35, 0.0, 0.35], "max": [2.62, 0.3, 0.8] },
     { "min": [-2.75, 0.3, -1.0], "max": [2.75, 1.9, 1.0] }
   ],
+  "comparisonView": { "camera": 9 },
   "ellipsoidView": { "iteration": 30000, "count": 8000 },
   "projectionView": {
     "iteration": 30000,

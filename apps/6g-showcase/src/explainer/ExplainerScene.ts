@@ -1,6 +1,7 @@
 import { BLEND_NONE, BLEND_NORMAL, Color, Entity, StandardMaterial } from "playcanvas";
 
 import { CameraRigView } from "./visuals/CameraRigView.js";
+import { ComparisonPanels } from "./visuals/ComparisonPanels.js";
 import { DensifyView } from "./visuals/DensifyView.js";
 import { EllipsoidView } from "./visuals/EllipsoidView.js";
 import { HeroGaussianView } from "./visuals/HeroGaussianView.js";
@@ -11,11 +12,24 @@ import { paintPlate, TextPanel } from "./visuals/TextPanel.js";
 import type { ExplainerAssets, SparsePoints } from "./explainerAssets.js";
 import type { ExplainerSceneConfig } from "./explainerSceneConfig.js";
 import type { ExplainerFrameState } from "./explainerState.js";
+import type { ComparisonImages } from "./visuals/ComparisonPanels.js";
 import type { PlayCanvasGaussianRendererAdapter } from "@6g-path/gaussian-renderer-playcanvas";
+
+/** Everything loaded before the talk starts, besides the splat checkpoints. */
+export interface ExplainerResources {
+  /** Beat 4 panels; undefined when the assets have no comparison view. */
+  comparison: ComparisonImages | undefined;
+  /** Beat 6; undefined when the assets have no ellipsoid view. */
+  ellipsoids: Float32Array | undefined;
+  /** Beat 7 image; undefined when the assets have no projection view. */
+  projectionImage: ImageBitmap | undefined;
+  sparsePoints: SparsePoints;
+}
 
 export interface ExplainerVisualToggles {
   cameras: boolean;
   cloud: boolean;
+  comparison: boolean;
   counters: boolean;
   demo: boolean;
   densify: boolean;
@@ -44,6 +58,8 @@ export class ExplainerScene {
   private readonly anchor: Entity;
   private readonly cameraRig: CameraRigView;
   private readonly checkpointIds: ReadonlyMap<number, string>;
+  /** Beat 4; absent when the assets were built without a comparison view. */
+  private readonly comparison: ComparisonPanels | undefined;
   private readonly config: ExplainerSceneConfig;
   private readonly counters: TextPanel;
   private readonly densify: DensifyView;
@@ -61,9 +77,7 @@ export class ExplainerScene {
   static async create(
     adapter: PlayCanvasGaussianRendererAdapter,
     assets: ExplainerAssets,
-    sparsePoints: SparsePoints,
-    projectionImage: ImageBitmap | undefined,
-    ellipsoids: Float32Array | undefined,
+    resources: ExplainerResources,
     config: ExplainerSceneConfig,
     signal?: AbortSignal,
   ): Promise<ExplainerScene> {
@@ -87,26 +101,17 @@ export class ExplainerScene {
       for (const id of loaded) adapter.releaseObject(id);
       throw error;
     }
-    return new ExplainerScene(
-      adapter,
-      ids,
-      assets,
-      sparsePoints,
-      projectionImage,
-      ellipsoids,
-      config,
-    );
+    return new ExplainerScene(adapter, ids, assets, resources, config);
   }
 
   private constructor(
     adapter: PlayCanvasGaussianRendererAdapter,
     checkpointIds: ReadonlyMap<number, string>,
     assets: ExplainerAssets,
-    sparsePoints: SparsePoints,
-    projectionImage: ImageBitmap | undefined,
-    ellipsoids: Float32Array | undefined,
+    resources: ExplainerResources,
     config: ExplainerSceneConfig,
   ) {
+    const { ellipsoids, projectionImage, sparsePoints } = resources;
     this.adapter = adapter;
     this.checkpointIds = checkpointIds;
     this.config = config;
@@ -177,6 +182,15 @@ export class ExplainerScene {
       sparsePoints,
       overlayLayerId,
     );
+    this.comparison =
+      resources.comparison === undefined
+        ? undefined
+        : new ComparisonPanels(
+            application,
+            resources.comparison,
+            config.comparison,
+            overlayLayerId,
+          );
     application.root.addChild(this.anchor);
   }
 
@@ -197,6 +211,11 @@ export class ExplainerScene {
     const viewer = this.adapter.cameraEntity.getPosition();
     this.hero.apply(toggles.hero ? frame.hero : undefined, viewer);
     this.densify.apply(toggles.densify ? frame.densify : undefined, viewer);
+    this.comparison?.apply(
+      toggles.comparison ? frame.comparison : undefined,
+      frame.demo.iteration,
+      viewer,
+    );
     this.ellipsoids?.apply(toggles.ellipsoids ? frame.ellipsoids : undefined, viewer);
     this.projection?.apply(
       toggles.projection ? frame.projection : undefined,
@@ -221,6 +240,7 @@ export class ExplainerScene {
     this.densify.dispose();
     this.ellipsoids?.dispose();
     this.projection?.dispose();
+    this.comparison?.dispose();
     this.anchor.destroy();
     this.pedestal.destroy();
     this.counters.dispose();

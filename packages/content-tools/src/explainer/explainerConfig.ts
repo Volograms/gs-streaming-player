@@ -16,6 +16,8 @@ export interface ExplainerAssetsConfig {
   cropBoxes: StageBox[];
   datasetDir: string;
   id: string;
+  /** Optional photo and per-checkpoint renders from one training camera. */
+  comparisonView: ComparisonViewConfig | undefined;
   /** Optional export of a checkpoint's opaque gaussians for an ellipsoid view. */
   ellipsoidView: EllipsoidViewConfig | undefined;
   maxSh: number;
@@ -25,6 +27,11 @@ export interface ExplainerAssetsConfig {
   stage: StageFrameDefinition;
   /** Directories scanned for splat_<iteration>.ply headers to build the counter curve. */
   trainingCountDirs: string[];
+}
+
+export interface ComparisonViewConfig {
+  /** Index into the selected camera ring (the camera the explainer highlights). */
+  camera: number;
 }
 
 export interface EllipsoidViewConfig {
@@ -76,6 +83,7 @@ export function parseExplainerAssetsConfig(value: unknown): ExplainerAssetsConfi
     cropBoxes,
     datasetDir: requireString(value.datasetDir, "datasetDir"),
     id,
+    comparisonView: parseComparisonView(value.comparisonView, cameraCount),
     ellipsoidView: parseEllipsoidView(value.ellipsoidView),
     maxSh,
     projectionView: parseProjectionView(value.projectionView),
@@ -89,6 +97,24 @@ export function parseExplainerAssetsConfig(value: unknown): ExplainerAssetsConfi
       requireString(dir, `trainingCountDirs[${index}]`),
     ),
   };
+}
+
+function parseComparisonView(
+  value: unknown,
+  cameraCount: number,
+): ComparisonViewConfig | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new Error("comparisonView must be an object.");
+  const camera = value.camera;
+  if (
+    typeof camera !== "number" ||
+    !Number.isInteger(camera) ||
+    camera < 0 ||
+    camera >= cameraCount
+  ) {
+    throw new Error("comparisonView.camera must index the selected camera ring.");
+  }
+  return { camera };
 }
 
 function parseCropBoxes(value: unknown): StageBox[] {
