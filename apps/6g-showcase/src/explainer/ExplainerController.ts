@@ -2,6 +2,7 @@ import { evaluateTimeline, parseCueTimeline } from "@6g-path/cue-timeline";
 
 import cueDocument from "../../explainer/cues.json";
 
+import { loadSparsePoints } from "./explainerAssets.js";
 import { explainerTimeSeconds } from "./explainerClock.js";
 import { ExplainerScene } from "./ExplainerScene.js";
 import { computeExplainerState } from "./explainerState.js";
@@ -27,6 +28,8 @@ export interface ExplainerDebugInfo {
 export class ExplainerController {
   readonly timeline: CueTimeline;
   readonly toggles: ExplainerVisualToggles = {
+    cameras: true,
+    cloud: true,
     counters: true,
     demo: true,
     stage: true,
@@ -53,7 +56,14 @@ export class ExplainerController {
   ): Promise<ExplainerController> {
     const timeline = parseCueTimeline(cueDocument);
     validateAcrossTimeline(timeline, assets);
-    const scene = await ExplainerScene.create(adapter, assets, config, signal);
+    const sparsePoints = await loadSparsePoints(assets.sparsePoints, signal);
+    const scene = await ExplainerScene.create(
+      adapter,
+      assets,
+      sparsePoints,
+      config,
+      signal,
+    );
     return new ExplainerController(adapter, player, assets, timeline, scene);
   }
 

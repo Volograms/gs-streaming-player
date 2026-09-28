@@ -16,6 +16,22 @@ const assets = parseExplainerAssets(
       splatCount: 1000,
       url: `checkpoints/iteration-${iteration}.sog`,
     })),
+    cameras: {
+      aspect: 1.8,
+      cameras: Array.from({ length: 6 }, (_, index) => ({
+        image: `images/${index}.jpg`,
+        position: [index, 1, 3],
+        rotation: [1, 0, 0, 0],
+      })),
+      verticalFovDegrees: 50,
+    },
+    sparsePoints: {
+      colorsByteOffset: 32,
+      count: 2,
+      positionsByteOffset: 0,
+      scalesByteOffset: 24,
+      url: "sparse-points.bin",
+    },
     trainingCounts: [
       { iteration: 0, splatCount: 65102 },
       { iteration: 500, splatCount: 65102 },
@@ -46,9 +62,27 @@ describe("computeExplainerState with the talk's cues", () => {
     expect(at(27.99).demo.yawDegrees).toBeCloseTo(360, 0);
   });
 
-  it("dissolves the model and then hides it until training starts", () => {
-    expect(at(29).demo).toMatchObject({ iteration: 30000, scale: 0.5 });
+  it("dissolves the model through its initial fog into the sparse cloud", () => {
+    expect(at(28.5).demo).toMatchObject({ iteration: 30000, scale: 1 });
+    expect(at(30).demo).toMatchObject({ iteration: 0, scale: 1 });
     expect(at(40).demo.iteration).toBeUndefined();
+    expect(at(29).cloud.visibility).toBeGreaterThan(0);
+    expect(at(33).cloud).toMatchObject({ swell: 0, visibility: 1 });
+  });
+
+  it("swells the points into initial gaussians and dims them for the hero", () => {
+    expect(at(36.5).cloud.swell).toBeCloseTo(0.5, 6);
+    expect(at(39).cloud).toMatchObject({ swell: 1, visibility: 1 });
+    expect(at(50).cloud.visibility).toBeCloseTo(0.25, 6);
+    expect(at(50).cloud.swell).toBe(1);
+  });
+
+  it("shows the camera ring, then one highlighted training camera", () => {
+    expect(at(40).cameras).toMatchObject({ highlight: undefined, ringVisibility: 1 });
+    expect(at(70).cameras).toMatchObject({
+      highlight: { camera: 5, visibility: 1 },
+      ringVisibility: 0,
+    });
   });
 
   it("steps through the early checkpoints and counts iterations", () => {

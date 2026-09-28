@@ -10,6 +10,8 @@ interface ExplainerDebugPanelProps {
 }
 
 const TOGGLE_LABELS: Record<keyof ExplainerVisualToggles, string> = {
+  cameras: "Cameras",
+  cloud: "Point cloud",
   counters: "Counters",
   demo: "Demo object",
   stage: "Pedestal",

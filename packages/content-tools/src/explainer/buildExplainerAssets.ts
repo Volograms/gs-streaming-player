@@ -15,6 +15,7 @@ import { runSplatTransformCli } from "../sog/runSplatTransformCli.js";
 import { parseExplainerAssetsConfig } from "./explainerConfig.js";
 import {
   createInitialGaussians,
+  initialScales,
   INITIAL_GAUSSIAN_PROPERTIES,
 } from "./initialGaussians.js";
 import { readPlyHeader, readPointCloud, writeFloatPly } from "./plyFiles.js";
@@ -77,8 +78,10 @@ export interface ExplainerAssetsIndex {
   sparsePoints: {
     colorsByteOffset: number;
     count: number;
-    layout: "float32 xyz positions, then uint8 rgb colours";
+    layout: "float32 xyz positions, float32 initial scales, uint8 rgb colours";
     positionsByteOffset: 0;
+    /** Initial gaussian sigma per point, in stage metres (the iteration 0 size). */
+    scalesByteOffset: number;
     url: string;
   };
   trainingCounts: { iteration: number; splatCount: number }[];
@@ -110,6 +113,7 @@ export async function buildExplainerAssets(
     const frame = createStageFrame(config.stage);
     const boxArgs = config.cropBoxes.map((box) => splatTransformStageArgs(frame, box));
     const cloud = await readPointCloud(join(datasetDir, config.sparsePointCloud));
+    const scales = initialScales(cloud);
     const trainingCounts = await collectTrainingCounts(datasetDir, config, cloud.count);
     temporaryDir = await mkdtemp(join(tmpdir(), "gs-explainer-"));
 
@@ -122,7 +126,7 @@ export async function buildExplainerAssets(
         await writeFloatPly(
           inputPath,
           INITIAL_GAUSSIAN_PROPERTIES,
-          createInitialGaussians(cloud),
+          createInitialGaussians(cloud, scales),
         );
       } else {
         inputPath = join(datasetDir, checkpoint.input!);
@@ -173,6 +177,7 @@ export async function buildExplainerAssets(
     const sparsePoints = await writeSparsePoints(
       join(outputDir, SPARSE_POINTS_FILENAME),
       cloud,
+      scales,
       frame,
       config.cropBoxes,
     );
@@ -190,10 +195,11 @@ export async function buildExplainerAssets(
       id: config.id,
       sourceToStage: frame,
       sparsePoints: {
-        colorsByteOffset: sparsePoints * 12,
+        colorsByteOffset: sparsePoints * 16,
         count: sparsePoints,
-        layout: "float32 xyz positions, then uint8 rgb colours",
+        layout: "float32 xyz positions, float32 initial scales, uint8 rgb colours",
         positionsByteOffset: 0,
+        scalesByteOffset: sparsePoints * 12,
         url: SPARSE_POINTS_FILENAME,
       },
       trainingCounts,
@@ -249,20 +255,24 @@ async function collectTrainingCounts(
 async function writeSparsePoints(
   path: string,
   cloud: PointCloud,
+  scales: Float32Array,
   frame: StageFrame,
   boxes: readonly StageBox[],
 ): Promise<number> {
   const positions: number[] = [];
+  const kept: number[] = [];
   const colors: number[] = [];
   for (let point = 0; point < cloud.count; point += 1) {
     const source = cloud.positions.subarray(point * 3, point * 3 + 3);
     const stage = toStagePoint(frame, [source[0]!, source[1]!, source[2]!] as Vec3);
     if (!boxes.some((box) => isInsideBox(box, stage))) continue;
     positions.push(...stage);
+    kept.push(scales[point]!);
     colors.push(...cloud.colors.subarray(point * 3, point * 3 + 3));
   }
   const bytes = Buffer.concat([
     Buffer.from(new Float32Array(positions).buffer),
+    Buffer.from(new Float32Array(kept).buffer),
     Buffer.from(new Uint8Array(colors)),
   ]);
   await writeFile(path, bytes);

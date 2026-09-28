@@ -183,9 +183,16 @@ describe("buildExplainerAssets", () => {
       { iteration: 1000, splatCount: 7 },
     ]);
     // Z-up source: the three nearby points sit 0.5 above the ground; the far one is cropped.
-    expect(index.sparsePoints).toMatchObject({ colorsByteOffset: 36, count: 3 });
+    expect(index.sparsePoints).toMatchObject({
+      colorsByteOffset: 48,
+      count: 3,
+      scalesByteOffset: 36,
+    });
     const points = await readFile(join(fixture.outputDir, "sparse-points.bin"));
-    expect(points.byteLength).toBe(3 * 12 + 3 * 3);
+    expect(points.byteLength).toBe(3 * 16 + 3 * 3);
+    // Scales are the iteration 0 sigma: mean distance to the three nearest points.
+    const firstScale = new Float32Array(points.buffer, points.byteOffset + 36, 1)[0]!;
+    expect(firstScale).toBeCloseTo((0.2 + 0.2 + Math.hypot(9, 9, 8.5)) / 3, 4);
     expect(new Float32Array(points.buffer, points.byteOffset, 3)[1]).toBeCloseTo(
       0.5,
       6,

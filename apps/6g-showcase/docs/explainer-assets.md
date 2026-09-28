@@ -45,8 +45,10 @@ Output (the `public/assets/` output directory is ignored by Git):
 
 - `checkpoints/iteration-<nnnnn>.sog`: one SOG per configured checkpoint, in the stage
   frame;
-- `sparse-points.bin`: cropped sparse cloud, `float32` xyz for every point followed by
-  `uint8` rgb;
+- `sparse-points.bin`: the cropped sparse cloud, in three blocks: `float32` xyz for
+  every point, then `float32` initial gaussian sigma (mean distance to the three nearest
+  points, as OpenSplat initialises), then `uint8` rgb. The index gives each block's byte
+  offset;
 - `explainer-assets.json`: checkpoint URLs with cropped and training splat counts, the
   full training-count curve, the camera subset (stage-frame position, camera-to-stage
   quaternion `[w, x, y, z]` looking down `-Z`, vertical FOV, source image), the crop

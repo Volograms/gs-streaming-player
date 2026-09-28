@@ -27,8 +27,10 @@ const NEIGHBOUR_COUNT = 3;
  * opacity 0.1 and the point colour as the SH DC term. Values use the PLY encoding
  * (log scale, logit opacity).
  */
-export function createInitialGaussians(cloud: PointCloud): Float32Array {
-  const distances = meanNeighbourDistances(cloud.positions, NEIGHBOUR_COUNT);
+export function createInitialGaussians(
+  cloud: PointCloud,
+  distances: Float32Array = initialScales(cloud),
+): Float32Array {
   const stride = INITIAL_GAUSSIAN_PROPERTIES.length;
   const values = new Float32Array(cloud.count * stride);
   const opacity = Math.log(INITIAL_OPACITY / (1 - INITIAL_OPACITY));
@@ -47,6 +49,11 @@ export function createInitialGaussians(cloud: PointCloud): Float32Array {
     values[out + 10] = 1;
   }
   return values;
+}
+
+/** Per-point initial gaussian scale (sigma): mean distance to the nearest neighbours. */
+export function initialScales(cloud: PointCloud): Float32Array {
+  return meanNeighbourDistances(cloud.positions, NEIGHBOUR_COUNT);
 }
 
 /** Exact k-nearest-neighbour mean distance using a k-d tree. */

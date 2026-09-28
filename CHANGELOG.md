@@ -51,7 +51,9 @@ All notable changes to this project will be documented here. The project uses
 
 - The 6G showcase explainer layer. A pedestal beside the presenter shows the demo object
   revealed, turned, dissolved and stepped through its training checkpoints. During the
-  training beats it glides to a larger close-up in front of the presenter. World-space
+  training beats it glides to a larger close-up in front of the presenter. The model
+  dissolves into its SfM sparse cloud, shown with a ring of capture-camera frusta, and
+  the points swell into initial gaussians at their real starting size. World-space
   iteration and gaussian counters show the real training counts. Everything follows the
   presenter frame on screen through the cue timeline, and a `?debug=1` panel shows cue
   state and offers jumps and toggles. `gs-content build-explainer` now accepts a union

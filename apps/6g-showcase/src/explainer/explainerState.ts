@@ -5,6 +5,16 @@ import type { CueState, CueTimeline, TimelineState } from "@6g-path/cue-timeline
 
 /** Everything the explainer scene draws at one instant; derived from time alone. */
 export interface ExplainerFrameState {
+  cameras: {
+    /** Emphasised single training camera (index into the asset camera list). */
+    highlight: { camera: number; visibility: number } | undefined;
+    ringVisibility: number;
+  };
+  cloud: {
+    /** 0 = crisp SfM points, 1 = initial gaussians. */
+    swell: number;
+    visibility: number;
+  };
   counters: {
     gaussians: CounterState;
     iteration: CounterState;
@@ -14,7 +24,7 @@ export interface ExplainerFrameState {
     focus: number;
     /** Checkpoint iteration shown, or undefined when the object is hidden. */
     iteration: number | undefined;
-    /** Uniform grow/shrink factor used for reveal and dissolve (0..1). */
+    /** Uniform grow factor used by the reveal (0..1). */
     scale: number;
     /** Extra rotation about the stage's vertical axis. */
     yawDegrees: number;
@@ -45,7 +55,28 @@ export function computeExplainerState(
   const trainingIteration =
     training === undefined ? 0 : trainingIterationAt(training, iterations).continuous;
   const gaussians = sampleKeyframes(assets.trainingCounts, trainingIteration);
+  const swell = latestStarted(state, "sparse-cloud.swell");
+  const highlight = state.cues.find(
+    ({ cue, phase }) => cue.type === "camera-ring.highlight" && phase === "active",
+  );
   return {
+    cameras: {
+      highlight:
+        highlight === undefined
+          ? undefined
+          : {
+              camera: numberParam(highlight, "camera"),
+              visibility: highlight.envelope,
+            },
+      ringVisibility: maxEnvelope(state, "camera-ring.show"),
+    },
+    cloud: {
+      swell: swell === undefined ? 0 : easeInOutCubic(swell.progress),
+      // Dimmed, not hidden, while the hero gaussian is explained in front of it.
+      visibility:
+        maxEnvelope(state, "sparse-cloud.show") *
+        (1 - 0.75 * maxEnvelope(state, "sparse-cloud.dim")),
+    },
     counters: {
       gaussians: counter(timeline, state, "counter.gaussians", gaussians),
       iteration: counter(timeline, state, "counter.iteration", trainingIteration),
@@ -111,6 +142,8 @@ function demoObjectState(
         yawDegrees,
       };
     case "demo-object.dissolve": {
+      // Training in reverse: the model falls back to its initial gaussians (a fog in
+      // the right colours), which then gives way to the sparse points it grew from.
       if (latest.phase === "done") return hidden;
       const previous = started.at(-2);
       const shown =
@@ -120,8 +153,8 @@ function demoObjectState(
             ? trainingIterationAt(previous, iterations).checkpoint
             : nearestCheckpoint(numberParam(previous, "iteration"), iterations);
       return {
-        iteration: shown,
-        scale: 1 - easeInOutCubic(latest.progress),
+        iteration: latest.progress < 0.45 ? shown : iterations[0]!,
+        scale: 1,
         yawDegrees,
       };
     }

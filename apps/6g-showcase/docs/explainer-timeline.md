@@ -51,6 +51,26 @@ presenter audio.
 
 ## In the showcase
 
+Cue types the showcase draws today:
+
+| Type                                                            | Visual                                                                                                              |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `stage.show`                                                    | Pedestal fade.                                                                                                      |
+| `demo-object.reveal` (`iteration`)                              | The checkpoint grows in on the pedestal.                                                                            |
+| `demo-object.turntable` (`turns`)                               | Rotates the object.                                                                                                 |
+| `demo-object.dissolve`                                          | The model falls back to its iteration-0 fog, then hides (the sparse cloud takes over).                              |
+| `demo-object.focus`                                             | Glides the object, cloud and cameras to the close-up pose.                                                          |
+| `training.progress` (`fromIteration`, `toIteration`)            | Steps through the shipped checkpoints, each shown for an equal share of the cue.                                    |
+| `sparse-cloud.show` / `sparse-cloud.swell` / `sparse-cloud.dim` | SfM points as camera-facing dots; swell morphs them into soft blobs at their initial gaussian size; dim fades them. |
+| `camera-ring.show` / `camera-ring.highlight` (`camera`)         | Wireframe frusta at the capture poses; one emphasised camera.                                                       |
+| `counter.iteration` / `counter.gaussians` (`label`)             | World-space counters with real training counts.                                                                     |
+
+The cloud and cameras share an anchor that follows the object's pose, so they move with
+it into the close-up. The ring ends before the close-up, because at that scale its
+frusta would reach the viewer. Their shaders (`src/explainer/visuals/`) ship GLSL and
+WGSL; custom vertex streams use texture-coordinate semantics, because PlayCanvas's
+generic `ATTRn` semantics share locations with the standard ones.
+
 `src/explainer/` connects the timeline to the scene:
 
 - `ExplainerController` evaluates the cues on every PlayCanvas `update`. Its time source

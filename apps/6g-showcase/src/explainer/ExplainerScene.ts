@@ -7,15 +7,28 @@ import {
   Texture,
 } from "@6g-path/gaussian-renderer-playcanvas";
 
-import type { ExplainerAssets } from "./explainerAssets.js";
+import { CameraRigView } from "./visuals/CameraRigView.js";
+import { SparseCloudView } from "./visuals/SparseCloudView.js";
+
+import type { ExplainerAssets, SparsePoints } from "./explainerAssets.js";
 import type { ExplainerSceneConfig } from "./explainerSceneConfig.js";
 import type { ExplainerFrameState } from "./explainerState.js";
 import type { PlayCanvasGaussianRendererAdapter } from "@6g-path/gaussian-renderer-playcanvas";
 
 export interface ExplainerVisualToggles {
+  cameras: boolean;
+  cloud: boolean;
   counters: boolean;
   demo: boolean;
   stage: boolean;
+}
+
+/** Where the demo object (and everything expressed in its stage frame) is placed. */
+interface ObjectPose {
+  base: Vec3Tuple;
+  /** Stage metres to world metres, before reveal scaling. */
+  scale: number;
+  yawDegrees: number;
 }
 
 const COUNTER_CANVAS = { height: 256, width: 1024 };
@@ -27,6 +40,9 @@ const COUNTER_CANVAS = { height: 256, width: 1024 };
  */
 export class ExplainerScene {
   private readonly adapter: PlayCanvasGaussianRendererAdapter;
+  /** Follows the demo object's pose; the cloud and cameras live in its stage frame. */
+  private readonly anchor: Entity;
+  private readonly cameraRig: CameraRigView;
   private readonly checkpointIds: ReadonlyMap<number, string>;
   private readonly config: ExplainerSceneConfig;
   private readonly counterCanvas: HTMLCanvasElement;
@@ -37,11 +53,13 @@ export class ExplainerScene {
   private disposed = false;
   private readonly pedestal: Entity;
   private readonly pedestalMaterial: StandardMaterial;
+  private readonly sparseCloud: SparseCloudView;
   private visibleCheckpoint: number | undefined;
 
   static async create(
     adapter: PlayCanvasGaussianRendererAdapter,
     assets: ExplainerAssets,
+    sparsePoints: SparsePoints,
     config: ExplainerSceneConfig,
     signal?: AbortSignal,
   ): Promise<ExplainerScene> {
@@ -65,12 +83,14 @@ export class ExplainerScene {
       for (const id of loaded) adapter.releaseObject(id);
       throw error;
     }
-    return new ExplainerScene(adapter, ids, config);
+    return new ExplainerScene(adapter, ids, assets, sparsePoints, config);
   }
 
   private constructor(
     adapter: PlayCanvasGaussianRendererAdapter,
     checkpointIds: ReadonlyMap<number, string>,
+    assets: ExplainerAssets,
+    sparsePoints: SparsePoints,
     config: ExplainerSceneConfig,
   ) {
     this.adapter = adapter;
@@ -112,6 +132,7 @@ export class ExplainerScene {
     // Transparent meshes in the world layer are sorted with the (non-depth-writing)
     // splats and can be overdrawn by the environment; the UI layer draws after them.
     const overlayLayer = application.scene.layers.getLayerByName("UI");
+    const overlayLayerId = overlayLayer === null ? undefined : overlayLayer.id;
     this.counterPanel.addComponent("render", {
       castShadows: false,
       material: this.counterMaterial,
@@ -125,12 +146,29 @@ export class ExplainerScene {
       0.004,
     );
     application.root.addChild(this.counterPanel);
+
+    this.anchor = new Entity("explainer-anchor", application);
+    this.sparseCloud = new SparseCloudView(application, sparsePoints, overlayLayerId);
+    this.cameraRig = new CameraRigView(application, assets.cameras, overlayLayerId);
+    this.anchor.addChild(this.sparseCloud.entity);
+    this.anchor.addChild(this.cameraRig.entity);
+    application.root.addChild(this.anchor);
   }
 
   apply(frame: ExplainerFrameState, toggles: ExplainerVisualToggles): void {
     if (this.disposed) return;
     this.applyStage(toggles.stage ? frame.stage.visibility : 0);
-    this.applyDemoObject(toggles.demo ? frame.demo : undefined);
+    const pose = this.objectPose(frame.demo);
+    this.anchor.setPosition(...pose.base);
+    this.anchor.setEulerAngles(0, pose.yawDegrees, 0);
+    this.anchor.setLocalScale(pose.scale, pose.scale, pose.scale);
+    this.applyDemoObject(toggles.demo ? frame.demo : undefined, pose);
+    this.sparseCloud.apply(
+      toggles.cloud ? frame.cloud : { swell: frame.cloud.swell, visibility: 0 },
+    );
+    this.cameraRig.apply(
+      toggles.cameras ? frame.cameras : { highlight: undefined, ringVisibility: 0 },
+    );
     this.applyCounters(toggles.counters ? frame.counters : undefined, frame.demo.focus);
     this.adapter.application.renderNextFrame = true;
   }
@@ -139,6 +177,9 @@ export class ExplainerScene {
     if (this.disposed) return;
     this.disposed = true;
     for (const id of this.checkpointIds.values()) this.adapter.releaseObject(id);
+    this.sparseCloud.dispose();
+    this.cameraRig.dispose();
+    this.anchor.destroy();
     this.pedestal.destroy();
     this.counterPanel.destroy();
     this.pedestalMaterial.destroy();
@@ -151,7 +192,10 @@ export class ExplainerScene {
     setOpacity(this.pedestalMaterial, visibility);
   }
 
-  private applyDemoObject(demo: ExplainerFrameState["demo"] | undefined): void {
+  private applyDemoObject(
+    demo: ExplainerFrameState["demo"] | undefined,
+    pose: ObjectPose,
+  ): void {
     const iteration =
       demo !== undefined && demo.scale > 0.001 ? demo.iteration : undefined;
     if (iteration !== this.visibleCheckpoint) {
@@ -164,20 +208,27 @@ export class ExplainerScene {
     const id = this.idFor(this.visibleCheckpoint);
     if (id === undefined || demo === undefined) return;
 
-    const { focus, stage } = this.config;
-    const blend = smootherBlend(demo.focus);
-    const base = mix(this.pedestalTop(), focus.position, blend);
-    const restingYaw =
-      stage.yawDegrees + shortestTurn(stage.yawDegrees, focus.yawDegrees) * blend;
-    const yaw = ((restingYaw + demo.yawDegrees) * Math.PI) / 180;
-    const scale =
-      (stage.objectScale + (focus.objectScale - stage.objectScale) * blend) *
-      demo.scale;
+    const yaw = (pose.yawDegrees * Math.PI) / 180;
+    const scale = pose.scale * demo.scale;
     this.adapter.setObjectTransform(id, {
-      position: { x: base[0], y: base[1], z: base[2] },
+      position: { x: pose.base[0], y: pose.base[1], z: pose.base[2] },
       rotation: { w: Math.cos(yaw / 2), x: 0, y: Math.sin(yaw / 2), z: 0 },
       scale: { x: scale, y: scale, z: scale },
     });
+  }
+
+  /** Pedestal pose blended towards the close-up pose, plus any turntable rotation. */
+  private objectPose(demo: ExplainerFrameState["demo"]): ObjectPose {
+    const { focus, stage } = this.config;
+    const blend = smootherBlend(demo.focus);
+    return {
+      base: mix(this.pedestalTop(), focus.position, blend),
+      scale: stage.objectScale + (focus.objectScale - stage.objectScale) * blend,
+      yawDegrees:
+        stage.yawDegrees +
+        shortestTurn(stage.yawDegrees, focus.yawDegrees) * blend +
+        demo.yawDegrees,
+    };
   }
 
   private pedestalTop(): Vec3Tuple {

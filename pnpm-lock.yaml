@@ -84,6 +84,9 @@ importers:
       '@6g-path/gaussian-renderer-playcanvas':
         specifier: workspace:*
         version: link:../../packages/renderer-playcanvas
+      playcanvas:
+        specifier: 2.21.0
+        version: 2.21.0
       react:
         specifier: ^19.2.7
         version: 19.2.7

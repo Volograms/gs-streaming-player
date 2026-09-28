@@ -15,6 +15,7 @@
     "@6g-path/cue-timeline": "workspace:*",
     "@6g-path/gaussian-player": "workspace:*",
     "@6g-path/gaussian-renderer-playcanvas": "workspace:*",
+    "playcanvas": "2.21.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   }
