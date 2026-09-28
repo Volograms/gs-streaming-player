@@ -55,11 +55,12 @@ All notable changes to this project will be documented here. The project uses
   dissolves into its SfM sparse cloud, shown with a ring of capture-camera frusta, and
   the points swell into initial gaussians at their real starting size. A hero gaussian
   then leaves the cloud and demonstrates position, scale, opacity and colour with
-  Spanish labels. World-space iteration and gaussian counters show the real training
-  counts. Everything follows the presenter frame on screen through the cue timeline, and
-  a `?debug=1` panel shows cue state and offers jumps and toggles.
-  `gs-content build-explainer` now accepts a union of crop boxes to trim ground beside
-  the object.
+  Spanish labels. A patch of about 50 gaussians then shows densification (the worst ones
+  light up and split in two) and pruning (faint ones are marked and vanish one by one).
+  World-space iteration and gaussian counters show the real training counts. Everything
+  follows the presenter frame on screen through the cue timeline, and a `?debug=1` panel
+  shows cue state and offers jumps and toggles. `gs-content build-explainer` now accepts
+  a union of crop boxes to trim ground beside the object.
 
 - `@6g-path/cue-timeline`: a renderer-independent, data-driven cue timeline. It is
   evaluated purely from the media time of the presenter frame on screen, so seeking,

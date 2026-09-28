@@ -1,7 +1,9 @@
 import { cueString, easeInOutCubic, sampleKeyframes } from "@6g-path/cue-timeline";
 
+import { densifyState } from "./densifyState.js";
 import { heroGaussianState } from "./heroGaussianState.js";
 
+import type { DensifyState } from "./densifyState.js";
 import type { ExplainerAssets } from "./explainerAssets.js";
 import type { HeroGaussianState } from "./heroGaussianState.js";
 import type { CueState, CueTimeline, TimelineState } from "@6g-path/cue-timeline";
@@ -32,6 +34,7 @@ export interface ExplainerFrameState {
     /** Extra rotation about the stage's vertical axis. */
     yawDegrees: number;
   };
+  densify: DensifyState;
   hero: HeroGaussianState;
   stage: { visibility: number };
 }
@@ -89,6 +92,7 @@ export function computeExplainerState(
       ...demoObjectState(state, iterations),
       focus: maxEnvelope(state, "demo-object.focus"),
     },
+    densify: densifyState(timeline, state),
     hero: heroGaussianState(timeline, state),
     stage: { visibility: maxEnvelope(state, "stage.show") },
   };

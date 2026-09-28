@@ -32,6 +32,7 @@ export class ExplainerController {
     cloud: true,
     counters: true,
     demo: true,
+    densify: true,
     hero: true,
     stage: true,
   };

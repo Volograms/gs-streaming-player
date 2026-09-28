@@ -16,12 +16,17 @@
     "position": [0.9, 0.92, 0.54],
     "yawDegrees": -125,
     "objectScale": 0.2,
-    "countersOffset": [-0.45, 0.62, 0.74]
+    "countersOffset": [-0.6, 0.8, 0.55]
   },
   "hero": {
     "position": [0, 2.3, 2.4],
     "sigma": 0.5,
     "tiltDegrees": 30,
     "labelOffset": [0, 0.2, 0]
+  },
+  "densify": {
+    "position": [0.9, 1.36, 1.5],
+    "scale": 0.3,
+    "labelOffset": [0.05, 0.34, 0]
   }
 }

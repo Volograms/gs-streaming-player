@@ -1,5 +1,6 @@
 import sceneDocument from "../../explainer/scene.json";
 
+import type { DensifyConfig } from "./visuals/DensifyView.js";
 import type { HeroGaussianConfig } from "./visuals/HeroGaussianView.js";
 
 type Vec3Tuple = readonly [number, number, number];
@@ -8,6 +9,8 @@ type Vec3Tuple = readonly [number, number, number];
 export interface ExplainerSceneConfig {
   assetsUrl: string;
   counters: { offset: Vec3Tuple; width: number };
+  /** Split and prune demonstration group, in the demo object's stage frame. */
+  densify: DensifyConfig;
   hero: HeroGaussianConfig;
   /** Close-up pose in front of the presenter, used while a focus cue is active. */
   focus: {
@@ -47,6 +50,7 @@ export function parseExplainerSceneConfig(
   const counters = isRecord(value.counters) ? value.counters : {};
   const focus = isRecord(value.focus) ? value.focus : {};
   const hero = isRecord(value.hero) ? value.hero : {};
+  const densify = isRecord(value.densify) ? value.densify : {};
   const assetsUrl = assetsUrlOverride?.trim() || value.assetsUrl;
   if (typeof assetsUrl !== "string" || assetsUrl === "") {
     throw new Error("Explainer scene config needs an assetsUrl.");
@@ -56,6 +60,11 @@ export function parseExplainerSceneConfig(
     counters: {
       offset: vec3(counters.offset, "counters.offset"),
       width: positive(counters.width, "counters.width"),
+    },
+    densify: {
+      labelOffset: vec3(densify.labelOffset, "densify.labelOffset"),
+      position: vec3(densify.position, "densify.position"),
+      scale: positive(densify.scale, "densify.scale"),
     },
     hero: {
       labelOffset: vec3(hero.labelOffset, "hero.labelOffset"),

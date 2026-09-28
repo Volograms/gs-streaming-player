@@ -14,6 +14,7 @@ const TOGGLE_LABELS: Record<keyof ExplainerVisualToggles, string> = {
   cloud: "Point cloud",
   counters: "Counters",
   demo: "Demo object",
+  densify: "Split / prune",
   hero: "Hero gaussian",
   stage: "Pedestal",
 };

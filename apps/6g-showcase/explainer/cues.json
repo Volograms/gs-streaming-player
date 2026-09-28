@@ -108,7 +108,7 @@
       "id": "b4-focus",
       "type": "demo-object.focus",
       "start": 64,
-      "end": 108,
+      "end": 109.5,
       "fadeIn": 2,
       "fadeOut": 2
     },
@@ -168,10 +168,18 @@
       "params": { "fromIteration": 7000, "toIteration": 30000 }
     },
     {
+      "id": "b5-patch",
+      "type": "densify.show",
+      "start": 88.5,
+      "end": 108.5,
+      "fadeIn": 1,
+      "fadeOut": 1.5
+    },
+    {
       "id": "b5-split",
       "type": "hero-gaussian.split",
-      "start": 88,
-      "end": 93,
+      "start": 89,
+      "end": 98,
       "fadeIn": 0.5,
       "fadeOut": 0.5,
       "params": { "label": "label.densify" }
@@ -179,8 +187,8 @@
     {
       "id": "b5-prune",
       "type": "hero-gaussian.prune",
-      "start": 96,
-      "end": 101,
+      "start": 99.5,
+      "end": 107.5,
       "fadeIn": 0.5,
       "fadeOut": 0.5,
       "params": { "label": "label.prune" }

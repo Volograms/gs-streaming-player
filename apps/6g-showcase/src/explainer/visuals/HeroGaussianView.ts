@@ -8,12 +8,12 @@ import {
   StandardMaterial,
 } from "playcanvas";
 
-import { createHeroGaussianMaterial } from "./heroGaussianMaterial.js";
-import { paintPlate, TextPanel } from "./TextPanel.js";
+import { GaussianEllipsoid } from "./GaussianEllipsoid.js";
+import { drawLabel, TextPanel } from "./TextPanel.js";
 
 import type { SparsePoints } from "../explainerAssets.js";
 import type { HeroGaussianState } from "../heroGaussianState.js";
-import type { AppBase, ShaderMaterial } from "playcanvas";
+import type { AppBase } from "playcanvas";
 
 type Vec3Tuple = readonly [number, number, number];
 
@@ -45,13 +45,17 @@ export class HeroGaussianView {
   readonly entity: Entity;
   private readonly application: AppBase;
   private readonly config: HeroGaussianConfig;
-  private readonly ellipsoid: Entity;
+  private readonly ellipsoid: GaussianEllipsoid;
   private readonly gizmo: Entity;
   private readonly gizmoMaterials: StandardMaterial[];
   private readonly gizmoMeshes: Mesh[];
   private readonly label: TextPanel;
-  private readonly material: ShaderMaterial;
   private readonly source: { color: Vec3Tuple; position: Vec3Tuple; sigma: number };
+
+  /** The hero's own colour, reused by the later beats that bring it back. */
+  get color(): Vec3Tuple {
+    return this.source.color;
+  }
 
   constructor(
     application: AppBase,
@@ -65,15 +69,12 @@ export class HeroGaussianView {
     const layers = layerId === undefined ? {} : { layers: [layerId] };
 
     this.entity = new Entity("explainer-hero", application);
-    this.material = createHeroGaussianMaterial();
-    this.ellipsoid = new Entity("explainer-hero-ellipsoid", application);
-    this.ellipsoid.addComponent("render", {
-      castShadows: false,
-      material: this.material,
-      type: "sphere",
-      ...layers,
-    });
-    this.entity.addChild(this.ellipsoid);
+    this.ellipsoid = new GaussianEllipsoid(
+      application,
+      "explainer-hero-ellipsoid",
+      layerId,
+    );
+    this.entity.addChild(this.ellipsoid.entity);
 
     this.gizmo = new Entity("explainer-hero-gizmo", application);
     this.gizmoMeshes = [];
@@ -140,18 +141,13 @@ export class HeroGaussianView {
     );
     this.entity.setLocalEulerAngles(0, 0, config.tiltDegrees * e);
 
-    // Unit sphere primitive has radius 0.5 = 3 sigma, so its diameter is 6 sigma.
-    const sigma = source.sigma + (config.sigma - source.sigma) * e;
-    this.ellipsoid.setLocalScale(
-      6 * sigma * state.stretch[0],
-      6 * sigma * state.stretch[1],
-      6 * sigma * state.stretch[2],
-    );
-    const inverse = this.ellipsoid.getWorldTransform().clone().invert();
-    this.material.setParameter("uWorldToLocal", inverse.data);
-    const [r, g, b] = rotateHue(source.color, state.hueShift);
-    this.material.setParameter("uColor", [r, g, b, 1]);
-    this.material.setParameter("uOpacity", 0.95 * state.visibility * state.opacity);
+    this.ellipsoid.set({
+      color: rotateHue(source.color, state.hueShift),
+      opacity: 0.95 * state.visibility * state.opacity,
+      sigma: source.sigma + (config.sigma - source.sigma) * e,
+      stretch: state.stretch,
+    });
+    this.ellipsoid.sync();
 
     const gizmoVisible = state.gizmo > 0.001;
     this.gizmo.enabled = gizmoVisible;
@@ -172,18 +168,7 @@ export class HeroGaussianView {
         ],
         viewer,
       );
-      this.label.draw(
-        `${label.text}:${Math.round(label.visibility * 20)}`,
-        (context, canvas) => {
-          paintPlate(context, canvas, label.visibility);
-          context.globalAlpha = label.visibility;
-          context.fillStyle = "#ffffff";
-          context.font = "700 88px 'DM Sans', system-ui, sans-serif";
-          context.textAlign = "center";
-          context.textBaseline = "middle";
-          context.fillText(label.text, canvas.width / 2, canvas.height / 2 + 4);
-        },
-      );
+      drawLabel(this.label, label.text, label.visibility);
     }
     this.application.renderNextFrame = true;
   }
@@ -191,7 +176,7 @@ export class HeroGaussianView {
   dispose(): void {
     this.entity.destroy();
     this.label.dispose();
-    this.material.destroy();
+    this.ellipsoid.dispose();
     for (const resource of [...this.gizmoMaterials, ...this.gizmoMeshes])
       resource.destroy();
   }

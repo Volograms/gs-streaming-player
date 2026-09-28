@@ -100,6 +100,19 @@ export class TextPanel {
   }
 }
 
+/** A single centred label on a backing plate, faded by `visibility`. */
+export function drawLabel(panel: TextPanel, text: string, visibility: number): void {
+  panel.draw(`${text}:${Math.round(visibility * 20)}`, (context, canvas) => {
+    paintPlate(context, canvas, visibility);
+    context.globalAlpha = visibility;
+    context.fillStyle = "#ffffff";
+    context.font = "700 88px 'DM Sans', system-ui, sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(text, canvas.width / 2, canvas.height / 2 + 4);
+  });
+}
+
 /** Rounded dark backing plate for legibility over bright scene content. */
 export function paintPlate(
   context: CanvasRenderingContext2D,

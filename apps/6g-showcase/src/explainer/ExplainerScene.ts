@@ -1,6 +1,7 @@
 import { BLEND_NONE, BLEND_NORMAL, Color, Entity, StandardMaterial } from "playcanvas";
 
 import { CameraRigView } from "./visuals/CameraRigView.js";
+import { DensifyView } from "./visuals/DensifyView.js";
 import { HeroGaussianView } from "./visuals/HeroGaussianView.js";
 import { SparseCloudView } from "./visuals/SparseCloudView.js";
 import { paintPlate, TextPanel } from "./visuals/TextPanel.js";
@@ -15,6 +16,7 @@ export interface ExplainerVisualToggles {
   cloud: boolean;
   counters: boolean;
   demo: boolean;
+  densify: boolean;
   hero: boolean;
   stage: boolean;
 }
@@ -40,6 +42,7 @@ export class ExplainerScene {
   private readonly checkpointIds: ReadonlyMap<number, string>;
   private readonly config: ExplainerSceneConfig;
   private readonly counters: TextPanel;
+  private readonly densify: DensifyView;
   private disposed = false;
   private readonly hero: HeroGaussianView;
   private readonly pedestal: Entity;
@@ -132,6 +135,12 @@ export class ExplainerScene {
     this.anchor.addChild(this.sparseCloud.entity);
     this.anchor.addChild(this.cameraRig.entity);
     this.anchor.addChild(this.hero.entity);
+    this.densify = new DensifyView(
+      application,
+      config.densify,
+      sparsePoints,
+      overlayLayerId,
+    );
     application.root.addChild(this.anchor);
   }
 
@@ -151,6 +160,7 @@ export class ExplainerScene {
     );
     const viewer = this.adapter.cameraEntity.getPosition();
     this.hero.apply(toggles.hero ? frame.hero : undefined, viewer);
+    this.densify.apply(toggles.densify ? frame.densify : undefined, viewer);
     this.applyCounters(
       toggles.counters ? frame.counters : undefined,
       frame.demo.focus,
@@ -166,6 +176,7 @@ export class ExplainerScene {
     this.sparseCloud.dispose();
     this.cameraRig.dispose();
     this.hero.dispose();
+    this.densify.dispose();
     this.anchor.destroy();
     this.pedestal.destroy();
     this.counters.dispose();
