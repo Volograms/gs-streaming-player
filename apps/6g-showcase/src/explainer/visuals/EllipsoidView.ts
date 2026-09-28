@@ -21,6 +21,8 @@ import type { AppBase, ShaderMaterial } from "playcanvas";
 type Vec3Tuple = readonly [number, number, number];
 
 export interface EllipsoidConfig {
+  /** Label width in world metres (its height follows the text canvas). */
+  labelWidth: number;
   /** World-space offset of the label from the object's base. */
   labelOffset: Vec3Tuple;
   /** Drawn ellipsoid radius in sigmas. */
@@ -112,7 +114,7 @@ export class EllipsoidView {
     this.label = new TextPanel(
       application,
       "explainer-ellipsoids-label",
-      { pixelHeight: 160, pixelWidth: 1100, worldWidth: 0.42 },
+      { pixelHeight: 160, pixelWidth: 1100, worldWidth: config.labelWidth },
       layerId,
     );
     this.entity.enabled = false;

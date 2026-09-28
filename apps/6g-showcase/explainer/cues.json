@@ -37,9 +37,9 @@
       "id": "b2-cloud",
       "type": "sparse-cloud.show",
       "start": 28,
-      "end": 65,
+      "end": 66,
       "fadeIn": 1,
-      "fadeOut": 1
+      "fadeOut": 2
     },
     {
       "id": "b2-cameras",
@@ -104,6 +104,13 @@
       "params": { "parameter": "color", "label": "label.color" }
     },
 
+    {
+      "id": "b4-initial",
+      "type": "demo-object.show",
+      "start": 63.5,
+      "end": 66,
+      "params": { "iteration": 0 }
+    },
     {
       "id": "b4-panels",
       "type": "comparison-panels.show",

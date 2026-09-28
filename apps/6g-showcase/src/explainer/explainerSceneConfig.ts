@@ -70,15 +70,18 @@ export function parseExplainerSceneConfig(
     },
     ellipsoids: {
       labelOffset: vec3(ellipsoids.labelOffset, "ellipsoids.labelOffset"),
+      labelWidth: positive(ellipsoids.labelWidth, "ellipsoids.labelWidth"),
       sigmas: positive(ellipsoids.sigmas, "ellipsoids.sigmas"),
     },
     densify: {
       labelOffset: vec3(densify.labelOffset, "densify.labelOffset"),
+      labelWidth: positive(densify.labelWidth, "densify.labelWidth"),
       position: vec3(densify.position, "densify.position"),
       scale: positive(densify.scale, "densify.scale"),
     },
     projection: {
       labelOffset: vec3(projection.labelOffset, "projection.labelOffset"),
+      labelWidth: positive(projection.labelWidth, "projection.labelWidth"),
       position: vec3(projection.position, "projection.position"),
       presentPosition: vec3(projection.presentPosition, "projection.presentPosition"),
       presentScale: positive(projection.presentScale, "projection.presentScale"),
@@ -86,6 +89,7 @@ export function parseExplainerSceneConfig(
     },
     hero: {
       labelOffset: vec3(hero.labelOffset, "hero.labelOffset"),
+      labelWidth: positive(hero.labelWidth, "hero.labelWidth"),
       position: vec3(hero.position, "hero.position"),
       sigma: positive(hero.sigma, "hero.sigma"),
       tiltDegrees: finite(hero.tiltDegrees, "hero.tiltDegrees"),

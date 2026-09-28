@@ -7,36 +7,40 @@
     "objectScale": 0.45
   },
   "counters": {
-    "offset": [0, 1.45, 0],
-    "width": 1.1
+    "offset": [0, 1.6, 0],
+    "width": 1.5
   },
   "hero": {
     "position": [0, 2.3, 2.4],
     "sigma": 0.5,
     "tiltDegrees": 30,
-    "labelOffset": [0, 0.2, 0]
+    "labelOffset": [0, 0.6, 0],
+    "labelWidth": 0.45
   },
   "densify": {
     "position": [0.9, 1.36, 1.5],
     "scale": 0.3,
-    "labelOffset": [0.05, 0.34, 0]
+    "labelOffset": [0.05, 0.4, 0],
+    "labelWidth": 0.5
   },
   "projection": {
     "position": [0.9, 1.36, 1.5],
     "width": 0.62,
-    "labelOffset": [0, -0.23, 0],
+    "labelOffset": [0, -0.27, 0],
     "presentPosition": [0.85, 1.1, 0.55],
-    "presentScale": 1.4
+    "presentScale": 1.4,
+    "labelWidth": 0.5
   },
   "ellipsoids": {
     "sigmas": 1.8,
-    "labelOffset": [0, 0.5, 0]
+    "labelOffset": [0, 1.25, 0],
+    "labelWidth": 1.7
   },
   "comparison": {
-    "position": [0.62, 1.4, 1.12],
+    "position": [0.68, 1.35, 1.2],
     "stack": "column",
-    "width": 0.28,
-    "gap": 0.05,
+    "width": 0.46,
+    "gap": 0.07,
     "gain": 6
   }
 }

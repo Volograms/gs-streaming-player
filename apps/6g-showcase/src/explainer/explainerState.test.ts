@@ -91,6 +91,15 @@ describe("computeExplainerState with the talk's cues", () => {
     expect(at(85).comparison.visibility).toBe(0);
   });
 
+  it("hands over from the fading cloud to the initial splats without a gap", () => {
+    for (const time of [63.6, 64.5, 65.2, 65.9]) {
+      const state = at(time);
+      expect(state.demo).toMatchObject({ iteration: 0, scale: 1 });
+    }
+    expect(at(64.5).cloud.visibility).toBeGreaterThan(0);
+    expect(at(66.1).cloud.visibility).toBe(0);
+  });
+
   it("steps through the early checkpoints and counts iterations", () => {
     const start = at(66);
     expect(start.demo).toMatchObject({ iteration: 0, scale: 1 });
@@ -197,10 +206,16 @@ describe("explainer configuration", () => {
           width: 0.3,
         },
         counters: { offset: [0, 0.4, 0], width: 0.5 },
-        ellipsoids: { labelOffset: [0, 0.5, 0], sigmas: 1.6 },
-        densify: { labelOffset: [0, 0.3, 0], position: [3, 1, 0], scale: 1 },
+        ellipsoids: { labelOffset: [0, 0.5, 0], labelWidth: 0.6, sigmas: 1.6 },
+        densify: {
+          labelOffset: [0, 0.3, 0],
+          labelWidth: 0.4,
+          position: [3, 1, 0],
+          scale: 1,
+        },
         projection: {
           labelOffset: [0, 0.3, 0],
+          labelWidth: 0.4,
           position: [1, 1.3, 1.5],
           presentPosition: [0.8, 1.2, 0.5],
           presentScale: 1.4,
@@ -208,6 +223,7 @@ describe("explainer configuration", () => {
         },
         hero: {
           labelOffset: [0, 0.15, 0],
+          labelWidth: 0.4,
           position: [0, 2, 2],
           sigma: 0.3,
           tiltDegrees: 20,

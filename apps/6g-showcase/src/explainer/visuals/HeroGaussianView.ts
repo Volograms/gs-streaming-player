@@ -18,6 +18,8 @@ import type { AppBase } from "playcanvas";
 type Vec3Tuple = readonly [number, number, number];
 
 export interface HeroGaussianConfig {
+  /** Label width in world metres (its height follows the text canvas). */
+  labelWidth: number;
   /** World-space offset of the label above the hero centre. */
   labelOffset: Vec3Tuple;
   /** Presentation position in stage (reconstruction) metres. */
@@ -118,7 +120,7 @@ export class HeroGaussianView {
     this.label = new TextPanel(
       application,
       "explainer-hero-label",
-      { pixelHeight: 160, pixelWidth: 640, worldWidth: 0.24 },
+      { pixelHeight: 160, pixelWidth: 640, worldWidth: config.labelWidth },
       layerId,
     );
     this.entity.enabled = false;

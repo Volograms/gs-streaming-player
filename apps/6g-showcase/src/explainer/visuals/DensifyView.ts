@@ -13,6 +13,8 @@ import type { AppBase } from "playcanvas";
 type Vec3Tuple = readonly [number, number, number];
 
 export interface DensifyConfig {
+  /** Label width in world metres (its height follows the text canvas). */
+  labelWidth: number;
   /** World-space offset of the label above the patch centre. */
   labelOffset: Vec3Tuple;
   /** Patch centre in world metres; the patch turns to face the viewer. */
@@ -100,7 +102,7 @@ export class DensifyView {
     this.label = new TextPanel(
       application,
       "explainer-densify-label",
-      { pixelHeight: 160, pixelWidth: 760, worldWidth: 0.3 },
+      { pixelHeight: 160, pixelWidth: 760, worldWidth: config.labelWidth },
       layerId,
     );
     this.entity.enabled = false;

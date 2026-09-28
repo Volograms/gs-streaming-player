@@ -31,6 +31,8 @@ import type { AppBase, ShaderMaterial } from "playcanvas";
 type Vec3Tuple = readonly [number, number, number];
 
 export interface ProjectionConfig {
+  /** Label width in world metres (its height follows the text canvas). */
+  labelWidth: number;
   /** World-space offset of the label above the screen centre. */
   labelOffset: Vec3Tuple;
   /** Screen centre in world metres; the screen turns to face the viewer. */
@@ -186,7 +188,7 @@ export class ProjectionView {
     this.label = new TextPanel(
       application,
       "explainer-projection-label",
-      { pixelHeight: 160, pixelWidth: 760, worldWidth: 0.3 },
+      { pixelHeight: 160, pixelWidth: 760, worldWidth: config.labelWidth },
       layerId,
     );
     this.entity.enabled = false;

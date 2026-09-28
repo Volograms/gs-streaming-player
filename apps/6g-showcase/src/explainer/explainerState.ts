@@ -55,6 +55,7 @@ export interface CounterState {
 
 const DEMO_OBJECT_TYPES = new Set([
   "demo-object.reveal",
+  "demo-object.show",
   "demo-object.dissolve",
   "training.progress",
 ]);
@@ -160,6 +161,14 @@ function demoObjectState(
       return {
         iteration: nearestCheckpoint(numberParam(latest, "iteration"), iterations),
         scale: easeInOutCubic(latest.progress),
+        yawDegrees,
+      };
+    case "demo-object.show":
+      // Shown at full size with no growth, e.g. under a fading overlay so the hand-over
+      // from another view of the same gaussians is seamless. Holds until the next cue.
+      return {
+        iteration: nearestCheckpoint(numberParam(latest, "iteration"), iterations),
+        scale: 1,
         yawDegrees,
       };
     case "demo-object.dissolve": {
