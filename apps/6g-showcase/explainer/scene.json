@@ -17,5 +17,11 @@
     "yawDegrees": -125,
     "objectScale": 0.2,
     "countersOffset": [-0.45, 0.62, 0.74]
+  },
+  "hero": {
+    "position": [0, 2.3, 2.4],
+    "sigma": 0.5,
+    "tiltDegrees": 30,
+    "labelOffset": [0, 0.2, 0]
   }
 }

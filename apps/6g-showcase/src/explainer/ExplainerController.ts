@@ -32,6 +32,7 @@ export class ExplainerController {
     cloud: true,
     counters: true,
     demo: true,
+    hero: true,
     stage: true,
   };
   private readonly adapter: PlayCanvasGaussianRendererAdapter;

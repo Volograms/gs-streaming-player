@@ -53,17 +53,19 @@ presenter audio.
 
 Cue types the showcase draws today:
 
-| Type                                                            | Visual                                                                                                              |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `stage.show`                                                    | Pedestal fade.                                                                                                      |
-| `demo-object.reveal` (`iteration`)                              | The checkpoint grows in on the pedestal.                                                                            |
-| `demo-object.turntable` (`turns`)                               | Rotates the object.                                                                                                 |
-| `demo-object.dissolve`                                          | The model falls back to its iteration-0 fog, then hides (the sparse cloud takes over).                              |
-| `demo-object.focus`                                             | Glides the object, cloud and cameras to the close-up pose.                                                          |
-| `training.progress` (`fromIteration`, `toIteration`)            | Steps through the shipped checkpoints, each shown for an equal share of the cue.                                    |
-| `sparse-cloud.show` / `sparse-cloud.swell` / `sparse-cloud.dim` | SfM points as camera-facing dots; swell morphs them into soft blobs at their initial gaussian size; dim fades them. |
-| `camera-ring.show` / `camera-ring.highlight` (`camera`)         | Wireframe frusta at the capture poses; one emphasised camera.                                                       |
-| `counter.iteration` / `counter.gaussians` (`label`)             | World-space counters with real training counts.                                                                     |
+| Type                                                                                   | Visual                                                                                                                                 |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `stage.show`                                                                           | Pedestal fade.                                                                                                                         |
+| `demo-object.reveal` (`iteration`)                                                     | The checkpoint grows in on the pedestal.                                                                                               |
+| `demo-object.turntable` (`turns`)                                                      | Rotates the object.                                                                                                                    |
+| `demo-object.dissolve`                                                                 | The model falls back to its iteration-0 fog, then hides (the sparse cloud takes over).                                                 |
+| `demo-object.focus`                                                                    | Glides the object, cloud and cameras to the close-up pose.                                                                             |
+| `training.progress` (`fromIteration`, `toIteration`)                                   | Steps through the shipped checkpoints, each shown for an equal share of the cue.                                                       |
+| `sparse-cloud.show` / `sparse-cloud.swell` / `sparse-cloud.dim`                        | SfM points as camera-facing dots; swell morphs them into soft blobs at their initial gaussian size; dim fades them.                    |
+| `camera-ring.show` / `camera-ring.highlight` (`camera`)                                | Wireframe frusta at the capture poses; one emphasised camera.                                                                          |
+| `hero-gaussian.show`                                                                   | One enlarged gaussian comes out of the cloud to its presentation pose (drawn as a true 3D gaussian: peak density along each view ray). |
+| `hero-gaussian.parameter` (`parameter`: `position`/`scale`/`opacity`/`color`, `label`) | A full cycle of that parameter (loop with axes gizmo, stretch, fade, hue turn) that ends at the rest pose, with its label.             |
+| `counter.iteration` / `counter.gaussians` (`label`)                                    | World-space counters with real training counts.                                                                                        |
 
 The cloud and cameras share an anchor that follows the object's pose, so they move with
 it into the close-up. The ring ends before the close-up, because at that scale its
@@ -88,16 +90,18 @@ warning and the presenter keeps playing without it.
 
 Placement lives in `apps/6g-showcase/explainer/scene.json`:
 
-| Field                                                       | Meaning                                                                                                                                     |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `assetsUrl`                                                 | `explainer-assets.json` from `gs-content build-explainer`, relative to the page.                                                            |
-| `stage.position`                                            | Stage origin on the floor beside the presenter, in world metres.                                                                            |
-| `stage.yawDegrees`                                          | Stage rotation about world +Y; sets the object's resting orientation.                                                                       |
-| `stage.pedestalHeight` / `pedestalRadius`                   | Pedestal size; the object stands on its top.                                                                                                |
-| `stage.objectScale`                                         | Stage metres (the reconstruction) to world metres.                                                                                          |
-| `counters.offset` / `counters.width`                        | Counter panel position above the pedestal top, and its width.                                                                               |
-| `focus.position` / `focus.yawDegrees` / `focus.objectScale` | Close-up pose in front of the presenter, below the eye line to her face. The object glides there while a `demo-object.focus` cue is active. |
-| `focus.countersOffset`                                      | Counter panel position relative to the close-up object base.                                                                                |
+| Field                                                       | Meaning                                                                                                                                                                                                       |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `assetsUrl`                                                 | `explainer-assets.json` from `gs-content build-explainer`, relative to the page.                                                                                                                              |
+| `stage.position`                                            | Stage origin on the floor beside the presenter, in world metres.                                                                                                                                              |
+| `stage.yawDegrees`                                          | Stage rotation about world +Y; sets the object's resting orientation.                                                                                                                                         |
+| `stage.pedestalHeight` / `pedestalRadius`                   | Pedestal size; the object stands on its top.                                                                                                                                                                  |
+| `stage.objectScale`                                         | Stage metres (the reconstruction) to world metres.                                                                                                                                                            |
+| `counters.offset` / `counters.width`                        | Counter panel position above the pedestal top, and its width.                                                                                                                                                 |
+| `focus.position` / `focus.yawDegrees` / `focus.objectScale` | Close-up pose in front of the presenter, below the eye line to her face. The object glides there while a `demo-object.focus` cue is active.                                                                   |
+| `focus.countersOffset`                                      | Counter panel position relative to the close-up object base.                                                                                                                                                  |
+| `hero.position` / `hero.sigma` / `hero.tiltDegrees`         | Hero gaussian presentation pose in stage metres, its sigma (the drawn ellipsoid is 3 sigma) and a fixed tilt so stretching reads as orientation. It starts from the most saturated sparse point near the cab. |
+| `hero.labelOffset`                                          | Parameter label position above the hero, in world metres.                                                                                                                                                     |
 
 Environment overrides:
 

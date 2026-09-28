@@ -1,6 +1,9 @@
 import { cueString, easeInOutCubic, sampleKeyframes } from "@6g-path/cue-timeline";
 
+import { heroGaussianState } from "./heroGaussianState.js";
+
 import type { ExplainerAssets } from "./explainerAssets.js";
+import type { HeroGaussianState } from "./heroGaussianState.js";
 import type { CueState, CueTimeline, TimelineState } from "@6g-path/cue-timeline";
 
 /** Everything the explainer scene draws at one instant; derived from time alone. */
@@ -29,6 +32,7 @@ export interface ExplainerFrameState {
     /** Extra rotation about the stage's vertical axis. */
     yawDegrees: number;
   };
+  hero: HeroGaussianState;
   stage: { visibility: number };
 }
 
@@ -85,6 +89,7 @@ export function computeExplainerState(
       ...demoObjectState(state, iterations),
       focus: maxEnvelope(state, "demo-object.focus"),
     },
+    hero: heroGaussianState(timeline, state),
     stage: { visibility: maxEnvelope(state, "stage.show") },
   };
 }

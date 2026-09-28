@@ -1,14 +1,9 @@
-import {
-  BLEND_NONE,
-  BLEND_NORMAL,
-  Color,
-  Entity,
-  StandardMaterial,
-  Texture,
-} from "@6g-path/gaussian-renderer-playcanvas";
+import { BLEND_NONE, BLEND_NORMAL, Color, Entity, StandardMaterial } from "playcanvas";
 
 import { CameraRigView } from "./visuals/CameraRigView.js";
+import { HeroGaussianView } from "./visuals/HeroGaussianView.js";
 import { SparseCloudView } from "./visuals/SparseCloudView.js";
+import { paintPlate, TextPanel } from "./visuals/TextPanel.js";
 
 import type { ExplainerAssets, SparsePoints } from "./explainerAssets.js";
 import type { ExplainerSceneConfig } from "./explainerSceneConfig.js";
@@ -20,6 +15,7 @@ export interface ExplainerVisualToggles {
   cloud: boolean;
   counters: boolean;
   demo: boolean;
+  hero: boolean;
   stage: boolean;
 }
 
@@ -30,8 +26,6 @@ interface ObjectPose {
   scale: number;
   yawDegrees: number;
 }
-
-const COUNTER_CANVAS = { height: 256, width: 1024 };
 
 /**
  * PlayCanvas side of the explainer: a pedestal beside the presenter, every demo-object
@@ -45,12 +39,9 @@ export class ExplainerScene {
   private readonly cameraRig: CameraRigView;
   private readonly checkpointIds: ReadonlyMap<number, string>;
   private readonly config: ExplainerSceneConfig;
-  private readonly counterCanvas: HTMLCanvasElement;
-  private readonly counterMaterial: StandardMaterial;
-  private readonly counterPanel: Entity;
-  private readonly counterTexture: Texture;
-  private counterKey = "";
+  private readonly counters: TextPanel;
   private disposed = false;
+  private readonly hero: HeroGaussianView;
   private readonly pedestal: Entity;
   private readonly pedestalMaterial: StandardMaterial;
   private readonly sparseCloud: SparseCloudView;
@@ -118,40 +109,29 @@ export class ExplainerScene {
     );
     application.root.addChild(this.pedestal);
 
-    this.counterCanvas = document.createElement("canvas");
-    this.counterCanvas.width = COUNTER_CANVAS.width;
-    this.counterCanvas.height = COUNTER_CANVAS.height;
-    this.counterTexture = new Texture(application.graphicsDevice, COUNTER_CANVAS);
-    this.counterTexture.setSource(this.counterCanvas);
-    this.counterMaterial = unlitMaterial(Color.WHITE);
-    this.counterMaterial.emissiveMap = this.counterTexture;
-    this.counterMaterial.opacityMap = this.counterTexture;
-    this.counterMaterial.opacityMapChannel = "a";
-    this.counterMaterial.update();
-    this.counterPanel = new Entity("explainer-counters", application);
     // Transparent meshes in the world layer are sorted with the (non-depth-writing)
     // splats and can be overdrawn by the environment; the UI layer draws after them.
     const overlayLayer = application.scene.layers.getLayerByName("UI");
     const overlayLayerId = overlayLayer === null ? undefined : overlayLayer.id;
-    this.counterPanel.addComponent("render", {
-      castShadows: false,
-      material: this.counterMaterial,
-      type: "box",
-      ...(overlayLayer === null ? {} : { layers: [overlayLayer.id] }),
-    });
-    const width = config.counters.width;
-    this.counterPanel.setLocalScale(
-      width,
-      (width * COUNTER_CANVAS.height) / COUNTER_CANVAS.width,
-      0.004,
+    this.counters = new TextPanel(
+      application,
+      "explainer-counters",
+      { pixelHeight: 256, pixelWidth: 1024, worldWidth: config.counters.width },
+      overlayLayerId,
     );
-    application.root.addChild(this.counterPanel);
 
     this.anchor = new Entity("explainer-anchor", application);
     this.sparseCloud = new SparseCloudView(application, sparsePoints, overlayLayerId);
     this.cameraRig = new CameraRigView(application, assets.cameras, overlayLayerId);
+    this.hero = new HeroGaussianView(
+      application,
+      sparsePoints,
+      config.hero,
+      overlayLayerId,
+    );
     this.anchor.addChild(this.sparseCloud.entity);
     this.anchor.addChild(this.cameraRig.entity);
+    this.anchor.addChild(this.hero.entity);
     application.root.addChild(this.anchor);
   }
 
@@ -169,7 +149,13 @@ export class ExplainerScene {
     this.cameraRig.apply(
       toggles.cameras ? frame.cameras : { highlight: undefined, ringVisibility: 0 },
     );
-    this.applyCounters(toggles.counters ? frame.counters : undefined, frame.demo.focus);
+    const viewer = this.adapter.cameraEntity.getPosition();
+    this.hero.apply(toggles.hero ? frame.hero : undefined, viewer);
+    this.applyCounters(
+      toggles.counters ? frame.counters : undefined,
+      frame.demo.focus,
+      viewer,
+    );
     this.adapter.application.renderNextFrame = true;
   }
 
@@ -179,12 +165,11 @@ export class ExplainerScene {
     for (const id of this.checkpointIds.values()) this.adapter.releaseObject(id);
     this.sparseCloud.dispose();
     this.cameraRig.dispose();
+    this.hero.dispose();
     this.anchor.destroy();
     this.pedestal.destroy();
-    this.counterPanel.destroy();
+    this.counters.dispose();
     this.pedestalMaterial.destroy();
-    this.counterMaterial.destroy();
-    this.counterTexture.destroy();
   }
 
   private applyStage(visibility: number): void {
@@ -239,34 +224,25 @@ export class ExplainerScene {
   private applyCounters(
     counters: ExplainerFrameState["counters"] | undefined,
     focusBlend: number,
+    viewer: { x: number; z: number },
   ): void {
     const lines =
       counters === undefined ? [] : [counters.iteration, counters.gaussians];
-    const visible = lines.filter(({ visibility }) => visibility > 0.001);
-    this.counterPanel.enabled = visible.length > 0;
-    if (visible.length === 0) return;
-
+    if (!lines.some(({ visibility }) => visibility > 0.001)) {
+      this.counters.hide();
+      return;
+    }
     const { counters: layout, focus } = this.config;
     const onStage = add(this.pedestalTop(), layout.offset);
     const inFocus = add(focus.position, focus.countersOffset);
-    const [x, y, z] = mix(onStage, inFocus, smootherBlend(focusBlend));
-    this.counterPanel.setPosition(x, y, z);
-    // Billboard about the vertical axis so the panel always faces the viewer.
-    const camera = this.adapter.cameraEntity.getPosition();
-    const panel = this.counterPanel.getPosition();
-    this.counterPanel.lookAt(camera.x, panel.y, camera.z);
-    this.counterPanel.rotateLocal(0, 180, 0);
-
+    this.counters.place(mix(onStage, inFocus, smootherBlend(focusBlend)), viewer);
     const key = lines
       .map(
         ({ label, value, visibility }) =>
           `${label}:${value}:${Math.round(visibility * 20)}`,
       )
       .join("|");
-    if (key === this.counterKey) return;
-    this.counterKey = key;
-    drawCounters(this.counterCanvas, lines);
-    this.counterTexture.upload();
+    this.counters.draw(key, (context, canvas) => drawCounters(context, canvas, lines));
   }
 
   private idFor(iteration: number | undefined): string | undefined {
@@ -300,18 +276,15 @@ function smootherBlend(value: number): number {
 }
 
 function drawCounters(
+  context: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
   lines: readonly { label: string; value: number; visibility: number }[],
 ): void {
-  const context = canvas.getContext("2d");
-  if (context === null) return;
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  const plateAlpha = Math.max(...lines.map(({ visibility }) => visibility), 0);
-  context.globalAlpha = 0.55 * plateAlpha;
-  context.fillStyle = "#0c0912";
-  context.beginPath();
-  context.roundRect(4, 4, canvas.width - 8, canvas.height - 8, 36);
-  context.fill();
+  paintPlate(
+    context,
+    canvas,
+    Math.max(...lines.map(({ visibility }) => visibility), 0),
+  );
   const rowHeight = canvas.height / 2;
   lines.forEach(({ label, value, visibility }, row) => {
     if (visibility <= 0.001) return;
@@ -326,7 +299,6 @@ function drawCounters(
     context.textAlign = "right";
     context.fillText(value.toLocaleString("es-ES"), canvas.width - 48, baseline);
   });
-  context.globalAlpha = 1;
 }
 
 function unlitMaterial(color: Color): StandardMaterial {

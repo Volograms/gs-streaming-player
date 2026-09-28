@@ -64,14 +64,16 @@
       "type": "hero-gaussian.show",
       "start": 41,
       "end": 64,
-      "fadeIn": 1,
-      "fadeOut": 1
+      "fadeIn": 2.5,
+      "fadeOut": 2
     },
     {
       "id": "b3-position",
       "type": "hero-gaussian.parameter",
       "start": 52.5,
       "end": 54.5,
+      "fadeIn": 0.3,
+      "fadeOut": 0.3,
       "params": { "parameter": "position", "label": "label.position" }
     },
     {
@@ -79,6 +81,8 @@
       "type": "hero-gaussian.parameter",
       "start": 54.5,
       "end": 56,
+      "fadeIn": 0.3,
+      "fadeOut": 0.3,
       "params": { "parameter": "scale", "label": "label.scale" }
     },
     {
@@ -86,6 +90,8 @@
       "type": "hero-gaussian.parameter",
       "start": 56,
       "end": 57.5,
+      "fadeIn": 0.3,
+      "fadeOut": 0.3,
       "params": { "parameter": "opacity", "label": "label.opacity" }
     },
     {
@@ -93,6 +99,8 @@
       "type": "hero-gaussian.parameter",
       "start": 57.5,
       "end": 59.5,
+      "fadeIn": 0.3,
+      "fadeOut": 0.3,
       "params": { "parameter": "color", "label": "label.color" }
     },
 

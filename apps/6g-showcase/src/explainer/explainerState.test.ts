@@ -180,6 +180,12 @@ describe("explainer configuration", () => {
       {
         assetsUrl: "a.json",
         counters: { offset: [0, 0.4, 0], width: 0.5 },
+        hero: {
+          labelOffset: [0, 0.15, 0],
+          position: [0, 2, 2],
+          sigma: 0.3,
+          tiltDegrees: 20,
+        },
         focus: {
           countersOffset: [0, 0.5, 0],
           objectScale: 0.25,

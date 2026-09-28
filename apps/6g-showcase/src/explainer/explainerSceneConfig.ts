@@ -1,11 +1,14 @@
 import sceneDocument from "../../explainer/scene.json";
 
+import type { HeroGaussianConfig } from "./visuals/HeroGaussianView.js";
+
 type Vec3Tuple = readonly [number, number, number];
 
 /** Placement of the explainer stage in the showcase world (Y-up, metres). */
 export interface ExplainerSceneConfig {
   assetsUrl: string;
   counters: { offset: Vec3Tuple; width: number };
+  hero: HeroGaussianConfig;
   /** Close-up pose in front of the presenter, used while a focus cue is active. */
   focus: {
     /** Counter panel position relative to the object base at the close-up pose. */
@@ -43,6 +46,7 @@ export function parseExplainerSceneConfig(
   const stage = isRecord(value.stage) ? value.stage : {};
   const counters = isRecord(value.counters) ? value.counters : {};
   const focus = isRecord(value.focus) ? value.focus : {};
+  const hero = isRecord(value.hero) ? value.hero : {};
   const assetsUrl = assetsUrlOverride?.trim() || value.assetsUrl;
   if (typeof assetsUrl !== "string" || assetsUrl === "") {
     throw new Error("Explainer scene config needs an assetsUrl.");
@@ -52,6 +56,12 @@ export function parseExplainerSceneConfig(
     counters: {
       offset: vec3(counters.offset, "counters.offset"),
       width: positive(counters.width, "counters.width"),
+    },
+    hero: {
+      labelOffset: vec3(hero.labelOffset, "hero.labelOffset"),
+      position: vec3(hero.position, "hero.position"),
+      sigma: positive(hero.sigma, "hero.sigma"),
+      tiltDegrees: finite(hero.tiltDegrees, "hero.tiltDegrees"),
     },
     focus: {
       countersOffset: vec3(focus.countersOffset, "focus.countersOffset"),
