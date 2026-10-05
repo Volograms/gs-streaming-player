@@ -18,23 +18,23 @@ workspace.
 ```bash
 corepack enable pnpm
 pnpm install --frozen-lockfile
-pnpm dev:showcase
+pnpm dev:6g-showcase
 ```
 
-Open `http://localhost:4180/#/`. The showcase accepts an external manifest URL at
+Open `http://localhost:4182/#/`. The 6G showcase accepts an external manifest URL at
 `#/demo?manifest=https%3A%2F%2Fcdn.example.com%2Fmanifest.json`. Set
-`VITE_DEFAULT_MANIFEST_URL` in `apps/showcase/.env.local` to load a public sample by
+`VITE_DEFAULT_MANIFEST_URL` in `apps/6g-showcase/.env.local` to load a public sample by
 default. Without it, GitHub Pages publishes a functional manifest picker.
 
 For local WebXR, create the trusted certificate described in the
 [Quest/WebXR guide](docs/quest-webxr.md), then run:
 
 ```bash
-pnpm dev:showcase:https
+pnpm dev:6g-showcase:https
 ```
 
-Open `https://localhost:4180/#/demo` on the development machine or
-`https://<development-machine-ip>:4180/#/demo` on a headset. Dataset settings from
+Open `https://localhost:4182/#/demo` on the development machine or
+`https://<development-machine-ip>:4182/#/demo` on a headset. Dataset settings from
 `.env.local` are retained in HTTPS mode.
 
 > **Quest Browser 146+ WebGPU/WebXR setup:** native WebGPU-backed immersive XR remains
@@ -42,7 +42,7 @@ Open `https://localhost:4180/#/demo` on the development machine or
 > enable `WebXR/WebGPU Binding`, `WebXR Projection Layers`, and `WebXR Experiments` at
 > `chrome://flags/#webxr-webgpu-binding`, `chrome://flags/#webxr-projection-layers`, and
 > `chrome://flags/#webxr-experiments`, then relaunch the browser. If the browser does
-> not expose `XRGPUBinding`, the showcase uses WebGL2 for XR. See the
+> not expose `XRGPUBinding`, the 6G showcase uses WebGL2 for XR. See the
 > [Quest/WebXR setup guide](docs/quest-webxr.md#native-webgpu-webxr-on-quest-browser-146)
 > for verification and troubleshooting.
 
@@ -50,22 +50,22 @@ Open `https://localhost:4180/#/demo` on the development machine or
 
 The browser cannot load a filesystem path directly. For development, let Vite serve the
 external dataset directory. If `C:/datasets/my-sequence/manifest.json` is the generated
-manifest, create `apps/showcase/.env.local` containing:
+manifest, create `apps/6g-showcase/.env.local` containing:
 
 ```dotenv
 SHOWCASE_LOCAL_DATASET_DIR=C:/datasets/my-sequence
 VITE_DEFAULT_MANIFEST_URL=/manifest.json
 ```
 
-Then run `pnpm dev:showcase` and open `http://localhost:4180/#/demo`. Manifest-relative
-SOG, Streamed SOG, mesh, and audio URLs continue to resolve from that directory. A path
-relative to the repository root, such as `../datasets/my-sequence`, is also accepted.
-This is equivalent to staging assets under a demo's Vite public directory, without
-copying or linking a potentially large dataset into the repository.
+Then run `pnpm dev:6g-showcase` and open `http://localhost:4182/#/demo`.
+Manifest-relative SOG, Streamed SOG, mesh, and audio URLs continue to resolve from that
+directory. A path relative to the repository root, such as `../datasets/my-sequence`, is
+also accepted. This is equivalent to staging assets under a demo's Vite public
+directory, without copying or linking a potentially large dataset into the repository.
 
 If you prefer the existing demo convention, place or link the dataset at
-`apps/showcase/public/assets/my-sequence` and use
-`VITE_DEFAULT_MANIFEST_URL=/assets/my-sequence/manifest.json`. Showcase asset/content
+`apps/6g-showcase/public/assets/my-sequence` and use
+`VITE_DEFAULT_MANIFEST_URL=/assets/my-sequence/manifest.json`. 6G showcase asset/content
 directories are ignored by Git.
 
 ## Integrate the player
@@ -154,18 +154,19 @@ scenes. Read [formats and support](docs/formats-and-support.md) and the factual
 
 ## Applications
 
-- `apps/showcase`: polished landing and Quest-oriented public player.
+- `apps/6g-showcase`: the 6G demo player, run with `pnpm dev:6g-showcase` (port 4182).
+- `apps/showcase`: polished landing and Quest-oriented public player (port 4180).
 - `apps/demo-playcanvas`: PlayCanvas/SOG diagnostics laboratory.
 - `apps/demo-babylon`: Babylon/SPZ diagnostics laboratory.
 - `apps/demo`: Spark/RAD diagnostics laboratory.
 
 The diagnostic apps intentionally expose tuning and measurement controls that are not
-part of the public showcase. See [experimental demos](docs/experimental-demos.md).
+part of the showcases. See [experimental demos](docs/experimental-demos.md).
 
 ## Workspace commands
 
 ```bash
-pnpm dev:showcase
+pnpm dev:6g-showcase
 pnpm typecheck
 pnpm lint
 pnpm format:check

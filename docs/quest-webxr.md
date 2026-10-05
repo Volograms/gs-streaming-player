@@ -1,7 +1,7 @@
 # Quest and WebXR
 
-The showcase targets room-scale immersive VR on Quest 3. It does not add teleport or
-smooth locomotion.
+The 6G showcase (`apps/6g-showcase`) targets room-scale immersive VR on Quest 3. It does
+not add teleport or smooth locomotion.
 
 ## Local HTTPS
 
@@ -17,7 +17,18 @@ mkcert -key-file .cert/localhost-key.pem `
   localhost 127.0.0.1 ::1 <development-machine-ip>
 ```
 
-Keep dataset configuration in the ignored `apps/showcase/.env.local`, for example:
+On macOS (install with `brew install mkcert`; `ipconfig getifaddr en0` prints the Wi‑Fi
+IP):
+
+```bash
+mkcert -install
+mkdir -p .cert
+mkcert -key-file .cert/localhost-key.pem \
+  -cert-file .cert/localhost-cert.pem \
+  localhost 127.0.0.1 ::1 <development-machine-ip>
+```
+
+Keep dataset configuration in the ignored `apps/6g-showcase/.env.local`, for example:
 
 ```dotenv
 SHOWCASE_LOCAL_DATASET_DIR=C:/datasets/my-sequence
@@ -27,19 +38,19 @@ VITE_DEFAULT_MANIFEST_URL=/manifest.json
 Start the LAN-accessible HTTPS server:
 
 ```bash
-pnpm dev:showcase:https
+pnpm dev:6g-showcase:https
 ```
 
-Open `https://localhost:4180/#/demo` locally or
-`https://<development-machine-ip>:4180/#/demo` from the headset. The mkcert authority
+Open `https://localhost:4182/#/demo` locally or
+`https://<development-machine-ip>:4182/#/demo` from the headset. The mkcert authority
 must be trusted on the device; accepting an untrusted page warning is not equivalent to
 a secure context for WebXR. The committed HTTPS mode enables XR and binds to `0.0.0.0`,
 while `.env.local` continues to supply the external dataset path and manifest URL.
 
 ### A separate server or VPN address
 
-The repository includes the `dev:showcase:https` startup command, but certificate
-generation uses `mkcert` directly. Both `.cert/` and `apps/showcase/.env.local` are
+The repository includes the `dev:6g-showcase:https` startup command, but certificate
+generation uses `mkcert` directly. Both `.cert/` and `apps/6g-showcase/.env.local` are
 ignored by Git: configure them separately on the server.
 
 Include every hostname or IP used in the browser in the certificate. A certificate for
@@ -58,10 +69,10 @@ still need in the same command. Copy the resulting `localhost-cert.pem` and
 `localhost-key.pem` securely into the server checkout's `.cert/` directory, then run:
 
 ```bash
-pnpm dev:showcase:https
+pnpm dev:6g-showcase:https
 ```
 
-Open `https://SERVER_VPN_IP_OR_HOSTNAME:4180/`. The certificate was issued by the CA
+Open `https://SERVER_VPN_IP_OR_HOSTNAME:4182/`. The certificate was issued by the CA
 trusted on your development machine. If you generate the certificate on the server
 instead, each browser device must trust that server's issuing CA: its public
 `rootCA.pem` is in the directory reported by `mkcert -CAROOT`. The CA private key,
@@ -69,7 +80,7 @@ instead, each browser device must trust that server's issuing CA: its public
 [mkcert's instructions for installing the CA on other systems](https://github.com/FiloSottile/mkcert#installing-the-ca-on-other-systems).
 
 The HTTPS mode already selects `VITE_HOST=0.0.0.0`. The server's VPN/network policy must
-also permit access to TCP port 4180.
+also permit access to TCP port 4182.
 
 ## Native WebGPU WebXR on Quest Browser 146+
 
@@ -89,7 +100,7 @@ PlayCanvas also requires the browser to expose `XRGPUBinding`. Verify that the p
 reports WebGPU as the graphics backend and that WebXR is ready before entering VR. If it
 reports a missing WebGPU binding, recheck the browser version and all three flags.
 
-The showcase falls back once to WebGL2 when WebGPU XR compatibility or initialization
+The 6G showcase falls back once to WebGL2 when WebGPU XR compatibility or initialization
 fails and displays the backend actually in use. The diagnostic PlayCanvas application
 can instead enforce strict WebGPU XR for measurements; see
 [Native WebGPU WebXR in the PlayCanvas integration guide](playcanvas-renderer-integration.md#native-webgpu-webxr-on-quest-browser-146).
