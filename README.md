@@ -68,6 +68,31 @@ If you prefer the existing demo convention, place or link the dataset at
 `VITE_DEFAULT_MANIFEST_URL=/assets/my-sequence/manifest.json`. 6G showcase asset/content
 directories are ignored by Git.
 
+### Build the explainer (gs-truck) assets
+
+The 6G showcase's explainer trains a small object, the truck, on a stage beside the
+presenter. Its assets are generated from an OpenSplat training run that is not in Git:
+
+1. Obtain the `gs-truck` OpenSplat project and place it at `apps/6g-showcase/gs-truck/`
+   (ignored by Git). It must contain `transforms.json`, `sparse_pc.ply`, `images/`, and
+   the `splat_<iteration>.ply` checkpoints under `early/` and `checkpoints/` listed in
+   `apps/6g-showcase/explainer/truck-assets.json`.
+2. Build the assets from the repository root:
+
+   ```bash
+   pnpm gs-content build-explainer apps/6g-showcase/explainer/truck-assets.json \
+     --output-dir apps/6g-showcase/public/assets/explainer/truck
+   ```
+
+   Add `--force` to overwrite a previous build.
+
+3. Run `pnpm dev:6g-showcase` as usual. The explainer loads
+   `assets/explainer/truck/explainer-assets.json` by default; set
+   `VITE_EXPLAINER_ASSETS_URL` in `apps/6g-showcase/.env.local` to point elsewhere.
+
+See [explainer assets](apps/6g-showcase/docs/explainer-assets.md) for the config fields,
+the outputs, and how to save training checkpoints.
+
 ## Integrate the player
 
 This preview is linked from the workspace rather than published to npm:
