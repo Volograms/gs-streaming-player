@@ -89,6 +89,7 @@ describe("exportStreamedSog", () => {
     expect(calls[0]?.some((argument) => argument.endsWith("lod-0.ply"))).toBe(true);
     expect(calls.slice(1, 4).map((args) => args[2])).toEqual(["50%", "25%", "10%"]);
     for (const args of calls.slice(1, 4)) {
+      expect(args[1]).toBe("--decimate-adaptive");
       expect(args).toContain("--scratch-dir");
     }
 

@@ -1,3 +1,5 @@
+import { normalizeRotation } from "@6g-path/shared";
+
 import type { Transform } from "@6g-path/shared";
 import type { Object3D } from "three";
 
@@ -16,12 +18,8 @@ export function applyTransform(object: Object3D, transform?: Transform): void {
     transform?.position?.y ?? 0,
     transform?.position?.z ?? 0,
   );
-  object.quaternion.set(
-    transform?.rotation?.x ?? 0,
-    transform?.rotation?.y ?? 0,
-    transform?.rotation?.z ?? 0,
-    transform?.rotation?.w ?? 1,
-  );
+  const rotation = normalizeRotation(transform?.rotation);
+  object.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
   object.scale.set(
     transform?.scale?.x ?? 1,
     transform?.scale?.y ?? 1,

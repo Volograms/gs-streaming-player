@@ -18,6 +18,22 @@ Manifest transforms map an object's local coordinates into player world coordina
 - a 16-number matrix uses Three.js column-major ordering and overrides the component
   fields.
 
+Component transforms apply local scale first, then rotation about the local origin, then
+translation: `worldPoint = position + rotation(scale * localPoint)` (matrix `T * R * S`
+for column vectors). Translation is not scaled or rotated by the object's own transform.
+Rotation is about the asset origin, not its bounding-box centre.
+
+Quaternion components are not Euler angles. Identity is
+`{ "w": 1, "x": 0, "y": 0, "z": 0 }`. For a Y-axis angle `a`, use `w = cos(a / 2)`,
+`y = sin(a / 2)`, and `x = z = 0`, with `a` in radians. For example, 60 degrees around Y
+is approximately `{ "w": 0.8660254, "x": 0, "y": 0.5, "z": 0 }`. Renderers normalize
+quaternion magnitude before applying component transforms so rotation cannot introduce
+scale. An all-zero quaternion has no defined rotation and falls back to identity; use
+the explicit identity above when authoring content. With `w = 0`, a nonzero `y` and zero
+`x`/`z` normalize to a 180-degree Y rotation, regardless of the magnitude of `y`. Build
+recipes support `rotationDegrees` for easier angle editing; runtime manifests require
+quaternions.
+
 The renderer never guesses or silently converts an asset's coordinate system. The same
 rules apply to static splats, every frame of a dynamic sequence, and conventional
 meshes. A dynamic sequence transform is applied identically to each prepared frame so

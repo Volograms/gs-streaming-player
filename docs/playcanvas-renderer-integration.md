@@ -110,11 +110,11 @@ pnpm gs-content export-sog-lod generated/static-sog/environment.sog \
 ```
 
 The exporter materialises non-PLY input as a temporary full-detail PLY, creates
-temporary decimated PLY levels, then feeds all levels to the pinned PlayCanvas
-`splat-transform` package with explicit LOD tags. The output directory contains
-`lod-meta.json` plus its spatial SOG chunks. Temporary PLY files are removed when the
-command finishes. Source `.ply`, `.compressed.ply`, `.spz`, and `.sog` files are
-accepted by the underlying converter; prefer the highest-quality original source
+temporary PLY levels with adaptive decimation, then feeds all levels to the pinned
+PlayCanvas `splat-transform` package with explicit LOD tags. The output directory
+contains `lod-meta.json` plus its spatial SOG chunks. Temporary PLY files are removed
+when the command finishes. Source `.ply`, `.compressed.ply`, `.spz`, and `.sog` files
+are accepted by the underlying converter; prefer the highest-quality original source
 available instead of recompressing an already compressed `.sog`.
 
 The default ratios are `1,0.5,0.25,0.1`. They must begin at full detail and descend

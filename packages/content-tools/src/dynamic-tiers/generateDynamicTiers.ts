@@ -48,7 +48,7 @@ interface GeneratedQualityLevel {
   metadata: {
     format: DynamicTierOutputFormat;
     sourceFormat: "ply" | "spz";
-    strategy: "splat-transform-merge-decimation-v1";
+    strategy: "splat-transform-adaptive-decimation-v1";
     targetRatio: number;
     tier: string;
   };
@@ -131,7 +131,7 @@ export async function generateDynamicTiers(
       indexPath,
       `${JSON.stringify(
         {
-          cutStrategy: "splat-transform-merge-decimation-v1",
+          cutStrategy: "splat-transform-adaptive-decimation-v1",
           format:
             request.outputFormat === "sog"
               ? "flat-sog-quality-cuts"
@@ -288,7 +288,7 @@ async function generateFrame(
         ...(request.maxSh === undefined
           ? []
           : ["--filter-harmonics", String(request.maxSh)]),
-        "--decimate",
+        "--decimate-adaptive",
         formatPercent(output.ratio),
         "--scratch-dir",
         temporaryDir,
@@ -331,7 +331,7 @@ async function generateFrame(
       metadata: {
         format: request.outputFormat,
         sourceFormat: frame.sourceFormat,
-        strategy: "splat-transform-merge-decimation-v1",
+        strategy: "splat-transform-adaptive-decimation-v1",
         targetRatio: output.ratio,
         tier: output.tier,
       },

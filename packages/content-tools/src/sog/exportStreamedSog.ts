@@ -33,8 +33,8 @@ export type ExportStreamedSogRunner = (
 
 /**
  * Creates genuine multi-resolution, spatially chunked PlayCanvas Streamed SOG output.
- * Coarser levels are first materialised as temporary PLY files because decimation must
- * be the final splat-transform action and therefore cannot be combined with LOD export.
+ * Coarser levels are materialised as temporary PLY files before tagging and combining
+ * them into a spatial LOD tree.
  */
 export async function exportStreamedSog(
   request: ExportStreamedSogRequest,
@@ -75,7 +75,7 @@ export async function exportStreamedSog(
       io.stdout(`Decimating LOD ${level} to ${formatPercent(ratio)}.`);
       await runSplatTransform([
         inputPath,
-        "--decimate",
+        "--decimate-adaptive",
         formatPercent(ratio),
         "--scratch-dir",
         temporaryDir,

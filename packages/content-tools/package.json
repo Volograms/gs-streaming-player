@@ -31,6 +31,6 @@
   },
   "dependencies": {
     "@6g-path/gaussian-player": "workspace:*",
-    "@playcanvas/splat-transform": "3.0.0"
+    "@playcanvas/splat-transform": "3.6.4"
   }
 }
