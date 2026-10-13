@@ -22,6 +22,43 @@ function response(byteLength: number): Response {
 }
 
 describe("CompressedFrameCache", () => {
+  it("reports completed planned frames without download gaps or obsolete quality tiers", async () => {
+    const pending = new Map(
+      ["/0.sog", "/1.sog", "/2.sog", "/0-high.sog"].map((url) => [
+        url,
+        deferred<Response>(),
+      ]),
+    );
+    const cache = new CompressedFrameCache({
+      fetch: vi.fn(async (url) => pending.get(String(url))!.promise),
+      maximumBytes: 40,
+      maximumFetchConcurrency: 4,
+    });
+    const requests = [0, 1, 2].map((frameIndex) => ({
+      byteSize: 10,
+      frameIndex,
+      url: `/${frameIndex}.sog`,
+    }));
+    try {
+      cache.setPlan(requests);
+      const demanded = cache.get(requests[1]!);
+      pending.get("/0.sog")!.resolve(response(10));
+      pending.get("/2.sog")!.resolve(response(10));
+      await vi.waitFor(() => expect(cache.snapshot.readyFrameCount).toBe(2));
+      expect(cache.snapshot.readyFrameIndices).toEqual([0, 2]);
+
+      cache.setPlan([{ ...requests[0]!, url: "/0-high.sog" }, requests[2]!]);
+      pending.get("/1.sog")!.resolve(response(10));
+      await demanded;
+      expect(cache.snapshot.readyFrameIndices).toEqual([2]);
+      pending.get("/0-high.sog")!.resolve(response(10));
+      await vi.waitFor(() => expect(cache.snapshot.readyFrameIndices).toHaveLength(2));
+      expect([...cache.snapshot.readyFrameIndices].sort()).toEqual([0, 2]);
+    } finally {
+      cache.dispose();
+    }
+  });
+
   it.each([
     [0, 8, true],
     [0, 0, undefined],

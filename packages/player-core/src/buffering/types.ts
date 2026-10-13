@@ -38,6 +38,7 @@ export interface FrameRingBufferSnapshot {
     contiguousReadyFrameCount: number;
     queuedFetchCount: number;
     readyFrameCount: number;
+    readyFrameIndices: readonly number[];
     residentBytes: number;
   }>;
 }

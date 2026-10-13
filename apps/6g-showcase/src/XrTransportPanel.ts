@@ -215,12 +215,40 @@ export class XrTransportPanel {
       context.fillText(label, x, 100);
     });
     const current = snapshot?.currentTimeSeconds ?? 0;
-    const duration = snapshot?.durationSeconds ?? 1;
-    const ratio = Math.min(1, current / Math.max(duration, 0.001));
-    context.fillStyle = "rgba(236, 255, 247, 0.16)";
-    context.fillRect(48, 220, this.canvas.width - 96, 24);
-    context.fillStyle = "#8fffc7";
-    context.fillRect(48, 220, (this.canvas.width - 96) * ratio, 24);
+    const duration = snapshot?.durationSeconds ?? 0;
+    const timelineLeft = 48;
+    const timelineWidth = this.canvas.width - timelineLeft * 2;
+    const timelineTop = 220;
+    const timelineHeight = 24;
+    context.fillStyle = "#332d3b";
+    context.fillRect(timelineLeft, timelineTop, timelineWidth, timelineHeight);
+    if (duration > 0) {
+      for (const range of snapshot?.bufferedTimeRanges ?? []) {
+        const start = Math.min(duration, Math.max(0, range.startSeconds));
+        const end = Math.min(duration, Math.max(0, range.endSeconds));
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+        context.fillStyle = "#8e8995";
+        context.fillRect(
+          timelineLeft + (timelineWidth * start) / duration,
+          timelineTop,
+          (timelineWidth * (end - start)) / duration,
+          timelineHeight,
+        );
+      }
+    }
+    const ratio = duration > 0 ? Math.min(1, Math.max(0, current / duration)) : 0;
+    context.fillStyle = "#f54ca7";
+    context.fillRect(timelineLeft, timelineTop, timelineWidth * ratio, timelineHeight);
+    context.beginPath();
+    context.fillStyle = "#f54ca7";
+    context.arc(
+      timelineLeft + timelineWidth * ratio,
+      timelineTop + timelineHeight / 2,
+      10,
+      0,
+      Math.PI * 2,
+    );
+    context.fill();
     context.fillStyle = "#b8cbc4";
     context.font = "500 25px system-ui, sans-serif";
     context.fillText(

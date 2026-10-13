@@ -36,6 +36,7 @@ export type {
   FrameRingBufferTraceFrame,
   FrameRingBufferTraceListener,
 } from "./buffering/types.js";
+export type { BufferedTimeRange } from "./buffering/bufferedTimeRanges.js";
 export {
   GAUSSIAN_SEQUENCE_MANIFEST_VERSION,
   GaussianSequenceManifestSchema,

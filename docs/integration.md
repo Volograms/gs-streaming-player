@@ -65,6 +65,14 @@ transfer tier and remain selected when entering XR. Static Streamed SOG keeps it
 camera-dependent spatial hierarchy in every mode—the dynamic tier menu does not freeze
 or replace static-scene LoD.
 
+Player snapshots expose `bufferedTimeRanges` as sorted `{ startSeconds, endSeconds }`
+intervals on the sequence timeline. These combine completed compressed downloads in the
+active quality plan with presentation-ready frames. The showcase draws them in grey
+behind the played progress, including separate ranges at loop boundaries and gaps where
+downloads are still pending. Ranges update when the cache or prepared frame window
+changes; they do not represent the browser's HTTP cache or guarantee that downloaded
+frames have finished decoding and GPU preparation.
+
 See [automatic quality](automatic-quality.md) for tier selection, throughput
 measurement, switching behavior, and policy configuration.
 

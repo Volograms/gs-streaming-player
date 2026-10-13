@@ -147,6 +147,11 @@ describe("GaussianStreamingPlayer", () => {
         manifestId: "preview",
         sequenceId: "actor-0",
       });
+      await vi.waitFor(() =>
+        expect(player.snapshot.bufferedTimeRanges).toEqual([
+          { startSeconds: 0, endSeconds: 0.1 },
+        ]),
+      );
 
       player.setQualityMode({ detailLevel: 0.5, mode: "manual" });
       await player.seek(2 / 30);

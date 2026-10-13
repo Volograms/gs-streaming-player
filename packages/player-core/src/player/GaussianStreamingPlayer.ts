@@ -1,3 +1,4 @@
+import { bufferedTimeRanges } from "../buffering/bufferedTimeRanges.js";
 import { FrameRingBuffer } from "../buffering/FrameRingBuffer.js";
 import { loadManifest } from "../manifest/loader.js";
 import { sequencePlaybackDurationSeconds } from "../manifest/timeline.js";
@@ -13,6 +14,7 @@ import type {
   PlaybackClock,
   SequencePlaybackSnapshot,
 } from "./SequencePlaybackController.js";
+import type { BufferedTimeRange } from "../buffering/bufferedTimeRanges.js";
 import type {
   FrameRingBufferConfiguration,
   FrameRingBufferTraceEvent,
@@ -85,6 +87,8 @@ export interface GaussianStreamingPlayerSnapshot {
     volume: number;
   };
   bufferAheadFrames: number;
+  /** Downloaded/prepared frame intervals; excludes in-flight downloads and gaps. */
+  bufferedTimeRanges: readonly BufferedTimeRange[];
   currentFrameIndex: number;
   currentTimeSeconds: number;
   droppedFrameCount: number;
@@ -109,6 +113,7 @@ export class GaussianStreamingPlayer {
   private readonly audioClock: MediaPlaybackClock | undefined;
   private audioError: unknown;
   private readonly buffer: FrameRingBuffer;
+  private bufferedTimeRangesValue: readonly BufferedTimeRange[] = [];
   private disposed = false;
   private operationRevision = 0;
   private pendingPlayRevision: number | undefined;
@@ -160,7 +165,13 @@ export class GaussianStreamingPlayer {
     this.minimumReadyFrames = minimumReadyFrames;
     this.now = now;
     this.loop = loop;
-    this.unsubscribeBuffer = buffer.subscribe(() => {
+    this.unsubscribeBuffer = buffer.subscribe((snapshot) => {
+      // Reuse the emitted buffer snapshot; never scan the cache on UI snapshot reads.
+      this.bufferedTimeRangesValue = bufferedTimeRanges(
+        snapshot,
+        this.sequence,
+        this.durationSeconds,
+      );
       this.updateAutomaticQuality();
       this.emit();
     });
@@ -328,6 +339,7 @@ export class GaussianStreamingPlayer {
         volume: this.audioClock?.volume ?? 1,
       },
       bufferAheadFrames: playback.bufferAheadFrames,
+      bufferedTimeRanges: this.bufferedTimeRangesValue,
       currentFrameIndex: playback.currentFrameIndex,
       currentTimeSeconds: playback.currentTimeSeconds,
       droppedFrameCount: playback.droppedFrameCount,

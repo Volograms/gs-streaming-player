@@ -230,6 +230,11 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
 
   const currentTime = snapshot?.currentTimeSeconds ?? 0;
   const duration = snapshot?.durationSeconds ?? 0;
+  const bufferedRanges = normalizeBufferedRanges(
+    snapshot?.bufferedTimeRanges ?? [],
+    duration,
+  );
+  const playedRatio = duration > 0 ? clampRatio(currentTime / duration) : 0;
   const selectedQuality =
     snapshot?.qualityMode.mode === "manual"
       ? String(snapshot.qualityMode.detailLevel)
@@ -337,16 +342,34 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
             +5
           </button>
           <time>{formatTime(currentTime)}</time>
-          <input
-            className="timeline"
-            aria-label="Playback position"
-            type="range"
-            min="0"
-            max={Math.max(duration, 0.01)}
-            step="0.01"
-            value={Math.min(currentTime, duration)}
-            onChange={(event) => seek(Number(event.target.value))}
-          />
+          <div className="timeline-shell">
+            <div className="timeline-track" aria-hidden="true">
+              {bufferedRanges.map((range, index) => (
+                <span
+                  className="timeline-buffer-range"
+                  key={`${range.startSeconds}-${range.endSeconds}-${index}`}
+                  style={{
+                    left: `${(range.startSeconds / duration) * 100}%`,
+                    width: `${((range.endSeconds - range.startSeconds) / duration) * 100}%`,
+                  }}
+                />
+              ))}
+              <span
+                className="timeline-played"
+                style={{ width: `${playedRatio * 100}%` }}
+              />
+            </div>
+            <input
+              className="timeline"
+              aria-label="Playback position"
+              type="range"
+              min="0"
+              max={Math.max(duration, 0.01)}
+              step="0.01"
+              value={Math.min(currentTime, duration)}
+              onChange={(event) => seek(Number(event.target.value))}
+            />
+          </div>
           <time>{formatTime(duration)}</time>
           {snapshot.audio.configured ? (
             <>
@@ -497,6 +520,26 @@ function validateManifestUrl(value: string): void {
 function formatTime(seconds: number): string {
   const safe = Math.max(0, Math.floor(seconds));
   return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, "0")}`;
+}
+
+function clampRatio(value: number): number {
+  return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
+}
+
+function normalizeBufferedRanges(
+  ranges: readonly { startSeconds: number; endSeconds: number }[],
+  duration: number,
+): readonly { startSeconds: number; endSeconds: number }[] {
+  if (!(duration > 0)) return [];
+  return ranges.flatMap((range) => {
+    const startSeconds = Math.min(duration, Math.max(0, range.startSeconds));
+    const endSeconds = Math.min(duration, Math.max(0, range.endSeconds));
+    return Number.isFinite(startSeconds) &&
+      Number.isFinite(endSeconds) &&
+      endSeconds > startSeconds
+      ? [{ startSeconds, endSeconds }]
+      : [];
+  });
 }
 
 function formatQuality(snapshot: GaussianStreamingPlayerSnapshot): string {

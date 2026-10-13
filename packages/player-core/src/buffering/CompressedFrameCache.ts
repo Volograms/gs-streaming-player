@@ -10,6 +10,8 @@ export interface CompressedFrameCacheSnapshot {
   contiguousReadyFrameCount: number;
   queuedFetchCount: number;
   readyFrameCount: number;
+  /** Fully downloaded frames in the active prefetch plan, at its selected tiers. */
+  readyFrameIndices: readonly number[];
   residentBytes: number;
 }
 
@@ -117,6 +119,7 @@ export class CompressedFrameCache {
     let residentBytes = 0;
     let readyFrameCount = 0;
     let queuedFetchCount = 0;
+    const readyFrameIndices: number[] = [];
     const readyPlanPriorities = new Set<number>();
     for (const entry of this.entries.values()) {
       if (entry.state === "ready") {
@@ -124,6 +127,7 @@ export class CompressedFrameCache {
         readyFrameCount += 1;
         if (Number.isFinite(entry.planPriority)) {
           readyPlanPriorities.add(entry.planPriority);
+          readyFrameIndices.push(entry.request.frameIndex);
         }
       } else if (entry.state === "queued") {
         queuedFetchCount += 1;
@@ -139,6 +143,7 @@ export class CompressedFrameCache {
       contiguousReadyFrameCount,
       queuedFetchCount,
       readyFrameCount,
+      readyFrameIndices,
       residentBytes,
     };
   }
@@ -177,10 +182,11 @@ export class CompressedFrameCache {
     }
 
     for (const [url, entry] of this.entries) {
-      if (plannedUrls.has(url) || entry.demandCount > 0) {
+      if (plannedUrls.has(url)) {
         continue;
       }
       entry.planPriority = Number.POSITIVE_INFINITY;
+      if (entry.demandCount > 0) continue;
       if (entry.state === "queued") {
         this.entries.delete(url);
       } else if (entry.state === "fetching") {

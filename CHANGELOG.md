@@ -7,6 +7,10 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Show cached timeline ranges in grey beneath playback progress in both showcases and
+  their XR controls. Report downloaded and prepared frame ranges from the player,
+  preserving gaps, authored frame timing, and loop boundaries.
+
 - Preserve the native audio element's stopped position during frame-buffering recovery,
   including audio progress while JavaScript processes a stall. Resume without a media
   seek and catch frame timing up to the audio already heard.
