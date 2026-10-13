@@ -154,6 +154,20 @@ class MediaTestClock implements PlaybackClock {
     await flushPromises();
   }
 
+  /** Deliver one already-due timer after the media has advanced, as on a busy device. */
+  async advanceLateTo(targetMs: number): Promise<void> {
+    await flushPromises();
+    const next = [...this.timers.entries()]
+      .filter(([, timer]) => timer.deadlineMs <= targetMs)
+      .sort((a, b) => a[1].deadlineMs - b[1].deadlineMs)[0];
+    if (next === undefined) throw new Error("No playback timer is due.");
+    this.moveTo(targetMs);
+    const [handle, timer] = next;
+    this.timers.delete(handle);
+    timer.callback();
+    await flushPromises();
+  }
+
   private moveTo(timeMs: number): void {
     const elapsedMs = timeMs - this.nowValue;
     this.nowValue = timeMs;
@@ -761,6 +775,115 @@ describe("GaussianStreamingPlayer audio integration", () => {
       droppedFrameCount: 0,
     });
     expect(audio.currentTime).toBeCloseTo(player.snapshot.currentTimeSeconds, 2);
+  });
+
+  it.each([25, 30])(
+    "does not replay audio after repeated late %i fps frame misses",
+    async (frameRate) => {
+      const firstFrame = deferred();
+      const secondFrame = deferred();
+      const { audio, clock, player } = await harness({
+        blocked: new Map([
+          [2, firstFrame.promise],
+          [5, secondFrame.promise],
+        ]),
+        frameRate,
+      });
+      const frameMs = 1000 / frameRate;
+      await player.play();
+      await clock.advanceTo(frameMs * 1.5);
+      const seekMedia = vi.spyOn(audio, "currentTime", "set");
+
+      await clock.advanceLateTo(frameMs * 2.75);
+      const firstStopTime = (frameMs * 2.75) / 1000;
+      expect(player.snapshot).toMatchObject({
+        currentFrameIndex: 1,
+        lifecycle: "BUFFERING",
+      });
+      expect(audio.paused).toBe(true);
+      expect(audio.currentTime).toBeCloseTo(firstStopTime);
+      expect(player.snapshot.currentTimeSeconds).toBeCloseTo(firstStopTime);
+      await clock.advanceTo(frameMs * 2.75 + 200);
+      firstFrame.resolve();
+      await flushPromises();
+      expect(player.snapshot.lifecycle).toBe("PLAYING");
+      expect(audio.currentTime).toBeCloseTo(firstStopTime);
+
+      await clock.advanceTo(frameMs * 3.25 + 200);
+      await clock.advanceLateTo(frameMs * 5.5 + 200);
+      const secondStopTime = (frameMs * 5.5) / 1000;
+      expect(player.snapshot).toMatchObject({
+        currentFrameIndex: 3,
+        lifecycle: "BUFFERING",
+      });
+      expect(audio.paused).toBe(true);
+      expect(audio.currentTime).toBeCloseTo(secondStopTime);
+      await clock.advanceTo(frameMs * 5.5 + 400);
+      secondFrame.resolve();
+      await flushPromises();
+      expect(player.snapshot.lifecycle).toBe("PLAYING");
+      expect(audio.paused).toBe(false);
+      expect(audio.currentTime).toBeCloseTo(secondStopTime);
+      expect(player.snapshot.currentTimeSeconds).toBeCloseTo(secondStopTime);
+      expect(seekMedia).not.toHaveBeenCalled();
+    },
+  );
+
+  it("preserves the heard position while an irregular-timestamp frame buffers", async () => {
+    const blockedFrame = deferred();
+    const { audio, clock, player } = await harness({
+      blocked: new Map([[2, blockedFrame.promise]]),
+      timestamps: [0, 0.15, 0.35, 0.6, 0.8],
+    });
+    await player.play();
+    await clock.advanceTo(200);
+    await clock.advanceLateTo(490);
+    expect(player.snapshot).toMatchObject({
+      currentFrameIndex: 1,
+      lifecycle: "BUFFERING",
+    });
+    expect(audio.currentTime).toBeCloseTo(0.49);
+    await clock.advanceTo(800);
+    blockedFrame.resolve();
+    await flushPromises();
+    expect(audio.currentTime).toBeCloseTo(0.49);
+    expect(player.snapshot.currentTimeSeconds).toBeCloseTo(0.49);
+    await clock.advanceTo(911);
+    expect(player.snapshot).toMatchObject({
+      currentFrameIndex: 3,
+      lifecycle: "PLAYING",
+    });
+    expect(audio.currentTime).toBeCloseTo(0.601);
+  });
+
+  it("keeps a buffering loop boundary in the new audio cycle", async () => {
+    const blockedFrames = new Map<number, Promise<void>>();
+    const blockedFrame = deferred();
+    const { audio, clock, player } = await harness({
+      blocked: blockedFrames,
+      frameCount: 8,
+      loop: true,
+    });
+    // Frame zero is initially prepared. Block its replacement on the next cycle.
+    blockedFrames.set(0, blockedFrame.promise);
+    await player.play();
+    await clock.advanceTo((8 * 1000) / 30 + 1);
+    expect(player.snapshot).toMatchObject({
+      currentFrameIndex: 7,
+      lifecycle: "BUFFERING",
+    });
+    expect(audio.currentTime).toBeCloseTo(0);
+    await clock.advanceTo((8 * 1000) / 30 + 201);
+    blockedFrame.resolve();
+    await flushPromises();
+    expect(player.snapshot).toMatchObject({
+      currentFrameIndex: 0,
+      lifecycle: "PLAYING",
+    });
+    expect(audio.currentTime).toBeCloseTo(0);
+    await clock.advanceTo((9 * 1000) / 30 + 202);
+    expect(player.snapshot.currentFrameIndex).toBe(1);
+    expect(audio.currentTime).toBeCloseTo(1 / 30, 2);
   });
 
   it("continues video after a shorter audio track ends", async () => {

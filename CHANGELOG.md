@@ -7,6 +7,10 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Preserve the exact playback position through frame-buffering recovery instead of
+  seeking audio back to the previous or newly prepared frame's timestamp. Cover late
+  callbacks, repeated stalls, irregular timestamps, and buffering at a loop boundary.
+
 - Use HTTPS with HTTP/1.1 for the showcase development server to bypass the observed
   HTTP/2 slowdown during sustained SOG delivery. Reduce player readiness reporting to
   one buffer snapshot and apply the automatic-quality throttle before rebuilding
@@ -66,6 +70,14 @@ All notable changes to this project will be documented here. The project uses
   metrics, and presenter. Its historical result remains in the performance record.
 
 ### Added
+
+- Add a shared nginx asset configuration, Docker deployment and native Windows launcher
+  for the 6G showcase, with HTTP/HTTPS, CORS, byte ranges and direct delivery of
+  dynamic, static, audio and explainer assets. Document local setup and deployment
+  configuration. Use shared, locally trusted mkcert certificates for the HTTPS WebXR app
+  and asset server; document local CA setup and headset addresses without a public
+  certificate. Enable threaded file I/O in the Linux image to reduce Windows bind-mount
+  stalls and expose cross-origin resource timings for transfer diagnostics.
 
 - The 6G showcase explainer layer. The demo object stands large on the floor beside the
   presenter and is revealed, turned, dissolved and stepped through its training
