@@ -301,6 +301,9 @@ export class SequencePlaybackController {
     const frameIndex = this.frameIndexForOrdinal(dueOrdinal);
     const readyAtDeadline = this.buffer.isPresentationReady(frameIndex);
     if (!readyAtDeadline) {
+      // Freeze the audio-driven position, not the timestamp of the previous frame.
+      // Publishing that older timestamp would seek audio backwards on every miss.
+      this.timelinePositionSeconds = this.activeTimelineSeconds();
       this.lifecycleValue = "BUFFERING";
       this.emit();
       await this.buffer.prepareForPresentation(frameIndex);
@@ -322,7 +325,9 @@ export class SequencePlaybackController {
     this.droppedFrameCountValue += Math.max(0, dueOrdinal - this.currentOrdinal - 1);
     this.currentOrdinal = dueOrdinal;
     this.currentFrameIndexValue = frameIndex;
-    this.timelinePositionSeconds = this.timelineForOrdinal(dueOrdinal);
+    if (readyAtDeadline) {
+      this.timelinePositionSeconds = this.timelineForOrdinal(dueOrdinal);
+    }
     this.emit();
 
     if (!readyAtDeadline) {

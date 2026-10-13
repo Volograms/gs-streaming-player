@@ -15,10 +15,12 @@ scheduler's elapsed time. Audio offsets need not coincide with frame boundaries;
 negative offsets start partway into the track.
 
 The player pauses audio when Gaussian frames buffer and resumes only after the startup
-reserve is restored. If audio stalls, presentation waits for media time to advance.
-Seeking and frame stepping pause playback; call `play()` to resume. Pause, seek, step,
-and disposal also cancel a pending Play request. Priming the browser media element is
-temporarily muted, preserving the user's requested mute and volume settings.
+reserve is restored. Recovery retains the exact audio-driven playback position;
+presenting a frame after buffering does not rewind audio to that frame's timestamp. If
+audio stalls, presentation waits for media time to advance. Seeking and frame stepping
+pause playback; call `play()` to resume. Pause, seek, step, and disposal also cancel a
+pending Play request. Priming the browser media element is temporarily muted, preserving
+the user's requested mute and volume settings.
 
 A missing track is valid. A track shorter than the sequence does not end Gaussian
 playback early; a longer track restarts at the sequence loop boundary. Frames stay in

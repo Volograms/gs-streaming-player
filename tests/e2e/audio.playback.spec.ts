@@ -9,9 +9,12 @@ import type {
 
 interface AudioHarness {
   audio: HTMLAudioElement;
+  bufferingStops: number[];
   errors: string[];
+  mediaSeeks: { fromSeconds: number; toSeconds: number; muted: boolean }[];
   player: GaussianStreamingPlayer;
   presentations: { frameIndex: number; atMs: number }[];
+  releaseBlockedFrames(): void;
   url: string;
 }
 
@@ -62,6 +65,26 @@ for (const { frameRate, manifestVersion } of [
         view.setUint32(40, sampleCount * 2, true);
         const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
         const audio = new Audio(url);
+        const mediaSeeks: AudioHarness["mediaSeeks"] = [];
+        const mediaTime = Object.getOwnPropertyDescriptor(
+          HTMLMediaElement.prototype,
+          "currentTime",
+        )!;
+        Object.defineProperty(audio, "currentTime", {
+          get: () => mediaTime.get!.call(audio) as number,
+          set: (value: number) => {
+            mediaSeeks.push({
+              fromSeconds: audio.currentTime,
+              muted: audio.muted,
+              toSeconds: value,
+            });
+            mediaTime.set!.call(audio, value);
+          },
+        });
+        let releaseBlockedFrames!: () => void;
+        const blockedFrames = new Promise<void>((resolve) => {
+          releaseBlockedFrames = resolve;
+        });
         const presentations: AudioHarness["presentations"] = [];
         const quality = {
           detailLevel: 1,
@@ -82,13 +105,16 @@ for (const { frameRate, manifestVersion } of [
           }),
           loadMesh: async (object) => ({ id: object.id, kind: "mesh" }),
           loadStaticObject: async (object) => ({ id: object.id, kind: "static-splat" }),
-          prepareFrame: async (sequenceId, source) => ({
-            frameIndex: source.frameIndex,
-            qualityLevel: 1,
-            rendererResource: {},
-            sequenceId,
-            source,
-          }),
+          prepareFrame: async (sequenceId, source) => {
+            if (source.frameIndex === 2 || source.frameIndex === 3) await blockedFrames;
+            return {
+              frameIndex: source.frameIndex,
+              qualityLevel: 1,
+              rendererResource: {},
+              sequenceId,
+              source,
+            };
+          },
           presentFrame: (frame) => {
             presentations.push({
               frameIndex: frame.frameIndex,
@@ -139,10 +165,28 @@ for (const { frameRate, manifestVersion } of [
           },
         });
         const errors: string[] = [];
+        const bufferingStops: number[] = [];
+        let previousLifecycle = player.snapshot.lifecycle;
         player.subscribe((snapshot) => {
           if (snapshot.error !== undefined) errors.push(String(snapshot.error));
+          if (
+            previousLifecycle === "PLAYING" &&
+            snapshot.lifecycle === "BUFFERING" &&
+            audio.paused
+          )
+            bufferingStops.push(audio.currentTime);
+          previousLifecycle = snapshot.lifecycle;
         });
-        window.audioHarness = { audio, player, presentations, errors, url };
+        window.audioHarness = {
+          audio,
+          bufferingStops,
+          errors,
+          mediaSeeks,
+          player,
+          presentations,
+          releaseBlockedFrames,
+          url,
+        };
         const button = document.createElement("button");
         button.textContent = "Start audio regression";
         button.style.cssText = "position:fixed;top:8px;left:8px;z-index:2147483647";
@@ -155,6 +199,26 @@ for (const { frameRate, manifestVersion } of [
     );
 
     await page.getByRole("button", { name: "Start audio regression" }).click();
+    await expect
+      .poll(() => page.evaluate(() => window.audioHarness.bufferingStops.length))
+      .toBeGreaterThanOrEqual(1);
+    expect(await page.evaluate(() => window.audioHarness.audio.paused)).toBe(true);
+    await page.evaluate(() => window.audioHarness.releaseBlockedFrames());
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          window.audioHarness.presentations.some((frame) => frame.frameIndex >= 2),
+        ),
+      )
+      .toBe(true);
+    // Ignore sub-millisecond sampling differences and muted gesture priming.
+    expect(
+      await page.evaluate(() =>
+        window.audioHarness.mediaSeeks.filter(
+          (seek) => !seek.muted && seek.toSeconds < seek.fromSeconds - 0.001,
+        ),
+      ),
+    ).toEqual([]);
     await expect
       .poll(
         () =>
