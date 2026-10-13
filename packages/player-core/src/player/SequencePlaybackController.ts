@@ -138,11 +138,12 @@ export class SequencePlaybackController {
   }
 
   get snapshot(): SequencePlaybackSnapshot {
+    const currentTimeSeconds = this.currentTimeSeconds();
+    const readyAhead = this.countReadyBufferAhead(currentTimeSeconds);
     return {
-      bufferAheadFrames: this.countReadyFramesAhead(),
-      bufferAheadSeconds: this.countReadySecondsAhead(),
+      ...readyAhead,
       currentFrameIndex: this.currentFrameIndexValue,
-      currentTimeSeconds: this.currentTimeSeconds(),
+      currentTimeSeconds,
       droppedFrameCount: this.droppedFrameCountValue,
       ...(this.errorValue === undefined ? {} : { error: this.errorValue }),
       isPlaying: this.desiredPlaying,
@@ -370,38 +371,27 @@ export class SequencePlaybackController {
     }
   }
 
-  private countReadyFramesAhead(): number {
-    let count = 0;
-    for (let offset = 1; offset <= this.buffer.snapshot.futureFrameCount; offset += 1) {
-      const frameIndex = this.offsetFrameIndex(this.currentFrameIndexValue, offset);
-      if (frameIndex === undefined) {
-        break;
-      }
-      const frame = this.buffer.snapshot.frames.find(
-        (candidate) => candidate.frameIndex === frameIndex,
-      );
-      if (frame?.status !== "ready" && frame?.status !== "presented") {
-        break;
-      }
-      count += 1;
-    }
-    return count;
-  }
-
-  private countReadySecondsAhead(): number {
+  private countReadyBufferAhead(
+    currentTimeSeconds: number,
+  ): Pick<SequencePlaybackSnapshot, "bufferAheadFrames" | "bufferAheadSeconds"> {
+    // A buffer snapshot includes the compressed-cache summary. Read it once rather
+    // than scanning that much larger cache for every future-frame readiness check.
+    const buffer = this.buffer.snapshot;
+    let frames = 0;
     let seconds = 0;
     let previousFrameIndex = this.currentFrameIndexValue;
-    for (let offset = 1; offset <= this.buffer.snapshot.futureFrameCount; offset += 1) {
+    for (let offset = 1; offset <= buffer.futureFrameCount; offset += 1) {
       const frameIndex = this.offsetFrameIndex(this.currentFrameIndexValue, offset);
       if (frameIndex === undefined) {
         break;
       }
-      const frame = this.buffer.snapshot.frames.find(
+      const frame = buffer.frames.find(
         (candidate) => candidate.frameIndex === frameIndex,
       );
       if (frame?.status !== "ready" && frame?.status !== "presented") {
         break;
       }
+      frames += 1;
       seconds += forwardFrameDelaySeconds(
         this.sequence,
         previousFrameIndex,
@@ -415,11 +405,11 @@ export class SequencePlaybackController {
       this.sequence,
       this.currentFrameIndexValue,
     );
-    const elapsedInCurrentFrame = Math.max(
-      0,
-      this.currentTimeSeconds() - currentFrameTime,
-    );
-    return Math.max(0, seconds - elapsedInCurrentFrame);
+    const elapsedInCurrentFrame = Math.max(0, currentTimeSeconds - currentFrameTime);
+    return {
+      bufferAheadFrames: frames,
+      bufferAheadSeconds: Math.max(0, seconds - elapsedInCurrentFrame),
+    };
   }
 
   private get lastFrameIndex(): number {

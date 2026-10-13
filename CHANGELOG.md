@@ -7,6 +7,11 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Use HTTPS with HTTP/1.1 for the showcase development server to bypass the observed
+  HTTP/2 slowdown during sustained SOG delivery. Reduce player readiness reporting to
+  one buffer snapshot and apply the automatic-quality throttle before rebuilding
+  readiness metrics.
+
 - Collapse equal authored detail levels before creating the automatic quality controller
   so valid datasets with duplicate ratios load correctly. Preserve the playable floor
   and conservative byte estimates when merging tiers.

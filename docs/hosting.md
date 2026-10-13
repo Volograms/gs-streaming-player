@@ -38,3 +38,15 @@ The older demo-style arrangement also works: stage or link the dataset beneath
 `apps/showcase/public/assets/my-sequence` and set
 `VITE_DEFAULT_MANIFEST_URL=/assets/my-sequence/manifest.json`. These local asset
 directories are ignored by Git.
+
+The showcase's HTTPS development server (`pnpm dev:showcase:https`) negotiates HTTP/1.1
+while retaining TLS. Sustained local SOG transfers on the development setup slowed from
+milliseconds to seconds over Vite's HTTP/2 path; HTTP/1.1 avoids that path. Restart the
+server after changing its transport configuration, reload the demo, and check the
+Protocol column in browser Network tools.
+
+For sustained streaming experiments, serve the generated dataset from a static file
+server such as nginx, or an object store/CDN, and keep Vite for application development.
+Use HTTPS and the CORS policy above when the dataset has a different origin. Compare
+transfer timings beyond the initial prefetch window: a large byte buffer can hide an
+unsustainable delivery rate until playback consumes its reserve.

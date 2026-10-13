@@ -490,14 +490,14 @@ export class GaussianStreamingPlayer {
     this.updatingQuality = true;
     try {
       const now = this.now();
-      const playback = this.toPlaybackState();
       // Buffer/renderer callbacks can be nested and arrive many times per frame.
       // Observe wall time, while still reacting immediately to lifecycle changes.
       if (
         now - this.lastQualityUpdateAt < 250 &&
-        playback.lifecycle === this.lastQualityLifecycle
+        this.playbackSnapshot.lifecycle === this.lastQualityLifecycle
       )
         return;
+      const playback = this.toPlaybackState();
       this.lastQualityUpdateAt = now;
       this.lastQualityLifecycle = playback.lifecycle;
       const network: NetworkState = this.throughputEstimator.getState(now) ?? {

@@ -55,6 +55,10 @@ export default defineConfig(({ mode }) => {
       ...(httpsEnabled
         ? {
             https: {
+              // Keep TLS while bypassing the slow HTTP/2 asset-serving path seen
+              // during sustained SOG playback on the local development server.
+              ALPNCallback: ({ protocols }) =>
+                protocols.includes("http/1.1") ? "http/1.1" : undefined,
               cert: readFileSync(certificatePath),
               key: readFileSync(keyPath),
             },
