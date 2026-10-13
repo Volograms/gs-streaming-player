@@ -246,27 +246,21 @@ export class FrameRingBuffer {
     ) {
       return;
     }
+    const upgrading = target.detailLevel > this.presentationQualityTarget.detailLevel;
     this.presentationQualityTarget = { ...target };
     this.preservePreparedFrames = options.preservePreparedFrames ?? false;
     for (const [frameIndex, record] of [...this.records]) {
       const selectedTransfer = this.selectAvailableTransfer(record.source);
       if (
         this.preservePreparedFrames &&
-        (frameIndex === this.currentFrameIndexValue ||
-          (this.forwardDistanceFrom(
-            this.windowFrameIndexValue ?? frameIndex,
-            frameIndex,
-          ) >= 0 &&
-            this.forwardDistanceFrom(
-              this.windowFrameIndexValue ?? frameIndex,
-              frameIndex,
-            ) <= Math.ceil(this.sequence.frameRate))) &&
         selectedTransfer !== undefined &&
         selectedTransfer.source.url !== record.preparedSource.url &&
-        record.preparedFrame !== undefined
+        (record.preparedFrame !== undefined ||
+          (upgrading && record.status === "loading-base"))
       ) {
-        // Keep roughly one second ready while rebuilding the farther reserve at
-        // the new tier. Retaining the whole reserve would delay visible upgrades.
+        // Keep the ready reserve for either direction. On upgrades, also finish
+        // work already queued for this window; the new tier enters at its tail
+        // as playback consumes frames, without tearing holes in the reserve.
         record.retainTransferUntilPresented =
           frameIndex !== this.currentFrameIndexValue;
         continue;
@@ -848,7 +842,7 @@ export class FrameRingBuffer {
           record.preparedFrame === undefined) &&
         distance >= 0 &&
         distance <= this.futureFrameCount &&
-        !record.retainTransferUntilPresented &&
+        !this.retainsTransfer(record) &&
         this.selectedTransferUrl(record.source) !== record.preparedSource.url
       ) {
         record.controller.abort();
@@ -905,11 +899,25 @@ export class FrameRingBuffer {
     return this.selectAvailableTransfer(source)?.source.url ?? source.url;
   }
 
+  private retainsTransfer(record: FrameRecord | undefined): boolean {
+    // Already prepared frames remain usable if another asset at their tier is
+    // missing. Pending downloads must instead follow the available-tier fallback.
+    return (
+      record?.retainTransferUntilPresented === true &&
+      (record.preparedFrame !== undefined ||
+        record.transferQuality === undefined ||
+        !this.unavailableQualityLevels.has(record.transferQuality.level))
+    );
+  }
+
   private updateFutureFrameCount(frameIndex: number): boolean {
     if (this.decodedBufferMaximumBytes === undefined) return false;
     const estimate = (index: number) => {
       const record = this.records.get(index);
-      if (record?.preparedFrame !== undefined)
+      if (
+        record !== undefined &&
+        (record.preparedFrame !== undefined || this.retainsTransfer(record))
+      )
         return this.frameMemory.estimate(
           record.preparedSource,
           record.transferQuality,
@@ -980,10 +988,10 @@ export class FrameRingBuffer {
       const selectedTransfer = this.selectAvailableTransfer(source);
       const retained = this.records.get(requestedFrameIndex);
       const preparedSource =
-        retained?.preparedFrame !== undefined &&
-        (retained.retainTransferUntilPresented ||
+        this.retainsTransfer(retained) ||
+        (retained?.preparedFrame !== undefined &&
           requestedFrameIndex === this.currentFrameIndexValue)
-          ? retained.preparedSource
+          ? retained!.preparedSource
           : (selectedTransfer?.source ?? source);
       if (selectedTransfer === undefined && preparedSource.codec === undefined) {
         // Native progressive frames manage their own reads. Stop at that boundary
@@ -1344,7 +1352,10 @@ export class FrameRingBuffer {
     frameIndex: number,
     preservedFrameIndex: number,
   ): void {
-    const capacity = 1 + this.futureFrameCount + this.previousFrameCount;
+    // A larger tier can shorten the future window. During handoff, keep the old
+    // current frame within the configured capacity instead of evicting an unplayed
+    // ready frame just to match the smaller future count before presentation commits.
+    const capacity = 1 + this.maximumFutureFrameCount + this.previousFrameCount;
     for (
       let offset = this.futureFrameCount;
       desired.size > capacity && offset > 0;
@@ -1446,6 +1457,9 @@ export class FrameRingBuffer {
       requestedBytes: record.requestedBytes,
       status: record.status,
       targetQualityLevel: record.targetQualityLevel,
+      ...(record.transferQuality === undefined
+        ? {}
+        : { transferDetailLevel: record.transferQuality.detailLevel }),
       timestampSeconds: record.source.timestampSeconds,
     };
   }

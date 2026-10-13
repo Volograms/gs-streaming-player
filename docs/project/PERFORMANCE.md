@@ -5,7 +5,7 @@ important results, test conditions, interpretations, and limitations independent
 chat history. Update it when a renderer, decoder, scheduler, content encoding, browser,
 or device change materially affects the pipeline.
 
-Last updated: 2026-07-21.
+Last updated: 2026-10-13.
 
 ## Measurement rules
 
@@ -58,6 +58,52 @@ payload before HTTP and container overhead. A 200 MB compressed cache holds roug
 full frames, or 2.1 seconds, but substantially more minimum and medium frames.
 
 ## Recorded results
+
+### 6G explainer and automatic-tier investigation — 2026-10-13
+
+Foreground Chrome, WebGPU, the locally hosted 6G presenter sequence (29.97 fps), static
+Streamed SOG pinned to LOD 5, 200 MB compressed and 500 MB estimated decoded budgets.
+This was a short development-server diagnostic run, not a production benchmark. Hardware
+identifiers and aggregate preparation/long-task traces were not captured. Browser
+automation and the debug overlay were active. Reload reset the camera to the adapter
+default `(0, 0, 3)` looking at the origin; this does not reproduce the user's manually
+framed view, so GPU timings must not be extrapolated to that view.
+
+At manual Medium (33%), the same approximately 35–39 second passage was replayed in
+Live, Frozen, and Hidden modes, starting with roughly four seconds prepared. These are
+individual near-end readouts, not frame-time distributions:
+
+| Explainer mode | Render FPS | GPU frame (ms) | Explainer CPU p95 (ms) | Decoded seconds ahead | Additional dropped frames over the whole passage |
+| -------------- | ---------: | -------------: | ---------------------: | --------------------: | -----------------------------------------------: |
+| Live           |         36 |           6.35 |                   0.30 |                  3.18 |                                               22 |
+| Frozen         |         35 |           4.70 |   0 (updates disabled) |                  3.39 |                                               14 |
+| Hidden         |         40 |           5.41 |   0 (updates disabled) |                  3.37 |                                               21 |
+
+The CPU p95 window contained 120 explainer updates in Live. Frozen retained the
+35-second visual state; Live evolved through the swell cue, so these GPU values do not
+isolate identical rendered images. GPU samples update once per second. Dropped frame
+counts were differenced at pause; the other values were read just before pause.
+
+Misses also occurred at the beginning of the clip with `explainer=off`, which bypasses
+explainer asset loading entirely. An earlier automation sample showed approximately one
+render per second even with low GPU time; subsequent foreground samples and user
+screenshots did not reproduce that cadence. It is excluded from causal conclusions.
+
+The evidence does not identify explainer cue evaluation as the dominant synchronous CPU
+cost, and hiding the explainer did not eliminate misses. Low GPU times and a ready
+reserve do not prove adequate preparation throughput or timely main-thread scheduling.
+The one-time explainer asset-construction cost remains unmeasured.
+
+Source inspection and bounded tests identified separate adaptation defects: starvation
+skipped intermediate tiers, reduced fixed-tier preparation to one slot, and tier changes
+discarded prepared frames beyond one second. These are corrected with stepwise
+downgrades, a two-second recovery interval, at least two preparation slots, and
+retention of higher-tier prepared frames. The policy now distinguishes the displayed
+payload from the requested tier before attributing render/drop pressure, including small
+per-frame ratio differences within an authored tier. Download/decode pressure can still
+lower a target while retained higher-tier frames are displayed. Short live checks
+verified retention through a downgrade; sustained smooth playback is not yet
+established.
 
 ### 1. Paged RAD baseline — 2026-07-15
 

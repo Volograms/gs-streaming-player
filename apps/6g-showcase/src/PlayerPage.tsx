@@ -56,6 +56,10 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
   const [xrActive, setXrActive] = useState(false);
   const [explainer, setExplainer] = useState<ExplainerController>();
   const [explainerError, setExplainerError] = useState<string>();
+  const [debugContext, setDebugContext] = useState<{
+    adapter: PlayCanvasAdapter;
+    player: GaussianStreamingPlayer;
+  }>();
   const explainerDebug = isExplainerDebugEnabled();
 
   useEffect(() => {
@@ -91,6 +95,7 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
         }
         playerRef.current = result.player;
         adapterRef.current = result.adapter;
+        setDebugContext({ adapter: result.adapter, player: result.player });
         if (import.meta.env.DEV) {
           // Development-only handle for scene inspection from the console or tests.
           Object.assign(window, {
@@ -107,7 +112,9 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
         if (!active) return;
         setXrAvailable(support.available);
         setLoadState("ready");
-        void startExplainer(result.adapter, result.player);
+        if (isExplainerDisabled())
+          setExplainerError("Explainer loading disabled for comparison.");
+        else void startExplainer(result.adapter, result.player);
       } catch (caught) {
         if (!active || abortController.signal.aborted) return;
         setError(describeShowcaseError(caught));
@@ -129,6 +136,7 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
           assets,
           explainerSceneConfig,
           abortController.signal,
+          isExplainerDebugEnabled(),
         );
         if (!active) {
           controller.dispose();
@@ -158,6 +166,7 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
       playerRef.current?.dispose();
       playerRef.current = undefined;
       adapterRef.current = undefined;
+      setDebugContext(undefined);
       setQualityOptions([]);
       setXrActive(false);
     };
@@ -488,8 +497,10 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
 
       {loadState === "ready" && explainerDebug ? (
         <ExplainerDebugPanel
+          adapter={debugContext?.adapter}
           controller={explainer}
           error={explainerError}
+          player={debugContext?.player}
           seek={seek}
         />
       ) : null}
@@ -529,6 +540,7 @@ async function createPlayer(
     canvas,
     graphicsBackend: backend,
     gaussianSort: "auto",
+    gpuTimingSampleIntervalMs: isExplainerDebugEnabled() ? 1_000 : 0,
     manageResize: true,
     ...(configuredStaticLodLevel === undefined
       ? {}
@@ -595,6 +607,11 @@ function isExplainerDebugEnabled(): boolean {
   if (typeof window === "undefined") return false;
   const query = window.location.hash.split("?", 2)[1] ?? "";
   return new URLSearchParams(query).has("debug");
+}
+
+function isExplainerDisabled(): boolean {
+  const query = window.location.hash.split("?", 2)[1] ?? "";
+  return new URLSearchParams(query).get("explainer") === "off";
 }
 
 function validateManifestUrl(value: string): void {

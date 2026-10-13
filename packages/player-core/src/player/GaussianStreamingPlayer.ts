@@ -122,6 +122,7 @@ export interface GaussianStreamingPlayerSnapshot {
     bufferAheadSeconds: number;
     compressedBufferAheadSeconds?: number;
     dynamicFrameDetailLevel: number;
+    presentedDynamicDetailLevel?: number;
     estimatedThroughputBps: number;
     networkConfidence: number;
     targetBufferSeconds: number;
@@ -649,6 +650,9 @@ export class GaussianStreamingPlayer {
             }),
         dynamicFrameDetailLevel:
           decision.dynamicFrameDetailLevel ?? DEFAULT_MINIMUM_DETAIL,
+        ...(metrics.presentedDynamicDetailLevel === undefined
+          ? {}
+          : { presentedDynamicDetailLevel: metrics.presentedDynamicDetailLevel }),
         estimatedThroughputBps: network.estimatedThroughputBps,
         networkConfidence: network.confidence ?? 0,
         targetBufferSeconds: decision.targetBufferSeconds,
@@ -726,7 +730,12 @@ export class GaussianStreamingPlayer {
         ? undefined
         : requested.reduce((sum, frame) => sum + frame.requestedBytes, 0) /
           requested.length;
-    const renderFramesPerSecond = this.renderer.getMetrics().renderFramesPerSecond;
+    const renderer = this.renderer.getMetrics();
+    const renderFramesPerSecond = renderer.renderFramesPerSecond;
+    const presentedDynamicDetailLevel = frames.find(
+      (frame) =>
+        frame.frameIndex === (renderer.activeFrameIndex ?? buffer.currentFrameIndex),
+    )?.transferDetailLevel;
     return {
       timestampMs: now,
       ...(this.availableDynamicDetailLevels === undefined
@@ -769,6 +778,9 @@ export class GaussianStreamingPlayer {
               ),
           }),
       ...(estimatedBaseFrameBytes === undefined ? {} : { estimatedBaseFrameBytes }),
+      ...(presentedDynamicDetailLevel === undefined
+        ? {}
+        : { presentedDynamicDetailLevel }),
       ...(renderFramesPerSecond === undefined ? {} : { renderFramesPerSecond }),
       stallDurationSeconds: this.stallDurationSeconds,
       targetFramesPerSecond: this.sequence.frameRate,

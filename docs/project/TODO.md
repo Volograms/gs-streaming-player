@@ -31,6 +31,12 @@ A task is checked only after its acceptance criteria are implemented and verifie
 
 ## Renderer, codec, and device validation
 
+- [ ] Profile the foreground 6G showcase's remaining presentation misses with a ready
+      decoded reserve. Capture preparation throughput, main-thread long tasks, timer
+      lateness, and initial explainer construction separately, using the fixed-quality
+      Live/Frozen/Hidden/off comparisons in `PERFORMANCE.md`. Verify sustained 30 fps
+      and uninterrupted audio before treating the adaptation fixes as a stall fix.
+
 - [ ] Complete the PlayCanvas/SOG production benchmark matrix at 25%, 50%, and 100% on
       the same desktop and Quest 3 sessions:
   - [ ] Compare WebGL2 CPU sort with WebGPU GPU sort using repeated p50/p95 samples for

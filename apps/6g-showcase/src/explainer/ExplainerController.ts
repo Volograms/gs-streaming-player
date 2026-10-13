@@ -4,12 +4,15 @@ import cueDocument from "../../explainer/cues.json";
 
 import { loadEllipsoids, loadSparsePoints } from "./explainerAssets.js";
 import { explainerTimeSeconds } from "./explainerClock.js";
+import { ExplainerPerformance } from "./explainerPerformance.js";
 import { ExplainerScene } from "./ExplainerScene.js";
 import { computeExplainerState } from "./explainerState.js";
 
 import type { ComparisonIndex, ExplainerAssets } from "./explainerAssets.js";
+import type { ExplainerDiagnosticMode } from "./explainerPerformance.js";
 import type { ExplainerVisualToggles } from "./ExplainerScene.js";
 import type { ExplainerSceneConfig } from "./explainerSceneConfig.js";
+import type { ExplainerFrameState } from "./explainerState.js";
 import type { ComparisonImages } from "./visuals/ComparisonPanels.js";
 import type { CueTimeline } from "@6g-path/cue-timeline";
 import type { GaussianStreamingPlayer } from "@6g-path/gaussian-player";
@@ -47,6 +50,9 @@ export class ExplainerController {
     timeSeconds: 0,
   };
   private disposed = false;
+  private diagnosticModeValue: ExplainerDiagnosticMode = "live";
+  private lastFrame: ExplainerFrameState | undefined;
+  readonly performance = new ExplainerPerformance();
   private readonly frameTimestamps: readonly number[];
   private readonly player: GaussianStreamingPlayer;
   private readonly scene: ExplainerScene;
@@ -58,6 +64,7 @@ export class ExplainerController {
     assets: ExplainerAssets,
     config: ExplainerSceneConfig,
     signal?: AbortSignal,
+    profiling = false,
   ): Promise<ExplainerController> {
     const timeline = parseCueTimeline(cueDocument);
     validateAcrossTimeline(timeline, assets);
@@ -80,7 +87,7 @@ export class ExplainerController {
       config,
       signal,
     );
-    return new ExplainerController(adapter, player, assets, timeline, scene);
+    return new ExplainerController(adapter, player, assets, timeline, scene, profiling);
   }
 
   private constructor(
@@ -89,6 +96,7 @@ export class ExplainerController {
     assets: ExplainerAssets,
     timeline: CueTimeline,
     scene: ExplainerScene,
+    private readonly profiling: boolean,
   ) {
     this.adapter = adapter;
     this.player = player;
@@ -107,9 +115,30 @@ export class ExplainerController {
     return this.debug;
   }
 
+  get diagnosticMode(): ExplainerDiagnosticMode {
+    return this.diagnosticModeValue;
+  }
+
+  /** Freeze keeps the same visuals; hidden removes their draw cost as well. */
+  setDiagnosticMode(mode: ExplainerDiagnosticMode): void {
+    if (this.disposed || mode === this.diagnosticModeValue) return;
+    this.diagnosticModeValue = mode;
+    this.performance.reset();
+    if (mode === "live") this.update();
+    else if (this.lastFrame !== undefined) {
+      this.scene.apply(
+        this.lastFrame,
+        mode === "hidden" ? HIDDEN_VISUALS : this.toggles,
+      );
+    }
+  }
+
   /** Re-applies the current state, e.g. after a debug toggle while paused. */
   refresh(): void {
-    this.update();
+    if (this.disposed) return;
+    if (this.diagnosticModeValue === "live") this.update();
+    else if (this.diagnosticModeValue === "frozen" && this.lastFrame !== undefined)
+      this.scene.apply(this.lastFrame, this.toggles);
   }
 
   dispose(): void {
@@ -120,8 +149,10 @@ export class ExplainerController {
   }
 
   private update(): void {
-    if (this.disposed) return;
+    if (this.disposed || this.diagnosticModeValue !== "live") return;
+    const startedAt = this.profiling ? performance.now() : 0;
     const snapshot = this.player.snapshot;
+    const snapshotAt = this.profiling ? performance.now() : 0;
     const frameIndex = snapshot.renderer.activeFrameIndex ?? snapshot.currentFrameIndex;
     const timeSeconds = explainerTimeSeconds({
       clockSeconds: snapshot.currentTimeSeconds,
@@ -130,10 +161,9 @@ export class ExplainerController {
       frameTimestamps: this.frameTimestamps,
     });
     const state = evaluateTimeline(this.timeline, timeSeconds);
-    this.scene.apply(
-      computeExplainerState(this.timeline, state, this.assets),
-      this.toggles,
-    );
+    this.lastFrame = computeExplainerState(this.timeline, state, this.assets);
+    const evaluatedAt = this.profiling ? performance.now() : 0;
+    this.scene.apply(this.lastFrame, this.toggles);
     this.debug = {
       activeCueIds: state.cues
         .filter(({ phase }) => phase === "active")
@@ -141,8 +171,29 @@ export class ExplainerController {
       frameIndex,
       timeSeconds,
     };
+    if (this.profiling) {
+      const finishedAt = performance.now();
+      this.performance.record({
+        snapshotMs: snapshotAt - startedAt,
+        evaluateMs: evaluatedAt - snapshotAt,
+        applyMs: finishedAt - evaluatedAt,
+        totalMs: finishedAt - startedAt,
+      });
+    }
   }
 }
+
+const HIDDEN_VISUALS: ExplainerVisualToggles = {
+  cameras: false,
+  cloud: false,
+  comparison: false,
+  counters: false,
+  demo: false,
+  densify: false,
+  ellipsoids: false,
+  hero: false,
+  projection: false,
+};
 
 /**
  * Decodes to an ImageBitmap, which both the WebGPU and WebGL2 uploads accept,

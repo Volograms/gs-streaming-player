@@ -31,6 +31,7 @@ async function harness(
   const qualityUpdates = vi.spyOn(BufferAwareQualityController.prototype, "update");
   let fetchDelay = 10;
   let renderFps = 90;
+  let preparationDelay = 1;
   let presentationDelay = 0;
   let lastDecision: QualityDecision | undefined;
   const decisions: number[] = [];
@@ -47,7 +48,7 @@ async function harness(
     dispose: () => undefined,
     canPrepareCompressedFrame: () => true,
     prepareFrame: async (sequenceId, source, options) => {
-      await new Promise<void>((resolve) => setTimeout(resolve, 1));
+      await new Promise<void>((resolve) => setTimeout(resolve, preparationDelay));
       const frame: PreparedFrame = {
         estimatedMemoryBytes: (source.byteSize ?? 0) * 8,
         sequenceId,
@@ -157,8 +158,14 @@ async function harness(
     get preparedCount() {
       return prepared.size;
     },
+    get preparedFrames() {
+      return [...prepared];
+    },
     setPresentationDelay: (delay: number) => {
       presentationDelay = delay;
+    },
+    setPreparationDelay: (delay: number) => {
+      preparationDelay = delay;
     },
     setFetchDelay: (delay: number) => {
       fetchDelay = delay;
@@ -177,6 +184,9 @@ describe("GaussianStreamingPlayer automatic quality", () => {
     expect(snapshot.isPlaying).toBe(false);
     expect(snapshot.currentTimeSeconds).toBe(0);
     expect(result.presented.at(-1)).toBe(0.5);
+    expect(
+      result.qualityUpdates.mock.calls.at(-1)?.[2].presentedDynamicDetailLevel,
+    ).toBe(0.5);
     expect(snapshot.decodedFrameCount).toBeGreaterThanOrEqual(150);
     expect(snapshot.bufferDiagnostics?.decodedAheadSeconds).toBeGreaterThanOrEqual(5);
     expect(snapshot.bufferDiagnostics?.compressedResidentBytes).toBeGreaterThan(
@@ -208,6 +218,40 @@ describe("GaussianStreamingPlayer automatic quality", () => {
     expect(result.player.snapshot.error).toBeUndefined();
     result.player.dispose();
     expect(result.preparedCount).toBe(0);
+  });
+
+  it("appends automatic upgrades behind a full decoded window without dropping its reserve", async () => {
+    const result = await harness(30);
+    result.player.setQualityMode({ mode: "manual", detailLevel: 0.25 });
+    await vi.advanceTimersByTimeAsync(1_000);
+    await result.player.play();
+    await vi.advanceTimersByTimeAsync(100);
+    const before = result.player.snapshot;
+    const retained = result.preparedFrames;
+    const oldTail = Math.max(...retained.map((frame) => frame.frameIndex));
+    const presentationCount = result.presented.length;
+    expect(before.bufferDiagnostics?.decodedAheadSeconds).toBeGreaterThanOrEqual(5);
+    result.player.setQualityMode({ mode: "automatic" });
+    expect(result.lastDetail).toBe(1);
+    expect(result.player.snapshot.decodedFrameCount).toBe(before.decodedFrameCount);
+    expect(result.player.snapshot.decodedTimeRanges).toEqual(before.decodedTimeRanges);
+    for (const frame of retained) expect(result.preparedFrames).toContain(frame);
+    await vi.advanceTimersByTimeAsync(1_000);
+    const higher = result.preparedFrames.filter(
+      (frame) => frame.transferQuality!.detailLevel === 1,
+    );
+    expect(higher.length).toBeGreaterThan(0);
+    expect(higher.every((frame) => frame.frameIndex > oldTail)).toBe(true);
+    expect(
+      result.presented.slice(presentationCount).every((detail) => detail === 0.25),
+    ).toBe(true);
+    expect(
+      result.player.snapshot.bufferDiagnostics?.decodedAheadSeconds,
+    ).toBeGreaterThan(4.9);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(result.presented.slice(presentationCount)).toContain(1);
+    expect(result.player.snapshot.droppedFrameCount).toBe(0);
+    expect(result.player.snapshot.error).toBeUndefined();
   });
 
   it("fits the decoded window to its own memory budget and fills a larger compressed reserve", async () => {
@@ -292,6 +336,24 @@ describe("GaussianStreamingPlayer automatic quality", () => {
     expect(result.player.snapshot.error).toBeUndefined();
   });
 
+  it("recovers from Preview when fixed preparation overhead understates the next tier's capacity", async () => {
+    const result = await harness(30, [0.1, 0.1, 0.2, 0.33], undefined, {
+      loop: true,
+    });
+    result.setPreparationDelay(50);
+    result.setRenderFps(15);
+    await result.player.play();
+    await vi.advanceTimersByTimeAsync(12_000);
+    expect(result.lastDetail).toBe(0.1);
+    result.setRenderFps(60);
+    const beforeRecovery = result.presented.length;
+    await vi.advanceTimersByTimeAsync(12_000);
+    expect(result.presented.slice(beforeRecovery)).toContain(0.2);
+    expect(result.lastDetail).toBeGreaterThanOrEqual(0.2);
+    expect(result.player.snapshot.isPlaying).toBe(true);
+    expect(result.player.snapshot.error).toBeUndefined();
+  });
+
   it.each([404, 410])(
     "uses the highest available tier when full assets return %i, without retrying them every frame",
     async (status) => {
@@ -299,7 +361,6 @@ describe("GaussianStreamingPlayer automatic quality", () => {
       await result.player.play();
       await vi.advanceTimersByTimeAsync(6_000);
       expect(result.lastDetail).toBe(0.5);
-      expect(result.presented.slice(-10)).toEqual(Array(10).fill(0.5));
       expect(result.player.snapshot.error).toBeUndefined();
       expect(result.player.snapshot.droppedFrameCount).toBe(0);
       const fullRequests = () =>
@@ -311,6 +372,8 @@ describe("GaussianStreamingPlayer automatic quality", () => {
       await vi.advanceTimersByTimeAsync(3_000);
       expect(fullRequests()).toBe(attempts);
       expect(result.lastDetail).toBe(0.5);
+      // The higher tier appears after the preserved startup window is consumed.
+      expect(result.presented.slice(-10)).toEqual(Array(10).fill(0.5));
     },
   );
 

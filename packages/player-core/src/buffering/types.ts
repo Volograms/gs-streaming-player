@@ -21,6 +21,8 @@ export interface BufferedFrame {
   requestedBytes: number;
   status: BufferedFrameStatus;
   targetQualityLevel: number;
+  /** Authored detail of this resident/requested payload, independent of policy target. */
+  transferDetailLevel?: number;
   timestampSeconds: number;
 }
 

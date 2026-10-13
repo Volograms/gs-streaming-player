@@ -30,10 +30,26 @@ half a second of downloaded data suffice to begin observing headroom. Five secon
 reserve target, not an upgrade gate. Downloaded reserve loss, sustained presentation
 loss, or sustained rendering below the source frame rate can reduce quality even on a
 fast connection. Buffer starvation and an unaffordable current tier cause prompt
-downgrades. A brief Play/resume transition with an already healthy reserve does not
-force a downgrade. Isolated dropped frames do not continually reset upgrade progress;
-more than 5% loss over the last second signals pressure, with one late frame tolerated.
-Repeated synchronous callbacks do not earn an upgrade.
+downgrades by one available authored tier at a time, including when the decoded reserve
+is empty. Further downgrades wait at least two seconds for recovery. Fixed-tier
+preparation keeps at least two slots active during starvation; it does not halve decode
+capacity just because the reserve is low. A brief Play/resume transition with an already
+healthy reserve does not force a downgrade. Isolated dropped frames do not continually
+reset upgrade progress; more than 5% loss over the last second signals pressure, with
+one late frame tolerated. Brief render-FPS dips also leave upgrade progress intact;
+rendering below the source rate for 750 ms signals sustained pressure. Repeated
+synchronous callbacks do not earn an upgrade.
+
+If conservative speed estimates keep Auto at Preview or another low tier, a recovery
+probe can try the next available tier. It requires five seconds of stable or growing
+decoded reserve, at least one second decoded and two seconds downloaded (bounded by the
+configured window), and no sustained rendering or presentation pressure. The selected
+tier must have reached the screen before that observation starts. This also allows
+recovery when cached playback has no fresh network samples. The candidate must still
+have byte-size metadata and fit the compressed memory budget. After a probe, further
+upgrades wait at least ten seconds, so a failed attempt cannot immediately bounce back
+up. Downgrades remain active throughout; longer configured `upgradeDelayMs` values also
+extend the recovery observation period.
 
 While paused, Auto prepares the highest available authored tier without a presentation
 deadline, including replacing the displayed lower-quality frame. Missing tiers fall back
@@ -49,9 +65,9 @@ allowance after two seconds without growth. Fixed tiers that already meet their 
 target become ready immediately, without waiting for other base downloads or refinement.
 
 During playback, higher tiers without byte-size metadata are not automatically selected.
-Without fresh network evidence, the policy holds its tier unless playback pressure
-requires a lower one. Explicit manual selection remains available. Progressive content
-without an authored fixed-tier ladder retains the existing progressive policy.
+Without fresh network evidence, upgrades use the guarded one-tier recovery probe above.
+Explicit manual selection remains available. Progressive content without an authored
+fixed-tier ladder retains the existing progressive policy.
 
 Missing fixed-tier assets (HTTP 404/410) remove that tier from the session's available
 ladder. Fetching and preparation continue at an available tier above the manifest floor;
@@ -61,14 +77,25 @@ errors remain distinguishable from an absent quality tier.
 
 ## Switching without discarding the reserve
 
-Automatic changes retain up to one second of nearby prepared frames for continuous
-playback and rebuild farther-ahead frames at the new tier. A retained frame is replaced
-after its next presentation and safe handoff, or when it leaves the rolling window. The
-window may therefore contain mixed tiers briefly. This also allows a short clip entirely
-resident in the ring to adopt a new tier on its next loop. Manual selection retains its
-explicit replacement behavior. Paused Auto and manual changes refresh the current image
-at the same media position, keeping the previous image visible until replacement is
-ready.
+Automatic quality changes keep all already prepared frames within the rolling memory
+budget. Upgrades also finish work already queued for the decoded window. The higher tier
+is prepared for new frames entering at the window's tail as playback consumes the
+existing reserve; an upgrade does not clear or rebuild that reserve. With five seconds
+already buffered, the higher quality therefore reaches the screen about five seconds
+later. Downgrades retain prepared frames but replace pending work at the lower tier.
+
+Prefetch and memory estimates account for the retained payloads at their original tier.
+Larger new frames wait for room as old frames are consumed, and the old image's safe
+handoff does not evict an unplayed decoded frame merely to match a shorter future
+window. Render-FPS and dropped-frame pressure from retained frames cannot trigger a
+downgrade of a selected tier that has not reached the screen yet. Download and
+decoded-reserve pressure still apply during that transition. A retained frame is
+replaced after its next presentation and safe handoff, or when it leaves the rolling
+window. The window may therefore contain mixed tiers while the old reserve drains. This
+also allows a short clip entirely resident in the ring to adopt a new tier on its next
+loop. Manual selection retains its explicit replacement behavior. Paused Auto and manual
+changes refresh the current image at the same media position, keeping the previous image
+visible until replacement is ready.
 
 ## Throughput evidence
 
@@ -95,6 +122,10 @@ through `GaussianStreamingPlayer.create({ qualityController, ... })`. The defaul
 also accepts `buffer.targetBufferSeconds`, `buffer.compressedBufferMaximumBytes` and
 `buffer.decodedBufferMaximumBytes`; include monotonic `PlayerMetrics.timestampMs` when
 driving the controller directly.
+
+Supply `PlayerMetrics.presentedDynamicDetailLevel` when the displayed authored tier can
+lag behind a decision. The facade reads it from the active buffered frame;
+`BufferedFrame.transferDetailLevel` records that payload's authored detail.
 
 The low-level ring's
 `setPresentationQualityTarget(target, { preservePreparedFrames: true })` enables the

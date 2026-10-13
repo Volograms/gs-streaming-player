@@ -20,6 +20,8 @@ export interface PlayerMetrics {
   estimatedBaseFrameBytes?: number;
   /** Measured active decoder/renderer preparation capacity, including configured concurrency. */
   estimatedPreparationBytesPerSecond?: number;
+  /** Actual displayed transfer tier; a downgrade may still be draining a higher-tier reserve. */
+  presentedDynamicDetailLevel?: number;
   renderFramesPerSecond?: number;
   stallDurationSeconds: number;
   targetFramesPerSecond?: number;

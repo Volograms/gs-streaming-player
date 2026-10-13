@@ -7,12 +7,30 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Apply automatic upgrades to new frames entering at the decoded window's tail,
+  retaining the existing decoded reserve and queued work. Keep memory accounting and
+  compressed prefetch aligned with those retained tiers, preserve unplayed frames
+  through safe handoff, and judge rendering cost after the new tier reaches the screen.
+
+- Let Auto recover from Preview with a guarded one-tier retry after sustained buffer
+  recovery, including when low-tier speed estimates are conservative or network samples
+  have expired. Tolerate brief render-FPS dips during upgrade observation, respect
+  missing tiers and memory limits, and space retries to avoid rapid quality oscillation.
+
+- Step automatic quality down one available authored tier at a time with a two-second
+  recovery window. Preserve the decoded reserve on downgrades, keep fixed-tier
+  preparation concurrency from collapsing under buffer pressure, and distinguish the
+  displayed tier from the requested tier before attributing rendering overload. Add 6G
+  explainer Live/Frozen/Hidden comparisons, an asset-free baseline, and CPU/GPU,
+  pipeline, and decoded-reserve diagnostics behind the debug option.
+
 - Build a five-second decoded reserve instead of stopping at ten future frames, with a
   separate configurable 500 MB estimated decoded CPU/GPU budget. Show reserve seconds
   and memory usage alongside the downloaded and decoded timeline lanes. Auto upgrades
   while filling, accounts for measured preparation capacity, tolerates isolated late
-  frames, and rebuilds farther-ahead frames at the new quality. Paused Auto loads the
-  best available tier and refreshes the displayed frame without moving media time.
+  frames, and appends higher-quality frames as playback consumes the reserve. Paused
+  Auto loads the best available tier and refreshes the displayed frame without moving
+  media time.
 
 - Show downloaded and decoded-ready timeline ranges separately in both showcases and XR
   controls, with a visible ready-frame count. Report Auto's selected authored tier and

@@ -137,8 +137,10 @@ renderer-wide splat count, which may include static content. Its tooltip shows t
 latest automatic-policy download/decoded reserve and throughput evidence, plus renderer
 FPS, frame handoff time, lifecycle, and dropped frames. Optional `qualityDiagnostics` in
 player snapshots supplies the latest policy inputs; these refresh with automatic quality
-observations, not on every UI read. Existing prepared frames can briefly remain at an
-older tier during an automatic switch.
+observations, not on every UI read. Existing prepared frames remain at an older tier
+until the buffered window drains; upgraded frames are appended at its tail.
+`qualityDiagnostics.presentedDynamicDetailLevel` reports the displayed payload's
+authored detail separately from the requested `dynamicFrameDetailLevel`.
 
 Optional `presentationTiming` separates playback-clock deadline lateness, wall-clock
 timer lateness, the full presentation pipeline, and synchronous snapshot listeners. It

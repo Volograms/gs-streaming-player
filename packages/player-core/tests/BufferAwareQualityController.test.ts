@@ -173,18 +173,18 @@ describe("BufferAwareQualityController", () => {
       ).toBe(1);
     });
 
-    it("uses candidate bytes, immediately downgrades a slow link, then selects the highest sustainable tier", () => {
+    it("tries the next tier on a slow link, then selects the highest sustainable tier", () => {
       const policy = controller();
       for (let now = 0; now <= 5_000; now += 250)
         policy.update(playing, network, observation(now));
       const slow = { ...network, estimatedThroughputBps: 250_000_000 };
       expect(
         policy.update(playing, slow, observation(5_250)).dynamicFrameDetailLevel,
-      ).toBe(0.25);
+      ).toBe(0.5);
       for (let now = 5_500; now < 7_500; now += 250) {
         expect(
           policy.update(playing, network, observation(now)).dynamicFrameDetailLevel,
-        ).toBe(0.25);
+        ).toBe(0.5);
       }
       expect(
         policy.update(playing, network, observation(7_500)).dynamicFrameDetailLevel,
@@ -259,7 +259,137 @@ describe("BufferAwareQualityController", () => {
           network,
           observation(6_500),
         ).dynamicFrameDetailLevel,
+      ).toBe(0.5);
+      expect(
+        policy.update(
+          { ...playing, lifecycle: "BUFFERING", bufferAheadSeconds: 0 },
+          network,
+          observation(8_000),
+        ).dynamicFrameDetailLevel,
       ).toBe(0.25);
+    });
+
+    it("gives the next tier a recovery window without starving preparation slots", () => {
+      const policy = controller();
+      policy.update(
+        { ...playing, isPlaying: false, lifecycle: "PAUSED" },
+        network,
+        observation(0),
+      );
+      const starving = { ...playing, bufferAheadSeconds: 0 };
+      expect(policy.update(starving, network, observation(100))).toMatchObject({
+        dynamicFrameDetailLevel: 0.5,
+        maximumBasePreparationConcurrency: 2,
+      });
+      for (let now = 350; now < 2_100; now += 250) {
+        expect(
+          policy.update(starving, network, observation(now)).dynamicFrameDetailLevel,
+        ).toBe(0.5);
+      }
+      // Recovery at the intermediate tier must prevent a second downgrade.
+      expect(
+        policy.update(playing, network, observation(2_100)).dynamicFrameDetailLevel,
+      ).toBe(0.5);
+      // If it later starves again, take one further step, respecting the floor.
+      expect(
+        policy.update(starving, network, observation(2_350)).dynamicFrameDetailLevel,
+      ).toBe(0.25);
+      expect(
+        policy.update(starving, network, observation(5_000)).dynamicFrameDetailLevel,
+      ).toBe(0.25);
+    });
+
+    it("skips unavailable tiers when stepping down", () => {
+      const policy = controller();
+      const available = { ...observation(0), availableDynamicDetailLevels: [0.25, 1] };
+      policy.update(
+        { ...playing, isPlaying: false, lifecycle: "PAUSED" },
+        network,
+        available,
+      );
+      expect(
+        policy.update({ ...playing, bufferAheadSeconds: 0 }, network, {
+          ...available,
+          timestampMs: 100,
+        }).dynamicFrameDetailLevel,
+      ).toBe(0.25);
+    });
+
+    it("does not blame the new tier for drops while retained higher-tier frames are displayed", () => {
+      const policy = controller();
+      policy.update(
+        { ...playing, isPlaying: false, lifecycle: "PAUSED" },
+        network,
+        observation(0),
+      );
+      expect(
+        policy.update({ ...playing, bufferAheadSeconds: 0 }, network, {
+          ...observation(100),
+          presentedDynamicDetailLevel: 1,
+        }).dynamicFrameDetailLevel,
+      ).toBe(0.5);
+      for (let now = 350; now <= 5_100; now += 250) {
+        expect(
+          policy.update(playing, network, {
+            ...observation(now),
+            presentedDynamicDetailLevel: 1,
+            renderFramesPerSecond: 20,
+            droppedFrames: Math.floor(now / 50),
+          }).dynamicFrameDetailLevel,
+        ).toBe(0.5);
+      }
+      // Ignore the interval straddling the first displayed lower-tier frame. Its
+      // measured ratio may be slightly above the authored tier's minimum ratio.
+      expect(
+        policy.update(playing, network, {
+          ...observation(5_350),
+          presentedDynamicDetailLevel: 0.5002,
+          droppedFrames: 107,
+        }).dynamicFrameDetailLevel,
+      ).toBe(0.5);
+      // Sustained loss observed at the actual new tier can trigger another step.
+      expect(
+        policy.update(playing, network, {
+          ...observation(5_600),
+          presentedDynamicDetailLevel: 0.5002,
+          droppedFrames: 112,
+        }).dynamicFrameDetailLevel,
+      ).toBe(0.25);
+    });
+
+    it("waits for an appended higher tier to reach the screen before judging its render cost", () => {
+      const policy = controller();
+      for (let now = 0; now <= 2_000; now += 250)
+        policy.update(playing, network, {
+          ...observation(now),
+          presentedDynamicDetailLevel: 0.25,
+        });
+      for (let now = 2_250; now <= 7_500; now += 250) {
+        expect(
+          policy.update(playing, network, {
+            ...observation(now),
+            presentedDynamicDetailLevel: 0.2502,
+            renderFramesPerSecond: 20,
+            droppedFrames: Math.floor(now / 50),
+          }).dynamicFrameDetailLevel,
+        ).toBe(1);
+      }
+      expect(
+        policy.update(playing, network, {
+          ...observation(7_750),
+          presentedDynamicDetailLevel: 1,
+          renderFramesPerSecond: 20,
+          droppedFrames: 155,
+        }).dynamicFrameDetailLevel,
+      ).toBe(1);
+      expect(
+        policy.update(playing, network, {
+          ...observation(8_000),
+          presentedDynamicDetailLevel: 1,
+          renderFramesPerSecond: 20,
+          droppedFrames: 160,
+        }).dynamicFrameDetailLevel,
+      ).toBe(0.5);
     });
 
     it("upgrades despite isolated late frames, backs off for sustained loss, and recovers", () => {
@@ -299,6 +429,159 @@ describe("BufferAwareQualityController", () => {
       expect(decision?.dynamicFrameDetailLevel).toBe(0.5);
     });
 
+    it("does not restart upgrade observation for brief render-FPS dips", () => {
+      const policy = controller();
+      let decision;
+      for (let now = 0; now <= 2_500; now += 250) {
+        decision = policy.update(playing, network, {
+          ...observation(now),
+          renderFramesPerSecond: now % 1_000 === 0 ? 29 : 35,
+        });
+      }
+      expect(decision?.dynamicFrameDetailLevel).toBe(1);
+    });
+
+    describe("recovery probes", () => {
+      const recovered = { ...playing, bufferAheadSeconds: 1.5 };
+      const recoveryMetrics = (timestampMs: number) => ({
+        ...observation(timestampMs),
+        bufferCapacitySeconds: 5,
+        compressedBufferAheadSeconds: 5,
+        compressedBufferCapacityBytes: 200_000_000,
+        compressedBufferWindowSeconds: 60,
+        availableDynamicDetailLevels: [0.1, 0.2, 0.33],
+        // Preview meets this conservative prediction, but Minimum does not.
+        estimatedPreparationBytesPerSecond: 20_000_000,
+        presentedDynamicDetailLevel: 0.1,
+      });
+      function previewPolicy() {
+        const policy = new BufferAwareQualityController({
+          dynamicObjectId: "actor",
+          targetBufferSeconds: 5,
+          dynamicQualityLevels: [
+            { detailLevel: 0.1, estimatedFrameBytes: 400_000 },
+            { detailLevel: 0.2, estimatedFrameBytes: 750_000 },
+            { detailLevel: 0.33, estimatedFrameBytes: 1_200_000 },
+            { detailLevel: 1, estimatedFrameBytes: 1_800_000 },
+          ],
+        });
+        policy.update(
+          { ...recovered, isPlaying: false, lifecycle: "PAUSED" },
+          network,
+          recoveryMetrics(0),
+        );
+        const starving = { ...playing, bufferAheadSeconds: 0 };
+        expect(
+          policy.update(starving, network, recoveryMetrics(250))
+            .dynamicFrameDetailLevel,
+        ).toBe(0.2);
+        expect(
+          policy.update(starving, network, recoveryMetrics(2_250))
+            .dynamicFrameDetailLevel,
+        ).toBe(0.1);
+        return policy;
+      }
+
+      it.each(["conservative preparation", "expired network"])(
+        "retries Minimum after Preview recovers despite %s estimates",
+        (reason) => {
+          const policy = previewPolicy();
+          const measured =
+            reason === "expired network"
+              ? { ...network, estimatedThroughputBps: 0, confidence: 0 }
+              : network;
+          for (let now = 2_500; now < 7_500; now += 250) {
+            expect(
+              policy.update(recovered, measured, recoveryMetrics(now))
+                .dynamicFrameDetailLevel,
+            ).toBe(0.1);
+          }
+          expect(
+            policy.update(recovered, measured, recoveryMetrics(7_500))
+              .dynamicFrameDetailLevel,
+          ).toBe(0.2);
+        },
+      );
+
+      it("backs off a failed probe even when speed estimates immediately improve", () => {
+        const policy = previewPolicy();
+        for (let now = 2_500; now <= 7_500; now += 250)
+          policy.update(recovered, network, recoveryMetrics(now));
+        expect(
+          policy.update({ ...playing, bufferAheadSeconds: 0 }, network, {
+            ...recoveryMetrics(7_750),
+            presentedDynamicDetailLevel: 0.2,
+          }).dynamicFrameDetailLevel,
+        ).toBe(0.1);
+        for (let now = 8_000; now < 17_500; now += 250) {
+          expect(
+            policy.update(recovered, network, {
+              ...recoveryMetrics(now),
+              estimatedPreparationBytesPerSecond: 200_000_000,
+            }).dynamicFrameDetailLevel,
+          ).toBe(0.1);
+        }
+        expect(
+          policy.update(recovered, network, {
+            ...recoveryMetrics(17_500),
+            estimatedPreparationBytesPerSecond: 200_000_000,
+          }).dynamicFrameDetailLevel,
+        ).toBe(0.33);
+      });
+
+      it.each([
+        "thin reserve",
+        "draining reserve",
+        "render overload",
+        "presentation drops",
+        "retained higher tier",
+        "memory limit",
+      ])("does not probe through %s", (pressure) => {
+        const policy = previewPolicy();
+        for (let now = 2_500; now <= 15_000; now += 250) {
+          expect(
+            policy.update(
+              {
+                ...recovered,
+                bufferAheadSeconds:
+                  pressure === "thin reserve"
+                    ? 0.3
+                    : pressure === "draining reserve"
+                      ? 4 - (now - 2_500) / 5_000
+                      : 1.5,
+              },
+              network,
+              {
+                ...recoveryMetrics(now),
+                ...(pressure === "render overload" && { renderFramesPerSecond: 20 }),
+                ...(pressure === "presentation drops" && {
+                  droppedFrames: now / 50,
+                }),
+                ...(pressure === "retained higher tier" && {
+                  presentedDynamicDetailLevel: 0.33,
+                }),
+                ...(pressure === "memory limit" && {
+                  compressedBufferCapacityBytes: 100_000_000,
+                }),
+              },
+            ).dynamicFrameDetailLevel,
+          ).toBe(0.1);
+        }
+      });
+
+      it("skips missing tiers on recovery and still respects the memory budget", () => {
+        const policy = previewPolicy();
+        let decision;
+        for (let now = 2_500; now <= 7_500; now += 250) {
+          decision = policy.update(recovered, network, {
+            ...recoveryMetrics(now),
+            availableDynamicDetailLevels: [0.1, 0.33],
+          });
+        }
+        expect(decision?.dynamicFrameDetailLevel).toBe(0.33);
+      });
+    });
+
     it("fits a smaller configured window and holds tiers with unknown byte cost", () => {
       const policy = controller();
       let decision;
@@ -314,7 +597,11 @@ describe("BufferAwareQualityController", () => {
       });
       for (let now = 0; now <= 5_000; now += 250) {
         expect(
-          unknown.update(playing, network, observation(now)).dynamicFrameDetailLevel,
+          unknown.update(playing, network, {
+            ...observation(now),
+            compressedBufferAheadSeconds: 5,
+            compressedBufferCapacityBytes: 200_000_000,
+          }).dynamicFrameDetailLevel,
         ).toBe(0.25);
       }
     });

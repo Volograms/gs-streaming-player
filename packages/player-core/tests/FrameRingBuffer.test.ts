@@ -43,6 +43,26 @@ function createSequence(frameCount = 6): DynamicGaussianSequence {
   };
 }
 
+function createTieredSequence(
+  frameCount: number,
+  frameRate = 30,
+): DynamicGaussianSequence {
+  const sequence = createSequence(frameCount);
+  sequence.frameRate = frameRate;
+  sequence.frames = sequence.frames.map((frame) => ({
+    ...frame,
+    timestampSeconds: frame.frameIndex / frameRate,
+    qualityLevels: [0.25, 1].map((detailLevel, level) => ({
+      byteSize: level === 0 ? 20 : 30,
+      detailLevel,
+      level,
+      minimumPlayable: level === 0,
+      url: `/frame-${frame.frameIndex}-${detailLevel}.sog`,
+    })),
+  }));
+  return sequence;
+}
+
 function createRendererHarness({ automaticQuality = true } = {}) {
   const preparations = new Map<number, Deferred<PreparedFrame>>();
   const presentationQualities = new Map<number, FramePresentationQuality>();
@@ -698,6 +718,201 @@ describe("FrameRingBuffer", () => {
       buffer.dispose();
     },
   );
+
+  it.each([
+    [0.25, 1],
+    [1, 0.25],
+  ])(
+    "keeps the entire decoded reserve from %s to %s and replenishes at the tail",
+    async (initialDetail, nextDetail) => {
+      const harness = createRendererHarness();
+      const sequence = createTieredSequence(8, 2);
+      for (let index = 0; index < 8; index++)
+        harness.presentationQualities.set(index, {
+          detailLevel: initialDetail,
+          selectedSplatCount: 1_000,
+          state: "presentable",
+        });
+      const buffer = new FrameRingBuffer({
+        futureFrameCount: 6,
+        previousFrameCount: 0,
+        presentationQualityTarget: { detailLevel: initialDetail, minimumSplatCount: 2 },
+        renderer: harness.renderer,
+        sequence,
+      });
+      const initialising = buffer.initialise(0);
+      harness.resolve(0);
+      await initialising;
+      const reserve = [];
+      for (let index = 1; index <= 6; index++) {
+        await vi.waitFor(() => expect(harness.preparations.has(index)).toBe(true));
+        reserve.push(harness.resolve(index));
+      }
+      await buffer.whenBuffered();
+      buffer.setPresentationQualityTarget(
+        { detailLevel: nextDetail, minimumSplatCount: 2 },
+        { preservePreparedFrames: true },
+      );
+      expect(harness.releaseFrame).not.toHaveBeenCalled();
+      for (let index = 1; index <= 6; index++)
+        expect(buffer.isPresentationReady(index)).toBe(true);
+      await expect(buffer.present(1)).resolves.toBe(reserve[0]);
+      for (const frame of reserve)
+        expect(harness.releaseFrame).not.toHaveBeenCalledWith(frame);
+      expect(harness.prepareFrame).toHaveBeenLastCalledWith(
+        "actor",
+        expect.objectContaining({ frameIndex: 7, url: `/frame-7-${nextDetail}.sog` }),
+        expect.anything(),
+      );
+      buffer.dispose();
+    },
+  );
+
+  it("finishes queued and in-flight lower-tier work before adding upgraded frames at the tail", async () => {
+    const harness = createRendererHarness();
+    for (let index = 0; index <= 4; index++)
+      harness.presentationQualities.set(index, {
+        detailLevel: 0.25,
+        selectedSplatCount: 1_000,
+        state: "presentable",
+      });
+    const buffer = new FrameRingBuffer({
+      futureFrameCount: 4,
+      previousFrameCount: 0,
+      maximumBasePreparationConcurrency: 1,
+      presentationQualityTarget: { detailLevel: 0.25, minimumSplatCount: 2 },
+      renderer: harness.renderer,
+      sequence: createTieredSequence(6, 1),
+    });
+    const initialising = buffer.initialise(0);
+    harness.resolve(0);
+    await initialising;
+    await vi.waitFor(() => expect(harness.preparations.has(1)).toBe(true));
+    const inFlight = harness.prepareFrame.mock.calls.at(-1)![2].signal;
+    expect(buffer.snapshot.queuedBasePreparationCount).toBe(3);
+    buffer.setPresentationQualityTarget(
+      { detailLevel: 1, minimumSplatCount: 2 },
+      { preservePreparedFrames: true },
+    );
+    expect(inFlight?.aborted).toBe(false);
+    for (let index = 1; index <= 4; index++) {
+      await vi.waitFor(() => expect(harness.preparations.has(index)).toBe(true));
+      harness.resolve(index);
+    }
+    await buffer.whenBuffered();
+    expect(harness.prepareFrame).toHaveBeenCalledTimes(5);
+    expect(
+      buffer.snapshot.frames.every((frame) => frame.transferDetailLevel === 0.25),
+    ).toBe(true);
+    for (let index = 1; index <= 4; index++)
+      expect(buffer.isPresentationReady(index)).toBe(true);
+    await buffer.present(1);
+    expect(harness.prepareFrame).toHaveBeenLastCalledWith(
+      "actor",
+      expect.objectContaining({ frameIndex: 5, url: "/frame-5-1.sog" }),
+      expect.anything(),
+    );
+    buffer.dispose();
+  });
+
+  it("falls back when a retained lower-tier download goes missing during an upgrade", async () => {
+    const harness = createRendererHarness();
+    harness.renderer.canPrepareCompressedFrame = () => true;
+    harness.presentationQualities.set(0, {
+      detailLevel: 0.25,
+      selectedSplatCount: 1_000,
+      state: "presentable",
+    });
+    const missing = deferred<Response>();
+    const fetch = vi.fn(async (input: RequestInfo | URL) =>
+      String(input) === "/frame-1-0.25.sog"
+        ? missing.promise
+        : new Response(new Uint8Array(4)),
+    );
+    const sequence = createTieredSequence(2);
+    sequence.frames = sequence.frames.map((frame) => ({ ...frame, codec: "sog" }));
+    const buffer = new FrameRingBuffer({
+      compressedBufferMaximumBytes: 100,
+      compressedFrameFetch: fetch,
+      futureFrameCount: 1,
+      previousFrameCount: 0,
+      presentationQualityTarget: { detailLevel: 0.25, minimumSplatCount: 2 },
+      renderer: harness.renderer,
+      sequence,
+    });
+    const initialising = buffer.initialise(0);
+    await vi.waitFor(() => expect(harness.preparations.has(0)).toBe(true));
+    const current = harness.resolve(0);
+    await initialising;
+    const waiting = buffer.whenBuffered();
+    buffer.setPresentationQualityTarget(
+      { detailLevel: 1, minimumSplatCount: 2 },
+      { preservePreparedFrames: true },
+    );
+    missing.resolve(new Response(null, { status: 404 }));
+    await vi.waitFor(() => expect(harness.preparations.has(1)).toBe(true));
+    expect(harness.prepareFrame).toHaveBeenLastCalledWith(
+      "actor",
+      expect.objectContaining({ frameIndex: 1, url: "/frame-1-1.sog" }),
+      expect.anything(),
+    );
+    harness.resolve(1);
+    await expect(waiting).resolves.toBeUndefined();
+    expect(buffer.snapshot.unavailableQualityLevels).toContain(0);
+    expect(harness.releaseFrame).not.toHaveBeenCalledWith(current);
+    buffer.dispose();
+  });
+
+  it("waits for space to append larger tiers without evicting unplayed decoded frames", async () => {
+    const harness = createRendererHarness();
+    for (let index = 0; index <= 6; index++)
+      harness.presentationQualities.set(index, {
+        detailLevel: 0.25,
+        selectedSplatCount: 1_000,
+        state: "presentable",
+      });
+    const budget = 7 * 20 * 8;
+    const buffer = new FrameRingBuffer({
+      decodedBufferMaximumBytes: budget,
+      futureFrameCount: 6,
+      previousFrameCount: 0,
+      presentationQualityTarget: { detailLevel: 0.25, minimumSplatCount: 2 },
+      renderer: harness.renderer,
+      sequence: createTieredSequence(9, 2),
+    });
+    const initialising = buffer.initialise(0);
+    harness.resolve(0);
+    await initialising;
+    const reserve = [];
+    for (let index = 1; index <= 6; index++) {
+      await vi.waitFor(() => expect(harness.preparations.has(index)).toBe(true));
+      reserve.push(harness.resolve(index));
+    }
+    await buffer.whenBuffered();
+    buffer.setPresentationQualityTarget(
+      { detailLevel: 1, minimumSplatCount: 2 },
+      { preservePreparedFrames: true },
+    );
+    expect(harness.releaseFrame).not.toHaveBeenCalled();
+    expect(buffer.snapshot.futureFrameCount).toBe(6);
+    await buffer.present(1);
+    expect(harness.preparations.has(7)).toBe(false);
+    for (const frame of reserve)
+      expect(harness.releaseFrame).not.toHaveBeenCalledWith(frame);
+    await buffer.present(2);
+    await vi.waitFor(() => expect(harness.preparations.has(7)).toBe(true));
+    expect(harness.prepareFrame).toHaveBeenLastCalledWith(
+      "actor",
+      expect.objectContaining({ frameIndex: 7, url: "/frame-7-1.sog" }),
+      expect.anything(),
+    );
+    harness.resolve(7);
+    await buffer.whenBuffered();
+    expect(buffer.snapshot.decodedResidentBytes).toBeLessThanOrEqual(budget);
+    for (const frame of reserve.slice(2))
+      expect(harness.releaseFrame).not.toHaveBeenCalledWith(frame);
+    buffer.dispose();
+  });
 
   it("replaces the formerly presented tier after a safe handoff", async () => {
     const harness = createRendererHarness();

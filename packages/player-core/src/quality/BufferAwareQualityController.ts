@@ -30,6 +30,11 @@ const tierRank: Record<BufferQualityTier, number> = {
   high: 3,
 };
 
+// A new transfer tier needs time to replace in-flight work and prove its cadence.
+const AUTHORED_DOWNGRADE_RECOVERY_MS = 2_000;
+const AUTHORED_RECOVERY_PROBE_DELAY_MS = 5_000;
+const AUTHORED_RECOVERY_PROBE_COOLDOWN_MS = 10_000;
+
 const tierConfiguration: Record<
   BufferQualityTier,
   {
@@ -81,6 +86,12 @@ export class BufferAwareQualityController implements QualityController {
   private compressedReserveWarmupPeak = 0;
   private compressedReserveGrowthAt = -Infinity;
   private upgradeStartedAt: number | undefined;
+  private recoveryStartedAt: number | undefined;
+  private recoveryObservationCount = 0;
+  private recoveryBufferPeak = 0;
+  private upgradeNotBefore = -Infinity;
+  private lastDowngradeAt = -Infinity;
+  private renderEvidenceDetailLevel: number | undefined;
   private lastObservationAt = -Infinity;
   private lastSwitchAt = -Infinity;
   private renderPressureStartedAt: number | undefined;
@@ -200,7 +211,12 @@ export class BufferAwareQualityController implements QualityController {
         this.configuration.minimumDynamicDetailLevel,
       ),
       dynamicObjectWeights: { [this.configuration.dynamicObjectId]: 1 },
-      maximumBasePreparationConcurrency: tier.baseConcurrency,
+      // Empty reserves need replenishment. Fixed tiers reduce per-frame work by
+      // selecting smaller assets; also halving their decode slots delays recovery.
+      maximumBasePreparationConcurrency:
+        this.levels === undefined
+          ? tier.baseConcurrency
+          : Math.max(2, tier.baseConcurrency),
       maximumRefinementBytes: Number.POSITIVE_INFINITY,
       maximumRefinementConcurrency: tier.refinementConcurrency,
       minimumDynamicSplatCount: this.configuration.minimumSplatCount,
@@ -225,8 +241,12 @@ export class BufferAwareQualityController implements QualityController {
       (playback.lifecycle !== "PLAYING" && playback.lifecycle !== "BUFFERING")
     ) {
       this.resetUpgrade();
+      this.resetRecovery();
+      this.upgradeNotBefore = -Infinity;
       this.renderPressureStartedAt = undefined;
       this.recentDrops = [];
+      this.lastDowngradeAt = -Infinity;
+      this.renderEvidenceDetailLevel = undefined;
       if (
         playback.lifecycle === "READY" ||
         playback.lifecycle === "PAUSED" ||
@@ -255,8 +275,28 @@ export class BufferAwareQualityController implements QualityController {
     const isAvailable = (index: number) =>
       available.some((candidate) => candidate.index === index);
     const fps = metrics.targetFramesPerSecond ?? 30;
+    // Ladder entries use each authored tier's minimum ratio across the sequence;
+    // per-frame measured ratios can be slightly higher within that same tier.
+    const renderingSelectedTier =
+      metrics.presentedDynamicDetailLevel === undefined ||
+      metrics.presentedDynamicDetailLevel <
+        (levels[this.levelIndex + 1]?.detailLevel ?? Infinity);
+    const displayingSelectedTier =
+      renderingSelectedTier &&
+      (metrics.presentedDynamicDetailLevel ?? levels[this.levelIndex]!.detailLevel) >=
+        levels[this.levelIndex]!.detailLevel;
+    const continuousRenderEvidence =
+      displayingSelectedTier &&
+      this.renderEvidenceDetailLevel === levels[this.levelIndex]!.detailLevel;
+    this.renderEvidenceDetailLevel = displayingSelectedTier
+      ? levels[this.levelIndex]!.detailLevel
+      : undefined;
+    // Retained frames can be from either side of a switch. Their rendering cost
+    // does not measure the selected tier until it has reached the screen.
+    if (!continuousRenderEvidence) this.recentDrops = [];
     this.recentDrops = this.recentDrops.filter(({ at }) => now - at < 1_000);
-    if (dropped > 0) this.recentDrops.push({ at: now, count: dropped });
+    if (dropped > 0 && continuousRenderEvidence)
+      this.recentDrops.push({ at: now, count: dropped });
     // An isolated late frame is not evidence that a higher transfer tier cannot
     // decode in time. React to sustained loss, while retaining the readiness gate.
     const dropPressure =
@@ -285,6 +325,16 @@ export class BufferAwareQualityController implements QualityController {
       metrics.compressedBufferAheadSeconds === undefined || compressedTarget <= 0
         ? 1
         : metrics.compressedBufferAheadSeconds / compressedTarget;
+    const fitsCompressedBudget = (level: DynamicQualityLevel) =>
+      level.estimatedFrameBytes !== undefined &&
+      (metrics.compressedBufferCapacityBytes === undefined ||
+        // Include the current payload as well as the future reserve.
+        level.estimatedFrameBytes *
+          Math.min(
+            Math.ceil(compressedTarget * fps) + 1,
+            Math.ceil((metrics.compressedBufferWindowSeconds ?? Infinity) * fps),
+          ) <=
+          metrics.compressedBufferCapacityBytes);
     if (compressedRatio >= 1) this.fillingCompressedReserveAfterUpgrade = false;
     else if (this.fillingCompressedReserveAfterUpgrade) {
       const reserve = metrics.compressedBufferAheadSeconds ?? 0;
@@ -300,27 +350,19 @@ export class BufferAwareQualityController implements QualityController {
       affordable = floorIndex;
       for (const { index, level } of available) {
         if (
-          level.estimatedFrameBytes === undefined ||
-          level.estimatedFrameBytes * fps * 8 > safeThroughput ||
+          !fitsCompressedBudget(level) ||
+          level.estimatedFrameBytes! * fps * 8 > safeThroughput ||
           (metrics.estimatedPreparationBytesPerSecond !== undefined &&
-            level.estimatedFrameBytes * fps >
+            level.estimatedFrameBytes! * fps >
               metrics.estimatedPreparationBytesPerSecond *
-                this.configuration.safetyFactor) ||
-          (metrics.compressedBufferCapacityBytes !== undefined &&
-            // Include the current payload as well as the future reserve.
-            level.estimatedFrameBytes *
-              Math.min(
-                Math.ceil(compressedTarget * fps) + 1,
-                Math.ceil((metrics.compressedBufferWindowSeconds ?? Infinity) * fps),
-              ) >
-              metrics.compressedBufferCapacityBytes)
+                this.configuration.safetyFactor)
         )
           break;
         affordable = index;
       }
     }
     const renderSlow = (metrics.renderFramesPerSecond ?? fps) < fps;
-    if (renderSlow) this.renderPressureStartedAt ??= now;
+    if (renderSlow && displayingSelectedTier) this.renderPressureStartedAt ??= now;
     else this.renderPressureStartedAt = undefined;
     const renderPressure =
       dropPressure ||
@@ -330,25 +372,62 @@ export class BufferAwareQualityController implements QualityController {
       playback.bufferAheadSeconds < startupReserve / 2 ||
       (playback.lifecycle === "BUFFERING" &&
         playback.bufferAheadSeconds < playback.minimumReadyFrames / fps);
-    let nextIndex = this.levelIndex;
-    if (!isAvailable(nextIndex)) nextIndex = affordable;
-    else if (critical) nextIndex = floorIndex;
-    else if (
+    const deliveryPressure =
       measuredNetwork &&
-      affordable < nextIndex &&
+      affordable < this.levelIndex &&
       (metrics.compressedBufferAheadSeconds === undefined ||
         decodedPressure ||
-        (!this.fillingCompressedReserveAfterUpgrade && compressedRatio < 0.9))
-    )
-      nextIndex = affordable;
+        (!this.fillingCompressedReserveAfterUpgrade && compressedRatio < 0.9));
+    const reserveOrRenderPressure =
+      decodedPressure ||
+      ((metrics.compressedBufferAheadSeconds ?? Infinity) <
+        Math.min(0.5, compressedTarget) &&
+        !this.fillingCompressedReserveAfterUpgrade) ||
+      renderPressure;
+    const nextHigher = available.find(({ index }) => index > this.levelIndex);
+    // Small-tier delivery and preparation samples need not predict the next tier
+    // accurately. A stable reserve lets us try it instead of remaining at the floor
+    // forever. Require the selected tier on screen, not retained transition frames.
+    const canObserveRecovery =
+      playback.lifecycle === "PLAYING" &&
+      !critical &&
+      !renderPressure &&
+      displayingSelectedTier &&
+      playback.bufferAheadSeconds >= Math.min(1, target) &&
+      metrics.compressedBufferAheadSeconds !== undefined &&
+      metrics.compressedBufferAheadSeconds >= Math.min(2, compressedTarget) &&
+      nextHigher !== undefined &&
+      fitsCompressedBudget(nextHigher.level);
+    if (
+      !canObserveRecovery ||
+      playback.bufferAheadSeconds < this.recoveryBufferPeak - 2 / fps
+    ) {
+      this.resetRecovery();
+    } else if (fresh) {
+      this.recoveryStartedAt ??= now;
+      this.recoveryObservationCount += 1;
+      this.recoveryBufferPeak = Math.max(
+        this.recoveryBufferPeak,
+        playback.bufferAheadSeconds,
+      );
+    }
+    const recoveryReady =
+      this.recoveryStartedAt !== undefined &&
+      now - this.recoveryStartedAt >=
+        Math.max(AUTHORED_RECOVERY_PROBE_DELAY_MS, this.configuration.upgradeDelayMs) &&
+      this.recoveryObservationCount >= this.configuration.upgradeObservationCount;
+    const recoveryProbe = affordable <= this.levelIndex && recoveryReady;
+    const upgradeIndex = recoveryProbe ? nextHigher!.index : affordable;
+    let nextIndex = this.levelIndex;
+    if (!isAvailable(nextIndex)) nextIndex = affordable;
     else if (
-      (decodedPressure ||
-        ((metrics.compressedBufferAheadSeconds ?? Infinity) <
-          Math.min(0.5, compressedTarget) &&
-          !this.fillingCompressedReserveAfterUpgrade) ||
-        renderPressure) &&
-      now - this.lastSwitchAt >= 1_000
+      now - this.lastDowngradeAt >= AUTHORED_DOWNGRADE_RECOVERY_MS &&
+      (critical ||
+        deliveryPressure ||
+        (reserveOrRenderPressure && now - this.lastSwitchAt >= 1_000))
     )
+      // Try the next available tier even on starvation, rather than skipping a
+      // sustainable intermediate tier because the old tier emptied the reserve.
       nextIndex -= 1;
     nextIndex =
       available.filter(({ index }) => index <= nextIndex).at(-1)?.index ?? floorIndex;
@@ -356,28 +435,33 @@ export class BufferAwareQualityController implements QualityController {
       this.levelIndex = nextIndex;
       this.fillingCompressedReserveAfterUpgrade = false;
       this.lastSwitchAt = now;
+      this.lastDowngradeAt = now;
       this.resetUpgrade();
+      this.resetRecovery();
     } else if (
       !critical &&
       playback.bufferAheadSeconds >= startupReserve &&
       (metrics.compressedBufferAheadSeconds ?? Infinity) >=
         Math.min(0.5, compressedTarget) &&
-      !renderSlow &&
-      !dropPressure &&
-      measuredNetwork &&
-      affordable > this.levelIndex
+      displayingSelectedTier &&
+      !renderPressure &&
+      ((measuredNetwork && affordable > this.levelIndex) || recoveryProbe)
     ) {
       if (fresh) {
         this.upgradeStartedAt ??= now;
         this.pendingUpgradeCount += 1;
       }
       if (
-        this.upgradeStartedAt !== undefined &&
-        now - this.upgradeStartedAt >= this.configuration.upgradeDelayMs &&
         now - this.lastSwitchAt >= this.configuration.upgradeDelayMs &&
-        this.pendingUpgradeCount >= this.configuration.upgradeObservationCount
+        now >= this.upgradeNotBefore &&
+        (recoveryProbe ||
+          (this.upgradeStartedAt !== undefined &&
+            now - this.upgradeStartedAt >= this.configuration.upgradeDelayMs &&
+            this.pendingUpgradeCount >= this.configuration.upgradeObservationCount))
       ) {
-        this.levelIndex = affordable;
+        this.levelIndex = upgradeIndex;
+        if (recoveryProbe)
+          this.upgradeNotBefore = now + AUTHORED_RECOVERY_PROBE_COOLDOWN_MS;
         // The new tier's bytes are initially cold. Keep filling its reserve while
         // throughput, decoded readiness and rendering still support playback.
         this.fillingCompressedReserveAfterUpgrade =
@@ -386,6 +470,7 @@ export class BufferAwareQualityController implements QualityController {
         this.compressedReserveGrowthAt = now;
         this.lastSwitchAt = now;
         this.resetUpgrade();
+        this.resetRecovery();
       }
     } else this.resetUpgrade();
     this.tierValue = critical
@@ -400,6 +485,12 @@ export class BufferAwareQualityController implements QualityController {
   private resetUpgrade(): void {
     this.pendingUpgradeCount = 0;
     this.upgradeStartedAt = undefined;
+  }
+
+  private resetRecovery(): void {
+    this.recoveryStartedAt = undefined;
+    this.recoveryObservationCount = 0;
+    this.recoveryBufferPeak = 0;
   }
 
   private selectTier(
