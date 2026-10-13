@@ -87,7 +87,9 @@ All notable changes to this project will be documented here. The project uses
   certificate. Enable threaded file I/O in the Linux image to reduce Windows bind-mount
   stalls and expose cross-origin resource timings for transfer diagnostics. Add an
   optional shared, bounded RAM cache with multiple nginx workers, disabled container
-  swap, cache-hit diagnostics and a prewarm command for multi-device runs.
+  swap, cache-hit diagnostics and a prewarm command for multi-device runs. Disable
+  per-request access logs on the frontend and cache origin while retaining warnings and
+  errors.
 
 - The 6G showcase explainer layer. The demo object stands large on the floor beside the
   presenter and is revealed, turned, dissolved and stepped through its training

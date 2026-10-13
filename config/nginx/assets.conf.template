@@ -1,0 +1,66 @@
+# Rendered by scripts/nginx-assets.ps1 or the official nginx Docker entrypoint.
+# HTTP/2 is deliberately not enabled.
+worker_processes ${ASSET_WORKERS};
+pid "${ASSET_PID}";
+error_log "${ASSET_ERROR_LOG}" warn;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include "${ASSET_MIME_TYPES}";
+    types {
+        application/octet-stream sog rad spz splat ply;
+        model/gltf-binary glb;
+        model/gltf+json gltf;
+    }
+    default_type application/octet-stream;
+
+    sendfile on;
+${ASSET_FILE_IO}
+    gzip off;
+    etag on;
+    keepalive_timeout 65;
+${ASSET_CACHE_CONFIG}
+
+    log_format assets '$remote_addr [$time_local] "$request" $status '
+                      '$body_bytes_sent $request_time $server_protocol';
+    # Avoid a log write for every streamed frame; warnings/errors remain enabled.
+    access_log off;
+
+    server {
+        listen ${ASSET_LISTEN};
+${ASSET_HTTP_LISTEN}
+        server_name localhost;
+        root "${ASSET_PUBLIC_ROOT}";
+        autoindex off;
+${ASSET_TLS}
+
+        # These assets use anonymous requests. Keep headers on 204, 206 and errors.
+        add_header Access-Control-Allow-Origin "*" always;
+        add_header Timing-Allow-Origin "*" always;
+        add_header X-Asset-Cache $upstream_cache_status always;
+        add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Range, If-Range, Content-Type" always;
+        add_header Access-Control-Expose-Headers "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, X-Asset-Cache" always;
+        # Revalidate on reload so regenerated datasets do not stay stale in browsers.
+        add_header Cache-Control "no-cache" always;
+
+        if ($request_method = OPTIONS) {
+            return 204;
+        }
+        if ($request_method !~ ^(GET|HEAD|OPTIONS)$) {
+            return 405;
+        }
+
+        location ~ (^|/)\. {
+            return 404;
+        }
+
+        location / {
+${ASSET_LOCATION_BODY}
+        }
+    }
+${ASSET_ORIGIN_SERVER}
+}
