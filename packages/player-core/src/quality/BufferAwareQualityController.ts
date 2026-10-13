@@ -77,6 +77,9 @@ export class BufferAwareQualityController implements QualityController {
   >;
   private readonly levels: readonly DynamicQualityLevel[] | undefined;
   private levelIndex = 0;
+  private fillingCompressedReserveAfterUpgrade = false;
+  private compressedReserveWarmupPeak = 0;
+  private compressedReserveGrowthAt = -Infinity;
   private upgradeStartedAt: number | undefined;
   private lastObservationAt = -Infinity;
   private lastSwitchAt = -Infinity;
@@ -225,6 +228,15 @@ export class BufferAwareQualityController implements QualityController {
       return;
     }
     const levels = this.levels!;
+    const available = levels
+      .map((level, index) => ({ level, index }))
+      .filter(
+        ({ level }) =>
+          metrics.availableDynamicDetailLevels?.includes(level.detailLevel) ?? true,
+      );
+    const floorIndex = available[0]?.index ?? 0;
+    const isAvailable = (index: number) =>
+      available.some((candidate) => candidate.index === index);
     const fps = metrics.targetFramesPerSecond ?? 30;
     const capacity = metrics.bufferCapacitySeconds;
     const target =
@@ -236,13 +248,39 @@ export class BufferAwareQualityController implements QualityController {
       network.estimatedThroughputBps > 0 && network.confidence !== 0;
     const safeThroughput =
       network.estimatedThroughputBps * this.configuration.safetyFactor;
-    let affordable = this.levelIndex;
+    const compressedTarget = Math.min(
+      this.configuration.targetBufferSeconds,
+      metrics.compressedBufferWindowSeconds ?? Infinity,
+    );
+    const compressedRatio =
+      metrics.compressedBufferAheadSeconds === undefined || compressedTarget <= 0
+        ? 1
+        : metrics.compressedBufferAheadSeconds / compressedTarget;
+    if (compressedRatio >= 1) this.fillingCompressedReserveAfterUpgrade = false;
+    else if (this.fillingCompressedReserveAfterUpgrade) {
+      const reserve = metrics.compressedBufferAheadSeconds ?? 0;
+      if (reserve > this.compressedReserveWarmupPeak + 1 / fps) {
+        this.compressedReserveWarmupPeak = reserve;
+        this.compressedReserveGrowthAt = now;
+      } else if (now - this.compressedReserveGrowthAt >= 2_000) {
+        this.fillingCompressedReserveAfterUpgrade = false;
+      }
+    }
+    let affordable = isAvailable(this.levelIndex) ? this.levelIndex : floorIndex;
     if (measuredNetwork) {
-      affordable = 0;
-      for (const [index, level] of levels.entries()) {
+      affordable = floorIndex;
+      for (const { index, level } of available) {
         if (
           level.estimatedFrameBytes === undefined ||
-          level.estimatedFrameBytes * fps * 8 > safeThroughput
+          level.estimatedFrameBytes * fps * 8 > safeThroughput ||
+          (metrics.compressedBufferCapacityBytes !== undefined &&
+            // Include the current payload as well as the future reserve.
+            level.estimatedFrameBytes *
+              Math.min(
+                Math.ceil(compressedTarget * fps) + 1,
+                Math.ceil((metrics.compressedBufferWindowSeconds ?? Infinity) * fps),
+              ) >
+              metrics.compressedBufferCapacityBytes)
         )
           break;
         affordable = index;
@@ -260,18 +298,34 @@ export class BufferAwareQualityController implements QualityController {
       (playback.lifecycle === "BUFFERING" &&
         playback.bufferAheadSeconds < playback.minimumReadyFrames / fps);
     let nextIndex = this.levelIndex;
-    if (critical) nextIndex = 0;
-    else if (measuredNetwork && affordable < nextIndex) nextIndex = affordable;
-    else if ((bufferRatio < 0.75 || renderPressure) && now - this.lastSwitchAt >= 1_000)
+    if (!isAvailable(nextIndex)) nextIndex = affordable;
+    else if (critical) nextIndex = floorIndex;
+    else if (
+      measuredNetwork &&
+      affordable < nextIndex &&
+      (metrics.compressedBufferAheadSeconds === undefined ||
+        bufferRatio < 0.75 ||
+        (!this.fillingCompressedReserveAfterUpgrade && compressedRatio < 0.9))
+    )
+      nextIndex = affordable;
+    else if (
+      (bufferRatio < 0.75 ||
+        (compressedRatio < 0.7 && !this.fillingCompressedReserveAfterUpgrade) ||
+        renderPressure) &&
+      now - this.lastSwitchAt >= 1_000
+    )
       nextIndex -= 1;
-    nextIndex = Math.max(0, nextIndex);
-    if (nextIndex < this.levelIndex) {
+    nextIndex =
+      available.filter(({ index }) => index <= nextIndex).at(-1)?.index ?? floorIndex;
+    if (!isAvailable(this.levelIndex) || nextIndex < this.levelIndex) {
       this.levelIndex = nextIndex;
+      this.fillingCompressedReserveAfterUpgrade = false;
       this.lastSwitchAt = now;
       this.resetUpgrade();
     } else if (
       !critical &&
       bufferRatio >= 1 &&
+      compressedRatio >= 1 &&
       !renderSlow &&
       !dropped &&
       measuredNetwork &&
@@ -287,7 +341,13 @@ export class BufferAwareQualityController implements QualityController {
         now - this.lastSwitchAt >= this.configuration.upgradeDelayMs &&
         this.pendingUpgradeCount >= this.configuration.upgradeObservationCount
       ) {
-        this.levelIndex += 1;
+        this.levelIndex = affordable;
+        // The new tier's bytes are initially cold. Keep filling its reserve while
+        // throughput, decoded readiness and rendering still support playback.
+        this.fillingCompressedReserveAfterUpgrade =
+          metrics.compressedBufferAheadSeconds !== undefined;
+        this.compressedReserveWarmupPeak = 0;
+        this.compressedReserveGrowthAt = now;
         this.lastSwitchAt = now;
         this.resetUpgrade();
       }

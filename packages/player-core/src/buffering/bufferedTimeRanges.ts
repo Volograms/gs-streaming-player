@@ -20,6 +20,31 @@ export function bufferedTimeRanges(
       indices.add(frame.frameIndex);
     }
   }
+  return frameTimeRanges(indices, sequence, durationSeconds);
+}
+
+/** Fully decoded frames that meet presentation quality, excluding cached bytes. */
+export function decodedTimeRanges(
+  snapshot: Readonly<FrameRingBufferSnapshot>,
+  sequence: Readonly<DynamicGaussianSequence>,
+  durationSeconds: number,
+): readonly BufferedTimeRange[] {
+  return frameTimeRanges(
+    new Set(
+      snapshot.frames
+        .filter(({ status }) => status === "ready" || status === "presented")
+        .map(({ frameIndex }) => frameIndex),
+    ),
+    sequence,
+    durationSeconds,
+  );
+}
+
+function frameTimeRanges(
+  indices: ReadonlySet<number>,
+  sequence: Readonly<DynamicGaussianSequence>,
+  durationSeconds: number,
+): readonly BufferedTimeRange[] {
   const ordered = [...indices].sort((a, b) => a - b);
   const ranges: BufferedTimeRange[] = [];
   let position = 0;

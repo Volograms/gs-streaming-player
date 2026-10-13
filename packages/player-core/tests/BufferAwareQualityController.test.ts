@@ -148,7 +148,6 @@ describe("BufferAwareQualityController", () => {
           );
         }
         expect(details[0]).toBe(0.25);
-        expect(details).toContain(0.5);
         expect(details.at(-1)).toBe(1);
       },
     );
@@ -174,7 +173,7 @@ describe("BufferAwareQualityController", () => {
       ).toBe(0.25);
     });
 
-    it("uses candidate bytes, immediately downgrades a slow link, then recovers gradually", () => {
+    it("uses candidate bytes, immediately downgrades a slow link, then selects the highest sustainable tier", () => {
       const policy = controller();
       for (let now = 0; now <= 5_000; now += 250)
         policy.update(playing, network, observation(now));
@@ -189,7 +188,53 @@ describe("BufferAwareQualityController", () => {
       }
       expect(
         policy.update(playing, network, observation(7_500)).dynamicFrameDetailLevel,
-      ).toBe(0.5);
+      ).toBe(1);
+    });
+
+    it("requires a downloaded reserve and limits quality by the five-second memory budget", () => {
+      const policy = new BufferAwareQualityController({
+        dynamicObjectId: "actor",
+        dynamicQualityLevels: [
+          { detailLevel: 0.25, estimatedFrameBytes: 650_000 },
+          { detailLevel: 0.5, estimatedFrameBytes: 1_250_000 },
+          { detailLevel: 1, estimatedFrameBytes: 2_400_000 },
+        ],
+        targetBufferSeconds: 5,
+      });
+      const observe = (now: number, reserve: number) =>
+        policy.update(playing, network, {
+          ...observation(now),
+          compressedBufferAheadSeconds: reserve,
+          compressedBufferCapacityBytes: 200_000_000,
+          compressedBufferWindowSeconds: 60,
+        });
+      for (let now = 0; now <= 3_000; now += 250)
+        expect(observe(now, 1).dynamicFrameDetailLevel).toBe(0.25);
+      for (let now = 3_250; now <= 5_500; now += 250) observe(now, 5);
+      // Full fits the link, but five seconds would exceed the cache's 200 MB budget.
+      expect(observe(5_750, 5).dynamicFrameDetailLevel).toBe(0.5);
+      expect(observe(7_000, 1).dynamicFrameDetailLevel).toBe(0.25);
+    });
+
+    it("allows the highest tier for a fully buffered short looping clip", () => {
+      const policy = new BufferAwareQualityController({
+        dynamicObjectId: "actor",
+        dynamicQualityLevels: [
+          { detailLevel: 0.25, estimatedFrameBytes: 10 },
+          { detailLevel: 1, estimatedFrameBytes: 20 },
+        ],
+        targetBufferSeconds: 5,
+      });
+      let decision;
+      for (let now = 0; now <= 2_500; now += 250) {
+        decision = policy.update(playing, network, {
+          ...observation(now),
+          compressedBufferAheadSeconds: 1,
+          compressedBufferCapacityBytes: 600,
+          compressedBufferWindowSeconds: 1,
+        });
+      }
+      expect(decision?.dynamicFrameDetailLevel).toBe(1);
     });
 
     it("responds to presentation overload and buffer starvation without crossing the floor", () => {

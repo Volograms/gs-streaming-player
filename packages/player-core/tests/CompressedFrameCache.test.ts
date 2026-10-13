@@ -307,6 +307,138 @@ describe("CompressedFrameCache", () => {
     }
   });
 
+  it.each([undefined, 0])(
+    "continues an unknown-size factory plan to the byte budget while paused (%s)",
+    async (byteSize) => {
+      const fetchImplementation = vi.fn(async () => response(10));
+      const cache = new CompressedFrameCache({
+        fetch: fetchImplementation,
+        maximumBytes: 100,
+        maximumFetchConcurrency: 3,
+      });
+      function* requests() {
+        for (let frameIndex = 0; frameIndex < 100; frameIndex += 1) {
+          yield {
+            ...(byteSize === undefined ? {} : { byteSize }),
+            frameIndex,
+            url: `/${frameIndex}.sog`,
+          };
+        }
+      }
+      try {
+        cache.setPlan(requests);
+        await vi.waitFor(() =>
+          expect(cache.snapshot).toMatchObject({
+            activeFetchCount: 0,
+            contiguousReadyFrameCount: 10,
+            residentBytes: 100,
+          }),
+        );
+        expect(fetchImplementation).toHaveBeenCalledTimes(10);
+      } finally {
+        cache.dispose();
+      }
+    },
+  );
+
+  it.each([
+    {
+      maximumBytes: 200,
+      largeBytes: 120,
+      probeBytes: 1,
+      expectedBytes: 200,
+      expectedFetches: 81,
+    },
+    {
+      maximumBytes: 20,
+      largeBytes: 12,
+      probeBytes: 4,
+      expectedBytes: 17,
+      expectedFetches: 7,
+    },
+  ])(
+    "probes a pessimistic unknown-size boundary once and remembers its actual cost: $maximumBytes",
+    async ({
+      maximumBytes,
+      largeBytes,
+      probeBytes,
+      expectedBytes,
+      expectedFetches,
+    }) => {
+      const fetchImplementation = vi.fn(async (url: RequestInfo | URL) => {
+        const index = Number(String(url).match(/\/(\d+)\.sog$/)![1]);
+        return response(index === 5 ? largeBytes : index === 6 ? probeBytes : 1);
+      });
+      const cache = new CompressedFrameCache({
+        fetch: fetchImplementation,
+        maximumBytes,
+        maximumFetchConcurrency: 6,
+      });
+      try {
+        cache.setPlan(() =>
+          Array.from({ length: 100 }, (_, frameIndex) => ({
+            frameIndex,
+            url: `/${frameIndex}.sog`,
+          })),
+        );
+        await vi.waitFor(() =>
+          expect(cache.snapshot).toMatchObject({
+            activeFetchCount: 0,
+            residentBytes: expectedBytes,
+          }),
+        );
+        expect(fetchImplementation).toHaveBeenCalledTimes(expectedFetches);
+      } finally {
+        cache.dispose();
+      }
+    },
+  );
+
+  it("does not endlessly retry failed unknown-size factory plans", async () => {
+    const fetchImplementation = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const cache = new CompressedFrameCache({
+      fetch: fetchImplementation,
+      maximumBytes: 100,
+      maximumFetchConcurrency: 3,
+    });
+    try {
+      cache.setPlan(() =>
+        Array.from({ length: 20 }, (_, frameIndex) => ({
+          frameIndex,
+          url: `/${frameIndex}.sog`,
+        })),
+      );
+      await vi.waitFor(() => expect(cache.snapshot.activeFetchCount).toBe(0));
+      expect(fetchImplementation).toHaveBeenCalledTimes(3);
+    } finally {
+      cache.dispose();
+    }
+  });
+
+  it("does not endlessly refill oversized unknown-size payloads", async () => {
+    const fetchImplementation = vi.fn(async () => response(100));
+    const cache = new CompressedFrameCache({
+      fetch: fetchImplementation,
+      maximumBytes: 25,
+      maximumFetchConcurrency: 3,
+    });
+    try {
+      cache.setPlan(() =>
+        Array.from({ length: 20 }, (_, frameIndex) => ({
+          frameIndex,
+          url: `/${frameIndex}.sog`,
+        })),
+      );
+      await vi.waitFor(() => expect(cache.snapshot.activeFetchCount).toBe(0));
+      expect(cache.snapshot.residentBytes).toBeLessThanOrEqual(25);
+      expect(fetchImplementation).toHaveBeenCalledTimes(3);
+    } finally {
+      cache.dispose();
+    }
+  });
+
   it("deduplicates demand and does not abort shared prefetch for one caller", async () => {
     const pending = deferred<Response>();
     let fetchSignal: AbortSignal | undefined;

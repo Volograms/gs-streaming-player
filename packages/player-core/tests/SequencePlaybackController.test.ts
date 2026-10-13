@@ -190,6 +190,35 @@ function createBufferHarness(options: { allReady?: boolean } = {}) {
 }
 
 describe("SequencePlaybackController", () => {
+  it("measures listener work separately without changing the playback clock", async () => {
+    const clock = new FakePlaybackClock();
+    const harness = createBufferHarness({ allReady: true });
+    let observerWallTime = 0;
+    const controller = new SequencePlaybackController({
+      buffer: harness.buffer,
+      clock,
+      now: () => clock.now() + observerWallTime,
+      sequence: createSequence(),
+    });
+    controller.subscribe((snapshot) => {
+      if (snapshot.currentFrameIndex === 1) observerWallTime += 7;
+    });
+    controller.play();
+    await flushPromises();
+    await clock.advanceTo(1000 / 30);
+    expect(controller.snapshot.currentFrameIndex).toBe(1);
+    expect(controller.snapshot.droppedFrameCount).toBe(0);
+    expect(controller.snapshot.presentationTiming).toMatchObject({
+      callbackLatenessMs: 0,
+      callbackWallLatenessMs: 0,
+      notificationDurationMs: 7,
+      presentationDurationMs: 0,
+      pipelineDurationMs: 7,
+      maximumPipelineDurationMs: 7,
+    });
+    controller.dispose();
+  });
+
   it("reads the buffer once when reporting contiguous readiness", () => {
     const harness = createBufferHarness({ allReady: true });
     const controller = new SequencePlaybackController({

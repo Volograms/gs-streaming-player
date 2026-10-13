@@ -15,21 +15,39 @@ between frames do not split one authored level into many levels. Tier costs use 
 
 The default policy can progress through the complete ladder, including 100%. It uses 75%
 of measured aggregate throughput as its transfer budget and compares each candidate's
-bytes per frame with the sequence frame rate. A healthy ready reserve must cover at
-least 70% of the configured future window. This threshold also fits smaller windows and
-the remaining frames near a non-looping clip's end.
+bytes per frame with the sequence frame rate. A healthy decoded reserve must cover at
+least 70% of the configured future window. Downloaded frame data is measured separately:
+the default player targets five seconds and keeps prefetching beyond that target up to
+its 200 MB compressed byte budget. A candidate tier must fit the target reserve plus its
+current payload in that budget. Short clips and the remaining non-looping timeline limit
+the required reserve; a completely cached looping clip can be reused every cycle.
 
-Upgrades proceed one tier at a time, after at least two seconds of sustained headroom
-and three distinct observations. Reserve loss, dropped presentations, or sustained
-rendering below the source frame rate can reduce quality even on a fast connection.
-Buffer starvation and an unaffordable current tier cause prompt downgrades. A brief
-Play/resume transition with an already healthy reserve does not force a downgrade.
-Paused time and repeated synchronous callbacks do not earn an upgrade.
+After at least two seconds of sustained headroom and three distinct observations, Auto
+selects the highest tier affordable within the measured transfer and memory budgets.
+Upgrades require a healthy decoded window and the target downloaded reserve. Downloaded
+reserve loss, dropped presentations, or sustained rendering below the source frame rate
+can reduce quality even on a fast connection. Buffer starvation and an unaffordable
+current tier cause prompt downgrades. A brief Play/resume transition with an already
+healthy reserve does not force a downgrade. Paused time and repeated synchronous
+callbacks do not earn an upgrade.
+
+A newly selected tier gets time to build its downloaded reserve while it continues to
+grow and decoded playback remains healthy. A full cache fetches at the consumption rate;
+that demand-limited throughput alone does not force a downgrade. Reserve loss or decode
+and rendering pressure still reduce quality, and a stalled reserve warm-up loses its
+allowance after two seconds without growth. Fixed tiers that already meet their detail
+target become ready immediately, without waiting for other base downloads or refinement.
 
 Higher tiers without byte-size metadata are not automatically selected. Without fresh
 network evidence, the policy holds its tier unless playback pressure requires a lower
 one. Explicit manual selection remains available. Progressive content without an
 authored fixed-tier ladder retains the existing progressive policy.
+
+Missing fixed-tier assets (HTTP 404/410) remove that tier from the session's available
+ladder. Fetching and preparation continue at an available tier above the manifest floor;
+Auto selects the highest remaining tier its budgets allow. Missing assets do not trigger
+repeated requests for the same unavailable tier on every frame. Other transfer or decode
+errors remain distinguishable from an absent quality tier.
 
 ## Switching without discarding the reserve
 
@@ -61,8 +79,9 @@ This measures client payload delivery, not Wi-Fi link speed.
 `detailLevel` and optional `estimatedFrameBytes`. Filter that list to the intended
 playable floor. `safetyFactor`, `targetBufferSeconds`, `upgradeDelayMs`, and
 `upgradeObservationCount` customize the reserve and upgrade rules. Supply the controller
-through `GaussianStreamingPlayer.create({ qualityController, ... })`; include monotonic
-`PlayerMetrics.timestampMs` when driving the controller directly.
+through `GaussianStreamingPlayer.create({ qualityController, ... })`. The default facade
+also accepts `buffer.targetBufferSeconds` and `buffer.compressedBufferMaximumBytes`;
+include monotonic `PlayerMetrics.timestampMs` when driving the controller directly.
 
 The low-level ring's
 `setPresentationQualityTarget(target, { preservePreparedFrames: true })` enables the

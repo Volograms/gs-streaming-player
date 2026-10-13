@@ -7,6 +7,20 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Show downloaded and decoded-ready timeline ranges separately in both showcases and XR
+  controls, with a visible ready-frame count. Report Auto's selected authored tier and
+  reserve/rendering diagnostics instead of using scene-wide splat counts as its quality
+  label, and show playback buffering in the status header. Expose lightweight
+  presentation-pipeline, deadline, and listener timings to distinguish downloaded
+  capacity from presentation stalls.
+
+- Fill the compressed cache to its byte budget even when frame sizes must be learned
+  while paused. Target a five-second downloaded reserve for automatic quality, select
+  the highest tier that fits throughput and memory, and retain decoded/readiness
+  pressure checks. Expose compressed MB and reserve-target settings in both showcases.
+  Fall back from missing fixed-tier assets (HTTP 404/410) without retrying them every
+  frame or crossing the manifest's minimum playable tier.
+
 - Show cached timeline ranges in grey beneath playback progress in both showcases and
   their XR controls. Report downloaded and prepared frame ranges from the player,
   preserving gaps, authored frame timing, and loop boundaries.

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { bufferedTimeRanges } from "../src/buffering/bufferedTimeRanges.js";
+import {
+  bufferedTimeRanges,
+  decodedTimeRanges,
+} from "../src/buffering/bufferedTimeRanges.js";
 
 import type {
   BufferedFrameStatus,
@@ -52,6 +55,28 @@ function snapshot(
 }
 
 describe("bufferedTimeRanges", () => {
+  it("separates completed decoded frames from downloads and unfinished preparation", () => {
+    const state = snapshot(
+      [0, 1, 2, 3, 4, 5],
+      [
+        [0, "presented"],
+        [1, "ready"],
+        [2, "base-ready"],
+        [3, "refining"],
+        [4, "ready"],
+        [5, "loading-base"],
+      ],
+    );
+    expect(bufferedTimeRanges(state, sequence, 2.2)).toEqual([
+      { startSeconds: 0, endSeconds: 2.2 },
+    ]);
+    expect(decodedTimeRanges(state, sequence, 2.2)).toEqual([
+      { startSeconds: 0, endSeconds: 0.8 },
+      { startSeconds: 1.5, endSeconds: 2 },
+    ]);
+    expect(decodedTimeRanges(snapshot([0, 1, 2]), sequence, 2.2)).toEqual([]);
+  });
+
   it("merges downloaded and prepared frames using authored times without hiding gaps", () => {
     expect(
       bufferedTimeRanges(

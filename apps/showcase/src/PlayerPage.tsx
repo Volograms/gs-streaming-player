@@ -181,11 +181,32 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
     snapshot?.bufferedTimeRanges ?? [],
     duration,
   );
+  const decodedRanges = normalizeBufferedRanges(
+    snapshot?.decodedTimeRanges ?? [],
+    duration,
+  );
+  const decodedFrameCount = Math.max(0, Math.floor(snapshot?.decodedFrameCount ?? 0));
   const playedRatio = duration > 0 ? clampRatio(currentTime / duration) : 0;
+  const playerStatus =
+    loadState === "ready" && snapshot !== undefined
+      ? snapshot.lifecycle === "BUFFERING"
+        ? "Buffering playback"
+        : snapshot.isPlaying
+          ? "Playing"
+          : "Streaming ready"
+      : loadState === "loading"
+        ? "Preparing scene"
+        : loadState === "error"
+          ? "Needs attention"
+          : loadState === "ready"
+            ? "Streaming ready"
+            : "Choose a dataset";
   const selectedQuality =
     snapshot?.qualityMode.mode === "manual"
       ? String(snapshot.qualityMode.detailLevel)
       : "automatic";
+  const automaticQualityLabel = formatAutomaticQuality(snapshot, qualityOptions);
+  const qualityTooltip = formatQualityTooltip(snapshot);
   return (
     <main className="player-page">
       <canvas
@@ -206,13 +227,7 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
         </a>
         <div className="player-status">
           <span className={`status-dot ${loadState}`} />
-          {loadState === "ready"
-            ? "Streaming ready"
-            : loadState === "loading"
-              ? "Preparing scene"
-              : loadState === "error"
-                ? "Needs attention"
-                : "Choose a dataset"}
+          {playerStatus}
           {backend ? <b>{backend.toUpperCase()}</b> : null}
         </div>
       </header>
@@ -289,7 +304,10 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
             +5
           </button>
           <time>{formatTime(currentTime)}</time>
-          <div className="timeline-shell">
+          <div
+            className="timeline-shell"
+            title="Grey shows downloaded frames. Green shows decoded frames ready to present. Pink shows played time."
+          >
             <div className="timeline-track" aria-hidden="true">
               {bufferedRanges.map((range, index) => (
                 <span
@@ -306,9 +324,22 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
                 style={{ width: `${playedRatio * 100}%` }}
               />
             </div>
+            <div className="timeline-decoded-track" aria-hidden="true">
+              {decodedRanges.map((range, index) => (
+                <span
+                  className="timeline-decoded-range"
+                  key={`${range.startSeconds}-${range.endSeconds}-${index}`}
+                  style={{
+                    left: `${(range.startSeconds / duration) * 100}%`,
+                    width: `${((range.endSeconds - range.startSeconds) / duration) * 100}%`,
+                  }}
+                />
+              ))}
+            </div>
             <input
               className="timeline"
               aria-label="Playback position"
+              aria-describedby="timeline-legend"
               type="range"
               min="0"
               max={Math.max(duration, 0.01)}
@@ -316,7 +347,17 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
               value={Math.min(currentTime, duration)}
               onChange={(event) => seek(Number(event.target.value))}
             />
+            <span
+              className="timeline-ready-count"
+              title="Decoded frames are ready to present."
+            >
+              Ready {decodedFrameCount} frames
+            </span>
           </div>
+          <span id="timeline-legend" className="sr-only">
+            Timeline colors: grey shows downloaded frames, green shows decoded frames
+            ready to present, and pink shows played time.
+          </span>
           <time>{formatTime(duration)}</time>
           {snapshot.audio.configured ? (
             <>
@@ -343,10 +384,7 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
             </>
           ) : null}
           {qualityOptions.length > 0 ? (
-            <label
-              className="quality-control"
-              title="Dynamic transfer quality. Static Streamed SOG remains camera-adaptive."
-            >
+            <label className="quality-control" title={qualityTooltip}>
               <select
                 aria-label="Streaming quality"
                 value={selectedQuality}
@@ -359,7 +397,7 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
                   );
                 }}
               >
-                <option value="automatic">Auto · {formatQuality(snapshot)}</option>
+                <option value="automatic">Auto · {automaticQualityLabel}</option>
                 {qualityOptions.map((option) => (
                   <option key={option.detailLevel} value={option.detailLevel}>
                     {option.label}
@@ -368,7 +406,9 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
               </select>
             </label>
           ) : (
-            <span className="quality-pill">AUTO · {formatQuality(snapshot)}</span>
+            <span className="quality-pill" title={qualityTooltip}>
+              AUTO · {automaticQualityLabel}
+            </span>
           )}
           {xrAvailable ? (
             <button type="button" className="xr-enter" onClick={() => void toggleXr()}>
@@ -408,6 +448,7 @@ async function createPlayer(
   backend: PlayCanvasGraphicsBackend,
   signal: AbortSignal,
 ) {
+  const buffer = readBufferOptions();
   const adapter = new PlayCanvasGaussianRendererAdapter({
     canvas,
     graphicsBackend: backend,
@@ -419,8 +460,39 @@ async function createPlayer(
     manifest,
     renderer: adapter,
     signal,
+    buffer,
   });
   return { adapter, backend, player };
+}
+
+function readBufferOptions() {
+  const compressedBufferMb = readPositiveFiniteEnvironmentValue(
+    import.meta.env.VITE_COMPRESSED_BUFFER_MB,
+    "VITE_COMPRESSED_BUFFER_MB",
+  );
+  const targetBufferSeconds = readPositiveFiniteEnvironmentValue(
+    import.meta.env.VITE_TARGET_BUFFER_SECONDS,
+    "VITE_TARGET_BUFFER_SECONDS",
+  );
+  return {
+    ...(compressedBufferMb === undefined
+      ? {}
+      : { compressedBufferMaximumBytes: compressedBufferMb * 1_000_000 }),
+    ...(targetBufferSeconds === undefined ? {} : { targetBufferSeconds }),
+  };
+}
+
+function readPositiveFiniteEnvironmentValue(
+  value: string | undefined,
+  settingName: string,
+): number | undefined {
+  const trimmed = value?.trim();
+  if (trimmed === undefined || trimmed === "") return undefined;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${settingName} must be a positive finite number.`);
+  }
+  return parsed;
 }
 
 async function selectBackend(): Promise<PlayCanvasGraphicsBackend> {
@@ -470,4 +542,81 @@ function normalizeBufferedRanges(
 function formatQuality(snapshot: GaussianStreamingPlayerSnapshot): string {
   const rendered = snapshot.renderer.renderedSplatCount;
   return rendered === undefined ? "adaptive" : `${Math.round(rendered / 1000)}k splats`;
+}
+
+function formatAutomaticQuality(
+  snapshot: GaussianStreamingPlayerSnapshot | undefined,
+  options: readonly { detailLevel: number; label: string }[],
+): string {
+  if (snapshot === undefined) return "adaptive";
+  const detailLevel = snapshot.qualityDiagnostics?.dynamicFrameDetailLevel;
+  if (typeof detailLevel === "number" && Number.isFinite(detailLevel)) {
+    const matchingOption = options.find((option) => {
+      const tolerance = Math.max(0.005, Math.abs(option.detailLevel) * 0.02);
+      return Math.abs(option.detailLevel - detailLevel) <= tolerance;
+    });
+    if (matchingOption !== undefined) return matchingOption.label;
+  }
+  return formatQuality(snapshot);
+}
+
+function formatQualityTooltip(
+  snapshot: GaussianStreamingPlayerSnapshot | undefined,
+  staticLodLevel?: number,
+): string {
+  const base =
+    staticLodLevel === undefined
+      ? "Dynamic transfer quality. Static Streamed SOG remains camera-adaptive."
+      : `Dynamic transfer quality. Static Streamed SOG is pinned to LOD ${staticLodLevel}.`;
+  if (snapshot === undefined) return base;
+  const diagnostics = snapshot.qualityDiagnostics;
+  if (diagnostics === undefined) return base;
+  const throughput =
+    Number.isFinite(diagnostics.estimatedThroughputBps) &&
+    diagnostics.estimatedThroughputBps > 0 &&
+    Number.isFinite(diagnostics.networkConfidence) &&
+    diagnostics.networkConfidence > 0
+      ? `Measured ${(diagnostics.estimatedThroughputBps / 1_000_000).toFixed(1)} Mbps`
+      : "No fresh throughput evidence";
+  const timing = snapshot.presentationTiming;
+  const timingText =
+    timing === undefined
+      ? ""
+      : ` Pipeline ${timing.pipelineDurationMs.toFixed(1)} ms (max ${timing.maximumPipelineDurationMs.toFixed(1)}); callback late ${timing.callbackLatenessMs.toFixed(1)} ms (wall ${timing.callbackWallLatenessMs.toFixed(1)}, max ${timing.maximumCallbackLatenessMs.toFixed(1)}); listeners ${timing.notificationDurationMs.toFixed(1)} ms.`;
+  return `${base} Downloaded ${formatDiagnosticSeconds(diagnostics.compressedBufferAheadSeconds ?? aheadSecondsAtTime(snapshot.bufferedTimeRanges, snapshot.currentTimeSeconds))} ahead; decoded ${formatDiagnosticSeconds(diagnostics.bufferAheadSeconds)} ahead; source ${formatDiagnosticValue(diagnostics.targetFramesPerSecond, " FPS")}; render ${formatDiagnosticValue(snapshot.renderer.renderFramesPerSecond, " FPS")}; handoff ${formatDiagnosticValue(snapshot.renderer.frameCommitTimeMs, " ms")}; lifecycle ${formatDiagnosticText(snapshot.lifecycle)}; dropped frames ${formatDiagnosticInteger(snapshot.droppedFrameCount)}; ${throughput}.${timingText}`;
+}
+
+function formatDiagnosticSeconds(value: number): string {
+  return Number.isFinite(value) ? `${Math.max(0, value).toFixed(2)}s` : "n/a";
+}
+
+function formatDiagnosticValue(value: number | undefined, suffix: string): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${value.toFixed(1)}${suffix}`
+    : `n/a${suffix}`;
+}
+
+function formatDiagnosticText(value: string | undefined): string {
+  return value === undefined || value === "" ? "unknown" : value;
+}
+
+function formatDiagnosticInteger(value: number | undefined): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? String(Math.max(0, Math.floor(value)))
+    : "n/a";
+}
+
+function aheadSecondsAtTime(
+  ranges: readonly { startSeconds: number; endSeconds: number }[],
+  currentTime: number,
+): number {
+  if (!Number.isFinite(currentTime)) return 0;
+  const range = ranges.find(
+    ({ startSeconds, endSeconds }) =>
+      Number.isFinite(startSeconds) &&
+      Number.isFinite(endSeconds) &&
+      startSeconds <= currentTime &&
+      currentTime < endSeconds,
+  );
+  return range === undefined ? 0 : Math.max(0, range.endSeconds - currentTime);
 }

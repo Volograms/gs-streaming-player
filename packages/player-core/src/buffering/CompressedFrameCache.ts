@@ -27,6 +27,7 @@ export interface CompressedFrameCacheTraceEvent {
   connectionSetupMs?: number;
   durationMs?: number;
   errorMessage?: string;
+  httpStatus?: number;
   frameIndex: number;
   loadedBytes?: number;
   networkProtocol?: string;
@@ -51,6 +52,15 @@ interface FetchResourceTiming {
   connectionReused: boolean;
   connectionSetupMs: number;
   networkProtocol?: string;
+}
+
+class CompressedFrameFetchError extends Error {
+  constructor(
+    message: string,
+    readonly httpStatus: number,
+  ) {
+    super(message);
+  }
 }
 
 export interface CompressedFrameCacheOptions {
@@ -96,6 +106,11 @@ export class CompressedFrameCache {
   private readonly now: () => number;
   private readonly onChange: CompressedFrameCacheOptions["onChange"];
   private readonly onTrace: CompressedFrameCacheOptions["onTrace"];
+  private planFactory: (() => Iterable<CompressedFrameRequest>) | undefined;
+  private planNeedsExtension = false;
+  private planHadFailure = false;
+  private observedPlanFrameBytes = 0;
+  private boundaryProbe: { url: string; byteSize?: number } | undefined;
   private sequence = 0;
 
   constructor(options: CompressedFrameCacheOptions) {
@@ -148,35 +163,65 @@ export class CompressedFrameCache {
     };
   }
 
-  /** Consume a nearest-first plan lazily, stopping when the byte budget is filled. */
-  setPlan(requests: Iterable<CompressedFrameRequest>): void {
+  /** A factory lets unknown-size plans continue after a fetch batch reveals their cost. */
+  setPlan(
+    requests:
+      Iterable<CompressedFrameRequest> | (() => Iterable<CompressedFrameRequest>),
+  ): void {
     this.assertNotDisposed();
+    this.planFactory = typeof requests === "function" ? requests : undefined;
+    this.observedPlanFrameBytes = 0;
+    this.boundaryProbe = undefined;
+    this.applyPlan(typeof requests === "function" ? requests() : requests);
+  }
+
+  private applyPlan(requests: Iterable<CompressedFrameRequest>): void {
+    this.planNeedsExtension = false;
+    this.planHadFailure = false;
     const plannedUrls = new Set<string>();
     let plannedBytes = 0;
     let unknownSizeCount = 0;
     for (const request of requests) {
       const declaredBytes = request.byteSize ?? 0;
-      const expectedBytes =
-        this.entries.get(request.url)?.bytes?.byteLength ??
+      const residentBytes = this.entries.get(request.url)?.bytes?.byteLength;
+      this.observedPlanFrameBytes = Math.max(
+        this.observedPlanFrameBytes,
+        residentBytes ?? 0,
+      );
+      const knownBytes =
+        residentBytes ??
+        (this.boundaryProbe?.url === request.url
+          ? this.boundaryProbe.byteSize
+          : undefined) ??
         (Number.isFinite(declaredBytes) ? Math.max(0, declaredBytes) : 0);
+      const expectedBytes = knownBytes || this.observedPlanFrameBytes;
+      let probingUnknownBoundary = false;
       if (
         plannedUrls.size > 0 &&
         expectedBytes > 0 &&
         plannedBytes + expectedBytes > this.maximumBytes
       ) {
-        break;
+        if (knownBytes > 0 || this.planFactory === undefined) break;
+        // A pessimistic estimate is not proof that the next payload cannot fit.
+        // Probe one unknown boundary, remembering its cost even if it is evicted.
+        this.boundaryProbe = { url: request.url };
+        probingUnknownBoundary = true;
       }
       plannedUrls.add(request.url);
       plannedBytes += expectedBytes;
       const entry = this.ensureEntry(request);
       entry.planPriority = plannedUrls.size - 1;
-      if (expectedBytes === 0) unknownSizeCount += 1;
+      if (knownBytes === 0) unknownSizeCount += 1;
       // Missing sizes must not make an arbitrarily long sequence look free. Allow
       // one fetch batch; subsequent plans can use the observed response sizes.
       if (
         plannedBytes >= this.maximumBytes ||
         unknownSizeCount >= this.maximumFetchConcurrency
       ) {
+        this.planNeedsExtension =
+          probingUnknownBoundary ||
+          (unknownSizeCount >= this.maximumFetchConcurrency &&
+            plannedBytes < this.maximumBytes);
         break;
       }
     }
@@ -225,6 +270,13 @@ export class CompressedFrameCache {
     } finally {
       entry.demandCount = Math.max(0, entry.demandCount - 1);
       entry.lastUsed = this.sequence++;
+      if (entry.demandCount === 0 && !Number.isFinite(entry.planPriority)) {
+        if (entry.state === "fetching") entry.controller?.abort();
+        else if (entry.state === "queued") {
+          this.entries.delete(entry.request.url);
+          entry.reject?.(abortError());
+        }
+      }
       this.evictToBudget();
       this.emitChange();
     }
@@ -235,6 +287,8 @@ export class CompressedFrameCache {
       return;
     }
     this.disposed = true;
+    this.planFactory = undefined;
+    this.boundaryProbe = undefined;
     for (const entry of this.entries.values()) {
       entry.controller?.abort();
       if (entry.state !== "ready") {
@@ -346,6 +400,15 @@ export class CompressedFrameCache {
           }
           entry.bytes = bytes;
           entry.state = "ready";
+          if (this.boundaryProbe?.url === entry.request.url) {
+            this.boundaryProbe.byteSize = bytes.byteLength;
+          }
+          if (Number.isFinite(entry.planPriority)) {
+            this.observedPlanFrameBytes = Math.max(
+              this.observedPlanFrameBytes,
+              bytes.byteLength,
+            );
+          }
           entry.lastUsed = this.sequence++;
           this.onTrace?.({
             atMs: this.now(),
@@ -372,10 +435,14 @@ export class CompressedFrameCache {
           this.entries.delete(entry.request.url);
         }
         if (!controller.signal.aborted) {
+          if (Number.isFinite(entry.planPriority)) this.planHadFailure = true;
           this.onTrace?.({
             atMs: this.now(),
             durationMs: this.now() - startedAt,
             errorMessage: error instanceof Error ? error.message : String(error),
+            ...(error instanceof CompressedFrameFetchError
+              ? { httpStatus: error.httpStatus }
+              : {}),
             frameIndex: entry.request.frameIndex,
             type: "fetch-failed",
             url: entry.request.url,
@@ -387,6 +454,18 @@ export class CompressedFrameCache {
       .finally(() => {
         entry.controller = undefined;
         this.activeFetchCountValue -= 1;
+        if (
+          !this.disposed &&
+          this.activeFetchCountValue === 0 &&
+          this.planNeedsExtension &&
+          !this.planHadFailure &&
+          this.observedPlanFrameBytes > 0 &&
+          this.observedPlanFrameBytes < this.maximumBytes &&
+          this.planFactory !== undefined &&
+          ![...this.entries.values()].some(({ state }) => state === "queued")
+        ) {
+          this.applyPlan(this.planFactory());
+        }
         this.emitChange();
         this.drain();
       });
@@ -402,8 +481,9 @@ export class CompressedFrameCache {
     const response = await this.fetchImplementation(request.url, { signal });
     const responseAt = this.now();
     if (!response.ok) {
-      throw new Error(
+      throw new CompressedFrameFetchError(
         `Unable to fetch compressed frame ${request.frameIndex}: ${response.status} ${response.statusText}.`,
+        response.status,
       );
     }
     const bytes = await response.arrayBuffer();

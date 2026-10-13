@@ -249,12 +249,33 @@ export class XrTransportPanel {
       Math.PI * 2,
     );
     context.fill();
+    if (duration > 0) {
+      for (const range of snapshot?.decodedTimeRanges ?? []) {
+        const start = Math.min(duration, Math.max(0, range.startSeconds));
+        const end = Math.min(duration, Math.max(0, range.endSeconds));
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+        context.fillStyle = "#8fffc7";
+        context.fillRect(
+          timelineLeft + (timelineWidth * start) / duration,
+          timelineTop + timelineHeight - 5,
+          (timelineWidth * (end - start)) / duration,
+          5,
+        );
+      }
+    }
     context.fillStyle = "#b8cbc4";
     context.font = "500 25px system-ui, sans-serif";
     context.fillText(
       `${formatTime(current)} / ${formatTime(duration)}`,
       this.canvas.width / 2,
-      284,
+      278,
+    );
+    context.fillStyle = "#8fffc7";
+    context.font = "600 20px system-ui, sans-serif";
+    context.fillText(
+      `READY ${Math.max(0, Math.floor(snapshot?.decodedFrameCount ?? 0))} FRAMES`,
+      this.canvas.width / 2,
+      306,
     );
     this.texture.setSource(this.canvas);
   }

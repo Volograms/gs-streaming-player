@@ -180,6 +180,38 @@ function createRendererHarness({ automaticQuality = true } = {}) {
 }
 
 describe("FrameRingBuffer", () => {
+  it.each([404, 410, 500])(
+    "reports HTTP %i rather than falling below the playable floor or treating a server failure as a missing tier",
+    async (status) => {
+      const harness = createRendererHarness();
+      const sequence = createSequence(1);
+      sequence.frames[0]!.qualityLevels = [
+        { level: 0, detailLevel: 0.1, byteSize: 4, url: "/preview.sog" },
+        {
+          level: 1,
+          detailLevel: 0.25,
+          byteSize: 4,
+          minimumPlayable: true,
+          url: "/basic.sog",
+        },
+      ];
+      const fetch = vi.fn(async () => new Response(null, { status }));
+      const buffer = new FrameRingBuffer({
+        compressedBufferMaximumBytes: 100,
+        compressedFrameFetch: fetch,
+        renderer: harness.renderer,
+        sequence,
+      });
+      try {
+        await expect(buffer.initialise()).rejects.toThrow(String(status));
+        expect(fetch).toHaveBeenCalledExactlyOnceWith("/basic.sog", expect.anything());
+        expect(buffer.snapshot.unavailableQualityLevels).toBeUndefined();
+      } finally {
+        buffer.dispose();
+      }
+    },
+  );
+
   it.each([0, 0.05])(
     "assigns preparation deadlines from timeline zero with first timestamp %s",
     async (firstTimestamp) => {

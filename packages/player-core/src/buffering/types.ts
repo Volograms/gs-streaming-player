@@ -32,6 +32,8 @@ export interface FrameRingBufferSnapshot {
   futureFrameCount: number;
   previousFrameCount: number;
   queuedBasePreparationCount: number;
+  /** Fixed tiers excluded for this session after a missing-asset response. */
+  unavailableQualityLevels?: readonly number[];
   compressedBuffer?: Readonly<{
     activeFetchCount: number;
     capacityBytes: number;
@@ -98,6 +100,7 @@ export interface FrameRingBufferTraceEvent {
   durationMs?: number;
   displayCommitIntervalsMs?: readonly number[];
   errorMessage?: string;
+  httpStatus?: number;
   frameIndex?: number;
   frames?: readonly FrameRingBufferTraceFrame[];
   loadedBytes?: number;
