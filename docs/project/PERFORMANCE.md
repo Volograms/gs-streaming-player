@@ -59,6 +59,53 @@ full frames, or 2.1 seconds, but substantially more minimum and medium frames.
 
 ## Recorded results
 
+### Cached native SOG preparation and concurrency — 2026-10-13
+
+Short diagnostic sample on Windows, Intel i7-11850H, NVIDIA Ampere WebGPU, Chrome
+155.0.0.0, PlayCanvas 2.21.0. This used the development server's actual renderer adapter
+in an isolated browser page, with a 640x480 canvas and its application loop running. No
+static scene, presenter placement, explainer, audio, or player scheduler was active. It
+is a component measurement, not a production playback benchmark or a Quest result.
+
+The input was 24 distinct Medium (33%) frames from the current 6G presenter sequence,
+starting at frame 00001 (101,243 splats, 1,183,396 bytes for the first frame). All bytes
+were resident before timing; four preparations warmed the loader first. Each bundled SOG
+contains five WebP images and metadata, stored without ZIP deflate compression. One SOG
+preparation already launches five image loads concurrently.
+
+| Concurrent frames | Prepared frames/s | Frame prepare p50 / p95 | ZIP/metadata to texture creation p50 / p95 | Texture loading p50 / p95 | Resource completion p50 / p95 |
+| ----------------: | ----------------: | ----------------------: | -----------------------------------------: | ------------------------: | ----------------------------: |
+|                 1 |              59.7 |          16.6 / 18.2 ms |                               0.3 / 0.4 ms |            16.0 / 17.8 ms |                  0.3 / 0.5 ms |
+|                 2 |              60.2 |          32.3 / 41.7 ms |                               0.3 / 0.5 ms |            31.4 / 41.0 ms |                  0.4 / 0.5 ms |
+
+Timing used asset-registry texture-add/load events and adapter completion. Texture
+loading includes browser image decode, callbacks, and texture construction; it is not an
+isolated codec CPU duration or GPU-upload measurement. There were 120 ImageBitmap
+requests per measured run: their completion-time p50/p95 was 9.4/11.8 ms with one frame
+and 23.1/30.9 ms with two. No main-thread tasks exceeding the browser's 50 ms long-task
+threshold were observed during these short timed intervals. GPU completion was not
+fenced. One batch per setting is insufficient to estimate sustained tail latency, and
+the user's 100+ ms full-scene spikes were not reproduced.
+
+Increasing frame concurrency doubled individual latency without a meaningful throughput
+improvement in this sample. Keep the current defaults pending target-device measurement;
+increasing worker/job counts is not supported by this result. The first target for
+deeper investigation is WebP/image preparation under full-scene load, with one versus
+two active frames on Quest, rather than ZIP parsing. An explicit decoder worker
+experiment must measure aggregate throughput and rendering contention together.
+
+Source inspection also found that direct dynamic SOG texture destruction leaves
+ImageBitmaps to GC unless source release is requested. The adapter now explicitly
+requests release when a frame retires. It keeps images while a frame is buffered or
+displayed, preserving texture re-upload after context loss. A real-asset Chrome check
+verified on WebGPU and WebGL2 that unpresented eviction closes all five images, and
+displayed-frame eviction closes them only after the existing frame-end fence. This is
+deterministic memory cleanup; no preparation speedup is claimed from it.
+
+Local, uncommitted measurement artifacts: `test-results/profile-sog-preparation.mjs`,
+`test-results/sog-preparation-baseline.json`, `test-results/verify-sog-release.mjs`, and
+`test-results/sog-release-check.json`. They reference the developer's local 6G assets.
+
 ### 6G explainer and automatic-tier investigation — 2026-10-13
 
 Foreground Chrome, WebGPU, the locally hosted 6G presenter sequence (29.97 fps), static

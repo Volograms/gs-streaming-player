@@ -914,6 +914,73 @@ describe("FrameRingBuffer", () => {
     buffer.dispose();
   });
 
+  it.each(["preparation", "refinement"] as const)(
+    "bounds an active readiness wait when a larger tier evicts its pending %s",
+    async (stage) => {
+      const harness = createRendererHarness({ automaticQuality: false });
+      const sequence = createTieredSequence(8);
+      sequence.frames = sequence.frames.map((frame) => ({
+        ...frame,
+        qualityLevels: frame.qualityLevels!.map((quality) => ({
+          ...quality,
+          byteSize: quality.level === 0 ? 20 : 45,
+        })),
+      }));
+      for (let index = 0; index <= 2; index++) {
+        harness.presentationQualities.set(index, {
+          detailLevel: 1,
+          selectedSplatCount: 1_000,
+          state: "presentable",
+        });
+      }
+      const budget = 7 * 20 * 8;
+      const buffer = new FrameRingBuffer({
+        decodedBufferMaximumBytes: budget,
+        futureFrameCount: 6,
+        previousFrameCount: 0,
+        renderer: harness.renderer,
+        sequence,
+      });
+      const initialising = buffer.initialise(0);
+      harness.resolve(0);
+      await initialising;
+      harness.resolve(1);
+      harness.resolve(2);
+      if (stage === "refinement") harness.resolve(3);
+      const ready = vi.fn();
+      const waiting = buffer.whenPresentationReadyAhead(5).then(ready);
+      await vi.waitFor(() => {
+        expect(buffer.isPresentationReady(1)).toBe(true);
+        expect(buffer.isPresentationReady(2)).toBe(true);
+        if (stage === "refinement")
+          expect(harness.qualityPreparations.has(3)).toBe(true);
+      });
+      // Let the readiness loop reach the third frame before replacing its tier.
+      for (let iteration = 0; iteration < 8; iteration++) await Promise.resolve();
+      expect(ready).not.toHaveBeenCalled();
+      harness.prepareFrame.mockClear();
+
+      buffer.setPresentationQualityTarget({ detailLevel: 1, minimumSplatCount: 2 });
+      expect(buffer.snapshot.futureFrameCount).toBe(2);
+      await vi.waitFor(() => expect(harness.prepareFrame).toHaveBeenCalledTimes(2));
+      expect(
+        harness.prepareFrame.mock.calls.map(([, source]) => source.frameIndex),
+      ).toEqual([1, 2]);
+      expect(ready).not.toHaveBeenCalled();
+      harness.resolve(1);
+      harness.resolve(2);
+
+      await vi.waitFor(() => expect(ready).toHaveBeenCalledOnce());
+      await waiting;
+      expect(buffer.snapshot.frames.map(({ frameIndex }) => frameIndex)).toEqual([
+        0, 1, 2,
+      ]);
+      expect(buffer.snapshot.decodedResidentBytes).toBeLessThanOrEqual(budget);
+      await expect(buffer.whenPresentationReadyAhead(5)).rejects.toThrow(RangeError);
+      buffer.dispose();
+    },
+  );
+
   it("replaces the formerly presented tier after a safe handoff", async () => {
     const harness = createRendererHarness();
     const sequence = createSequence(2);

@@ -7,6 +7,13 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Clamp startup and buffering-recovery reserves to the decoded window's current
+  capacity, including a window shrink during an active readiness wait. Avoid errors and
+  attempts to recreate evicted tail frames when a larger tier uses more memory.
+- Explicitly close native SOG image sources when frames retire, after any pending
+  presentation fence, instead of waiting for garbage collection to reclaim them. Retain
+  sources for live and buffered frames so context restoration remains possible.
+
 - Apply automatic upgrades to new frames entering at the decoded window's tail,
   retaining the existing decoded reserve and queued work. Keep memory accounting and
   compressed prefetch aligned with those retained tiers, preserve unplayed frames

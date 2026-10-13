@@ -268,7 +268,7 @@ export class SequencePlaybackController {
   }
 
   private async startAfterBuffering(revision: number): Promise<void> {
-    await this.buffer.whenPresentationReadyAhead(this.minimumReadyFrames);
+    await this.whenReadyToPlay();
     if (!this.isPlayableOperation(revision)) {
       return;
     }
@@ -364,7 +364,7 @@ export class SequencePlaybackController {
     notify();
 
     if (!readyAtDeadline) {
-      await this.buffer.whenPresentationReadyAhead(this.minimumReadyFrames);
+      await this.whenReadyToPlay();
       if (!this.isPlayableOperation(revision)) {
         return;
       }
@@ -390,6 +390,14 @@ export class SequencePlaybackController {
       ),
     });
     this.scheduleNextFrame(revision);
+  }
+
+  private whenReadyToPlay(): Promise<void> {
+    // Larger transfer tiers can shorten the decoded window after construction.
+    // Wait for the configured reserve only while that many frames still fit.
+    return this.buffer.whenPresentationReadyAhead(
+      Math.min(this.minimumReadyFrames, this.buffer.snapshot.futureFrameCount),
+    );
   }
 
   private scheduleEnd(revision: number): void {

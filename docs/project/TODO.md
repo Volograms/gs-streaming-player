@@ -39,6 +39,10 @@ A task is checked only after its acceptance criteria are implemented and verifie
 
 - [ ] Complete the PlayCanvas/SOG production benchmark matrix at 25%, 50%, and 100% on
       the same desktop and Quest 3 sessions:
+  - [ ] Compare one versus two concurrent SOG preparations with resident bytes and the
+        full scene on Quest. Attribute WebP/image loading and main-thread callback
+        delays separately before adding decoder workers; the short desktop component
+        sample in `PERFORMANCE.md` gained no throughput from a second preparation.
   - [ ] Compare WebGL2 CPU sort with WebGPU GPU sort using repeated p50/p95 samples for
         preparation, sorting, GPU frame time, presented cadence, memory, and stalls.
   - [ ] Capture a full-tier Quest trace and any WebGPU XR run that reports

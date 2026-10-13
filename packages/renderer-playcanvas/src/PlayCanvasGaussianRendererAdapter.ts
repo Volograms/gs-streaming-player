@@ -1038,6 +1038,13 @@ export class PlayCanvasGaussianRendererAdapter
     if (application === undefined) {
       return;
     }
+    // Direct SOG assets retain their decoded ImageBitmaps for context restoration.
+    // Once the frame is retired, close them deterministically instead of leaving
+    // native image memory to GC. If upload is pending, texture destruction closes
+    // the sources. Keep this behind the existing presentation-release fence.
+    const resource = asset.resource as
+      (GSplatResourceBase & { releaseTextureSources?: () => void }) | undefined;
+    resource?.releaseTextureSources?.();
     application.assets.remove(asset);
     asset.unload();
   }

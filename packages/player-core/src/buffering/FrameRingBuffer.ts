@@ -489,13 +489,27 @@ export class FrameRingBuffer {
     }
     const anchorFrameIndex =
       this.currentFrameIndexValue ?? this.windowFrameIndexValue ?? 0;
-    for (let offset = 1; offset <= frameCount; offset += 1) {
+    for (
+      let offset = 1;
+      offset <= Math.min(frameCount, this.futureFrameCount);
+      offset += 1
+    ) {
       const frameIndex = this.offsetFrameIndex(anchorFrameIndex, offset);
       if (frameIndex === undefined) {
         return;
       }
-      await this.ensureStableFrame(frameIndex);
-      await this.ensurePresentationQuality(frameIndex);
+      const isRequired = () => offset <= this.futureFrameCount;
+      try {
+        await this.ensureStableFrame(frameIndex, isRequired);
+        if (isRequired()) await this.ensurePresentationQuality(frameIndex);
+      } catch (error) {
+        if (isRequired()) throw error;
+      }
+      if (!isRequired()) {
+        // A larger tier can evict the frame we were waiting on. Recheck the
+        // remaining reserve, whose representations may also have changed.
+        offset = 0;
+      }
     }
   }
 
@@ -803,8 +817,13 @@ export class FrameRingBuffer {
    * the replacement record instead of surfacing the expected abort as a playback
    * failure.
    */
-  private async ensureStableFrame(frameIndex: number): Promise<PreparedFrame> {
+  private async ensureStableFrame(
+    frameIndex: number,
+    isRequired?: () => boolean,
+  ): Promise<PreparedFrame> {
     while (true) {
+      // Do not recreate an evicted tail frame for an older readiness request.
+      if (isRequired?.() === false) throw this.presentationAbortError();
       const preparation = this.ensureFrame(frameIndex);
       try {
         const preparedFrame = await preparation;
