@@ -28,6 +28,10 @@ interface PlayerPageProps {
 type LoadState = "empty" | "loading" | "ready" | "error";
 
 const configuredManifestUrl = import.meta.env.VITE_DEFAULT_MANIFEST_URL?.trim();
+const staticLodEnvironmentValue = import.meta.env.VITE_STATIC_GS_LOD_LEVEL?.trim();
+const configuredStaticLodLevel = staticLodEnvironmentValue
+  ? Number(staticLodEnvironmentValue)
+  : undefined;
 
 export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -371,7 +375,11 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
           {qualityOptions.length > 0 ? (
             <label
               className="quality-control"
-              title="Dynamic transfer quality. Static Streamed SOG remains camera-adaptive."
+              title={
+                configuredStaticLodLevel === undefined
+                  ? "Dynamic transfer quality. Static Streamed SOG remains camera-adaptive."
+                  : `Dynamic transfer quality. Static Streamed SOG is pinned to LOD ${configuredStaticLodLevel}.`
+              }
             >
               <select
                 aria-label="Streaming quality"
@@ -447,6 +455,9 @@ async function createPlayer(
     graphicsBackend: backend,
     gaussianSort: "auto",
     manageResize: true,
+    ...(configuredStaticLodLevel === undefined
+      ? {}
+      : { staticLodLevel: configuredStaticLodLevel }),
   });
   const player = await GaussianStreamingPlayer.create({
     loop: true,
