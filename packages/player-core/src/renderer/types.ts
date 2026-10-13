@@ -155,6 +155,8 @@ export interface RendererResourceMetrics {
 }
 
 export interface PreparedFrame {
+  /** Estimated owned CPU and GPU bytes, excluding the independent compressed cache. */
+  estimatedMemoryBytes?: number;
   frameIndex: number;
   sequenceId: string;
   source: GaussianFrameSource;

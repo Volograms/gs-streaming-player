@@ -7,6 +7,13 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Build a five-second decoded reserve instead of stopping at ten future frames, with a
+  separate configurable 500 MB estimated decoded CPU/GPU budget. Show reserve seconds
+  and memory usage alongside the downloaded and decoded timeline lanes. Auto upgrades
+  while filling, accounts for measured preparation capacity, tolerates isolated late
+  frames, and rebuilds farther-ahead frames at the new quality. Paused Auto loads the
+  best available tier and refreshes the displayed frame without moving media time.
+
 - Show downloaded and decoded-ready timeline ranges separately in both showcases and XR
   controls, with a visible ready-frame count. Report Auto's selected authored tier and
   reserve/rendering diagnostics instead of using scene-wide splat counts as its quality

@@ -402,10 +402,25 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
             />
             <span
               className="timeline-ready-count"
-              title="Decoded frames are ready to present."
+              title={formatBufferSummary(snapshot)}
             >
-              Ready {decodedFrameCount} frames
+              <span>Ready {decodedFrameCount} frames</span>
+              {snapshot.bufferDiagnostics === undefined ? null : (
+                <span className="timeline-ready-duration">
+                  {" "}
+                  · {snapshot.bufferDiagnostics.decodedAheadSeconds.toFixed(1)}s
+                </span>
+              )}
             </span>
+            {snapshot.bufferDiagnostics === undefined ? null : (
+              <span
+                className="timeline-download-count"
+                title={formatBufferSummary(snapshot)}
+              >
+                Downloaded{" "}
+                {snapshot.bufferDiagnostics.downloadedAheadSeconds.toFixed(1)}s
+              </span>
+            )}
           </div>
           <span id="timeline-legend" className="sr-only">
             Timeline colors: grey shows downloaded frames, green shows decoded frames
@@ -538,7 +553,14 @@ function readBufferOptions() {
     import.meta.env.VITE_TARGET_BUFFER_SECONDS,
     "VITE_TARGET_BUFFER_SECONDS",
   );
+  const decodedBufferMb = readPositiveFiniteEnvironmentValue(
+    import.meta.env.VITE_DECODED_BUFFER_MB,
+    "VITE_DECODED_BUFFER_MB",
+  );
   return {
+    ...(decodedBufferMb === undefined
+      ? {}
+      : { decodedBufferMaximumBytes: decodedBufferMb * 1_000_000 }),
     ...(compressedBufferMb === undefined
       ? {}
       : { compressedBufferMaximumBytes: compressedBufferMb * 1_000_000 }),
@@ -641,7 +663,7 @@ function formatQualityTooltip(
       : `Dynamic transfer quality. Static Streamed SOG is pinned to LOD ${staticLodLevel}.`;
   if (snapshot === undefined) return base;
   const diagnostics = snapshot.qualityDiagnostics;
-  if (diagnostics === undefined) return base;
+  if (diagnostics === undefined) return `${base} ${formatBufferSummary(snapshot)}`;
   const throughput =
     Number.isFinite(diagnostics.estimatedThroughputBps) &&
     diagnostics.estimatedThroughputBps > 0 &&
@@ -659,6 +681,13 @@ function formatQualityTooltip(
 
 function formatDiagnosticSeconds(value: number): string {
   return Number.isFinite(value) ? `${Math.max(0, value).toFixed(2)}s` : "n/a";
+}
+
+function formatBufferSummary(snapshot: GaussianStreamingPlayerSnapshot): string {
+  const buffer = snapshot.bufferDiagnostics;
+  if (buffer === undefined) return "Decoded frames are ready to present.";
+  const mb = (bytes: number) => (bytes / 1_000_000).toFixed(1);
+  return `Downloaded ${buffer.downloadedAheadSeconds.toFixed(2)}s ahead (${mb(buffer.compressedResidentBytes)} / ${mb(buffer.compressedCapacityBytes)} MB). Decoded ${buffer.decodedAheadSeconds.toFixed(2)}s ahead (${mb(buffer.decodedResidentBytes)} / ${mb(buffer.decodedCapacityBytes)} MB estimated CPU/GPU memory; target ${buffer.decodedTargetFrames} frames).`;
 }
 
 function formatDiagnosticValue(value: number | undefined, suffix: string): string {

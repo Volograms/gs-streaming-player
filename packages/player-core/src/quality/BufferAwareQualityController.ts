@@ -85,6 +85,7 @@ export class BufferAwareQualityController implements QualityController {
   private lastSwitchAt = -Infinity;
   private renderPressureStartedAt: number | undefined;
   private previousDroppedFrames = 0;
+  private recentDrops: Array<{ at: number; count: number }> = [];
   private pendingUpgradeCount = 0;
   private tierValue: BufferQualityTier = "balanced";
 
@@ -217,7 +218,7 @@ export class BufferAwareQualityController implements QualityController {
     const now = metrics.timestampMs ?? network.timestampMs;
     const fresh = now > this.lastObservationAt;
     this.lastObservationAt = Math.max(now, this.lastObservationAt);
-    const dropped = metrics.droppedFrames > this.previousDroppedFrames;
+    const dropped = Math.max(0, metrics.droppedFrames - this.previousDroppedFrames);
     this.previousDroppedFrames = metrics.droppedFrames;
     if (
       !playback.isPlaying ||
@@ -225,6 +226,22 @@ export class BufferAwareQualityController implements QualityController {
     ) {
       this.resetUpgrade();
       this.renderPressureStartedAt = undefined;
+      this.recentDrops = [];
+      if (
+        playback.lifecycle === "READY" ||
+        playback.lifecycle === "PAUSED" ||
+        playback.lifecycle === "ENDED"
+      ) {
+        // Paused content has no presentation deadline. Use idle time to prepare
+        // the best available tier; playback will re-evaluate delivery pressure.
+        const available = this.levels!.map((level, index) => ({ level, index })).filter(
+          ({ level }) =>
+            metrics.availableDynamicDetailLevels?.includes(level.detailLevel) ?? true,
+        );
+        this.levelIndex = available.at(-1)?.index ?? this.levelIndex;
+        this.tierValue =
+          this.levelIndex === this.levels!.length - 1 ? "high" : "balanced";
+      }
       return;
     }
     const levels = this.levels!;
@@ -238,12 +255,24 @@ export class BufferAwareQualityController implements QualityController {
     const isAvailable = (index: number) =>
       available.some((candidate) => candidate.index === index);
     const fps = metrics.targetFramesPerSecond ?? 30;
+    this.recentDrops = this.recentDrops.filter(({ at }) => now - at < 1_000);
+    if (dropped > 0) this.recentDrops.push({ at: now, count: dropped });
+    // An isolated late frame is not evidence that a higher transfer tier cannot
+    // decode in time. React to sustained loss, while retaining the readiness gate.
+    const dropPressure =
+      this.recentDrops.reduce((sum, item) => sum + item.count, 0) >
+      Math.max(1, fps * 0.05);
     const capacity = metrics.bufferCapacitySeconds;
     const target =
       capacity !== undefined && capacity > 0
         ? Math.min(this.configuration.targetBufferSeconds, capacity * 0.7)
         : this.configuration.targetBufferSeconds;
-    const bufferRatio = playback.bufferAheadSeconds / target;
+    const startupReserve = Math.min(
+      target,
+      Math.max(2, playback.minimumReadyFrames) / fps,
+    );
+    const decodedPressure =
+      playback.bufferAheadSeconds < Math.min(target, Math.max(startupReserve, 0.25));
     const measuredNetwork =
       network.estimatedThroughputBps > 0 && network.confidence !== 0;
     const safeThroughput =
@@ -273,6 +302,10 @@ export class BufferAwareQualityController implements QualityController {
         if (
           level.estimatedFrameBytes === undefined ||
           level.estimatedFrameBytes * fps * 8 > safeThroughput ||
+          (metrics.estimatedPreparationBytesPerSecond !== undefined &&
+            level.estimatedFrameBytes * fps >
+              metrics.estimatedPreparationBytesPerSecond *
+                this.configuration.safetyFactor) ||
           (metrics.compressedBufferCapacityBytes !== undefined &&
             // Include the current payload as well as the future reserve.
             level.estimatedFrameBytes *
@@ -290,11 +323,11 @@ export class BufferAwareQualityController implements QualityController {
     if (renderSlow) this.renderPressureStartedAt ??= now;
     else this.renderPressureStartedAt = undefined;
     const renderPressure =
-      dropped ||
+      dropPressure ||
       (this.renderPressureStartedAt !== undefined &&
         now - this.renderPressureStartedAt >= 750);
     const critical =
-      bufferRatio < 0.34 ||
+      playback.bufferAheadSeconds < startupReserve / 2 ||
       (playback.lifecycle === "BUFFERING" &&
         playback.bufferAheadSeconds < playback.minimumReadyFrames / fps);
     let nextIndex = this.levelIndex;
@@ -304,13 +337,15 @@ export class BufferAwareQualityController implements QualityController {
       measuredNetwork &&
       affordable < nextIndex &&
       (metrics.compressedBufferAheadSeconds === undefined ||
-        bufferRatio < 0.75 ||
+        decodedPressure ||
         (!this.fillingCompressedReserveAfterUpgrade && compressedRatio < 0.9))
     )
       nextIndex = affordable;
     else if (
-      (bufferRatio < 0.75 ||
-        (compressedRatio < 0.7 && !this.fillingCompressedReserveAfterUpgrade) ||
+      (decodedPressure ||
+        ((metrics.compressedBufferAheadSeconds ?? Infinity) <
+          Math.min(0.5, compressedTarget) &&
+          !this.fillingCompressedReserveAfterUpgrade) ||
         renderPressure) &&
       now - this.lastSwitchAt >= 1_000
     )
@@ -324,10 +359,11 @@ export class BufferAwareQualityController implements QualityController {
       this.resetUpgrade();
     } else if (
       !critical &&
-      bufferRatio >= 1 &&
-      compressedRatio >= 1 &&
+      playback.bufferAheadSeconds >= startupReserve &&
+      (metrics.compressedBufferAheadSeconds ?? Infinity) >=
+        Math.min(0.5, compressedTarget) &&
       !renderSlow &&
-      !dropped &&
+      !dropPressure &&
       measuredNetwork &&
       affordable > this.levelIndex
     ) {

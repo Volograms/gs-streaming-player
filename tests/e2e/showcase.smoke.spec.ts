@@ -36,6 +36,15 @@ test("cached timeline ranges preserve gaps and keyboard seeking at desktop and n
           { startSeconds: 42, endSeconds: 48 },
         ],
         decodedFrameCount: 7,
+        bufferDiagnostics: {
+          downloadedAheadSeconds: 30,
+          decodedAheadSeconds: 3,
+          compressedResidentBytes: 100_000_000,
+          compressedCapacityBytes: 200_000_000,
+          decodedResidentBytes: 50_000_000,
+          decodedCapacityBytes: 500_000_000,
+          decodedTargetFrames: 152,
+        },
         currentTimeSeconds: 30,
         droppedFrameCount: 3,
         durationSeconds: 120,
@@ -86,6 +95,8 @@ test("cached timeline ranges preserve gaps and keyboard seeking at desktop and n
             snapshot.bufferedTimeRanges = [{ startSeconds: 30, endSeconds: 72 }];
             snapshot.decodedTimeRanges = [{ startSeconds: 42, endSeconds: 48 }];
             snapshot.decodedFrameCount = 2;
+            snapshot.bufferDiagnostics.downloadedAheadSeconds = 42;
+            snapshot.bufferDiagnostics.decodedAheadSeconds = 0;
             notify();
           },
           dispose() {},
@@ -107,6 +118,12 @@ test("cached timeline ranges preserve gaps and keyboard seeking at desktop and n
   await expect(ranges).toHaveCount(2);
   await expect(decodedRanges).toHaveCount(2);
   await expect(controls.getByText("Ready 7 frames")).toBeVisible();
+  await expect(controls.getByText("Downloaded 30.0s")).toBeVisible();
+  await expect(controls.locator(".timeline-ready-duration")).toHaveText("· 3.0s");
+  await expect(controls.locator(".timeline-ready-count")).toHaveAttribute(
+    "title",
+    /100\.0 \/ 200\.0 MB.*50\.0 \/ 500\.0 MB.*target 152 frames/,
+  );
   await expect(position).toHaveAttribute("aria-describedby", "timeline-legend");
   await expect(controls.locator(".timeline-shell")).toHaveAttribute(
     "title",
@@ -130,10 +147,13 @@ test("cached timeline ranges preserve gaps and keyboard seeking at desktop and n
   await expect(ranges).toHaveCount(1);
   await expect(decodedRanges).toHaveCount(1);
   await expect(controls.getByText("Ready 2 frames")).toBeVisible();
+  await expect(controls.getByText("Downloaded 42.0s")).toBeVisible();
   await expect(ranges).toHaveAttribute("style", /left: 25%; width: 35%/);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(position).toBeVisible();
   await expect(controls.getByText("Ready 2 frames")).toBeVisible();
+  await expect(controls.locator(".timeline-download-count")).toBeHidden();
+  await expect(controls.locator(".timeline-ready-duration")).toBeHidden();
   const bounds = await controls.boundingBox();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);

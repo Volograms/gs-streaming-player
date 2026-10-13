@@ -25,7 +25,10 @@ export interface BufferedFrame {
 }
 
 export interface FrameRingBufferSnapshot {
+  decodedResidentBytes?: number;
+  decodedCapacityBytes?: number;
   activeBasePreparationCount: number;
+  maximumBasePreparationConcurrency?: number;
   capacity: number;
   currentFrameIndex?: number;
   frames: readonly BufferedFrame[];
@@ -46,6 +49,8 @@ export interface FrameRingBufferSnapshot {
 }
 
 export interface FrameRingBufferConfiguration {
+  /** Budget for estimated decoded CPU/GPU resources, separate from compressed bytes. */
+  decodedBufferMaximumBytes?: number;
   compressedBufferMaximumBytes?: number;
   maximumCompressedFetchConcurrency?: number;
   futureFrameCount?: number;

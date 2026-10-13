@@ -8,6 +8,7 @@ import {
 } from "../quality/selectFrameTransferQuality.js";
 
 import { CompressedFrameCache } from "./CompressedFrameCache.js";
+import { FrameMemoryBudget } from "./FrameMemoryBudget.js";
 import { FramePreparationScheduler } from "./FramePreparationScheduler.js";
 
 import type {
@@ -81,7 +82,10 @@ export class FrameRingBuffer {
   private readonly basePreparationScheduler: FramePreparationScheduler;
   private readonly compressedFrameCache: CompressedFrameCache | undefined;
   private readonly decoderRegistry: GaussianFrameDecoderRegistry | undefined;
-  private readonly futureFrameCount: number;
+  private futureFrameCount: number;
+  private readonly maximumFutureFrameCount: number;
+  private readonly decodedBufferMaximumBytes: number | undefined;
+  private readonly frameMemory = new FrameMemoryBudget();
   private readonly listeners = new Set<SnapshotListener>();
   private readonly loop: boolean;
   private maximumRefinementConcurrency: number;
@@ -91,6 +95,7 @@ export class FrameRingBuffer {
   private presentationQualityTarget: FrameQualityTarget;
   private preservePreparedFrames = false;
   private readonly records = new Map<number, FrameRecord>();
+  private readonly supersededFrames = new Set<PreparedFrame>();
   private readonly unavailableQualityLevels = new Set<number>();
   private readonly renderer: GaussianRendererAdapter;
   private readonly sequence: DynamicGaussianSequence;
@@ -110,6 +115,17 @@ export class FrameRingBuffer {
       options.durationSeconds ?? sequencePlaybackDurationSeconds(options.sequence);
     this.transformValue = options.sequence.transform;
     this.futureFrameCount = options.futureFrameCount ?? 3;
+    this.maximumFutureFrameCount = this.futureFrameCount;
+    this.decodedBufferMaximumBytes = options.decodedBufferMaximumBytes;
+    if (
+      this.decodedBufferMaximumBytes !== undefined &&
+      (!Number.isFinite(this.decodedBufferMaximumBytes) ||
+        this.decodedBufferMaximumBytes <= 0)
+    ) {
+      throw new RangeError(
+        "decodedBufferMaximumBytes must be a positive finite number.",
+      );
+    }
     this.previousFrameCount = options.previousFrameCount ?? 1;
     this.loop = options.loop ?? false;
     this.basePreparationScheduler = new FramePreparationScheduler(
@@ -153,6 +169,25 @@ export class FrameRingBuffer {
   get snapshot(): FrameRingBufferSnapshot {
     return {
       activeBasePreparationCount: this.basePreparationScheduler.activeCount,
+      maximumBasePreparationConcurrency:
+        this.basePreparationScheduler.maximumConcurrency,
+      ...(this.decodedBufferMaximumBytes === undefined
+        ? {}
+        : {
+            decodedCapacityBytes: this.decodedBufferMaximumBytes,
+            decodedResidentBytes: [...this.records.values()].reduce(
+              (sum, record) =>
+                sum +
+                (record.preparedFrame === undefined
+                  ? 0
+                  : this.frameMemory.estimate(
+                      record.preparedSource,
+                      record.transferQuality,
+                      record.preparedFrame,
+                    )),
+              0,
+            ),
+          }),
       capacity: 1 + this.futureFrameCount + this.previousFrameCount,
       ...(this.currentFrameIndexValue === undefined
         ? {}
@@ -217,11 +252,21 @@ export class FrameRingBuffer {
       const selectedTransfer = this.selectAvailableTransfer(record.source);
       if (
         this.preservePreparedFrames &&
+        (frameIndex === this.currentFrameIndexValue ||
+          (this.forwardDistanceFrom(
+            this.windowFrameIndexValue ?? frameIndex,
+            frameIndex,
+          ) >= 0 &&
+            this.forwardDistanceFrom(
+              this.windowFrameIndexValue ?? frameIndex,
+              frameIndex,
+            ) <= Math.ceil(this.sequence.frameRate))) &&
         selectedTransfer !== undefined &&
         selectedTransfer.source.url !== record.preparedSource.url &&
         record.preparedFrame !== undefined
       ) {
-        // Consume this usable representation once; new window entries use the new tier.
+        // Keep roughly one second ready while rebuilding the farther reserve at
+        // the new tier. Retaining the whole reserve would delay visible upgrades.
         record.retainTransferUntilPresented =
           frameIndex !== this.currentFrameIndexValue;
         continue;
@@ -274,6 +319,25 @@ export class FrameRingBuffer {
     this.listeners.add(listener);
     listener(this.snapshot);
     return () => this.listeners.delete(listener);
+  }
+
+  /** Keep the old image visible until a replacement tier is presented. */
+  invalidateCurrentTransfer(): boolean {
+    this.assertNotDisposed();
+    const index = this.currentFrameIndexValue;
+    if (index === undefined) return false;
+    const record = this.records.get(index);
+    if (
+      record === undefined ||
+      this.selectedTransferUrl(record.source) === record.preparedSource.url
+    )
+      return false;
+    record.controller.abort();
+    record.refinementController?.abort();
+    if (record.preparedFrame !== undefined)
+      this.supersededFrames.add(record.preparedFrame);
+    this.records.delete(index);
+    return true;
   }
 
   async initialise(frameIndex = 0): Promise<PreparedFrame> {
@@ -373,6 +437,9 @@ export class FrameRingBuffer {
     record.status = "presented";
     record.targetQualityLevel = this.presentationQualityTarget.detailLevel;
     this.currentFrameIndexValue = frameIndex;
+    for (const superseded of this.supersededFrames)
+      this.renderer.releaseFrame(superseded);
+    this.supersededFrames.clear();
     this.trace({
       durationMs: this.now() - presentationStartedAt,
       frameIndex,
@@ -491,6 +558,8 @@ export class FrameRingBuffer {
       }
     }
     this.records.clear();
+    for (const frame of this.supersededFrames) this.renderer.releaseFrame(frame);
+    this.supersededFrames.clear();
     this.compressedFrameCache?.dispose();
     this.listeners.clear();
   }
@@ -509,6 +578,7 @@ export class FrameRingBuffer {
     const selectedTransfer = this.selectAvailableTransfer(source);
     const preparedSource = selectedTransfer?.source ?? source;
     const baseRequestedAtMs = this.now();
+    let preparationStartedAtMs = baseRequestedAtMs;
     const requestedTransform = this.transformValue;
     const requestedTransformRevision = this.transformRevision;
     const record = {} as FrameRecord;
@@ -554,6 +624,7 @@ export class FrameRingBuffer {
         }),
         controller.signal,
         () => {
+          preparationStartedAtMs = this.now();
           this.trace({
             durationMs: this.now() - decodeQueuedAtMs,
             frameIndex,
@@ -637,10 +708,21 @@ export class FrameRingBuffer {
             .then((cachedBytes) => enqueueDecode(cachedBytes));
     record.preparation = basePreparation
       .then((preparedFrame) => {
+        if (
+          this.disposed ||
+          controller.signal.aborted ||
+          this.records.get(frameIndex) !== record
+        ) {
+          // A renderer can finish an in-flight decode after cancellation. The
+          // obsolete record must not retain its allocation or update the window.
+          this.renderer.releaseFrame(preparedFrame);
+          throw this.presentationAbortError();
+        }
         if (requestedTransformRevision !== this.transformRevision) {
           this.renderer.setFrameTransform(preparedFrame, this.transformValue);
         }
         record.preparedFrame = preparedFrame;
+        this.frameMemory.observe(preparedFrame);
         record.qualityLevel = preparedFrame.qualityLevel;
         record.status = "base-ready";
         const quality = this.renderer.getFramePresentationQuality(preparedFrame);
@@ -649,9 +731,17 @@ export class FrameRingBuffer {
           durationMs: this.now() - baseRequestedAtMs,
           frameIndex,
           quality: this.copyQuality(quality),
+          stageDurationMs: this.now() - preparationStartedAtMs,
+          totalBytes: record.requestedBytes,
           type: "base-ready",
         });
         this.applyRefinementPolicies();
+        if (
+          this.windowFrameIndexValue !== undefined &&
+          this.updateFutureFrameCount(this.windowFrameIndexValue)
+        ) {
+          this.reconcileWindow(this.windowFrameIndexValue, this.currentFrameIndexValue);
+        }
         this.emit();
         return preparedFrame;
       })
@@ -742,6 +832,7 @@ export class FrameRingBuffer {
 
   private reconcileWindow(frameIndex: number, preservedFrameIndex?: number): void {
     this.windowFrameIndexValue = frameIndex;
+    this.updateFutureFrameCount(frameIndex);
     this.compressedFrameCache?.setPlan(() =>
       this.compressedPrefetchRequests(frameIndex),
     );
@@ -753,7 +844,8 @@ export class FrameRingBuffer {
     for (const [bufferedFrameIndex, record] of [...this.records]) {
       const distance = this.forwardDistanceFrom(frameIndex, bufferedFrameIndex);
       if (
-        bufferedFrameIndex !== this.currentFrameIndexValue &&
+        (bufferedFrameIndex !== this.currentFrameIndexValue ||
+          record.preparedFrame === undefined) &&
         distance >= 0 &&
         distance <= this.futureFrameCount &&
         !record.retainTransferUntilPresented &&
@@ -811,6 +903,42 @@ export class FrameRingBuffer {
 
   private selectedTransferUrl(source: GaussianFrameSource): string {
     return this.selectAvailableTransfer(source)?.source.url ?? source.url;
+  }
+
+  private updateFutureFrameCount(frameIndex: number): boolean {
+    if (this.decodedBufferMaximumBytes === undefined) return false;
+    const estimate = (index: number) => {
+      const record = this.records.get(index);
+      if (record?.preparedFrame !== undefined)
+        return this.frameMemory.estimate(
+          record.preparedSource,
+          record.transferQuality,
+          record.preparedFrame,
+        );
+      const source = this.sequence.frames[index]!;
+      const selected = this.selectAvailableTransfer(source);
+      return this.frameMemory.estimate(selected?.source ?? source, selected?.quality);
+    };
+    let bytes = estimate(frameIndex);
+    for (let offset = 1; offset <= this.previousFrameCount; offset += 1) {
+      const index = this.offsetFrameIndex(frameIndex, -offset);
+      if (index !== undefined) bytes += estimate(index);
+    }
+    let future = 0;
+    for (let offset = 1; offset <= this.maximumFutureFrameCount; offset += 1) {
+      const index = this.offsetFrameIndex(frameIndex, offset);
+      if (index === undefined || index === frameIndex) break;
+      const cost = estimate(index);
+      if (bytes + cost > this.decodedBufferMaximumBytes) break;
+      bytes += cost;
+      future += 1;
+    }
+    // Keep the current/startup frames viable even when an individual asset is
+    // unusually large. In-flight preparation can temporarily add its own working set.
+    future = Math.max(Math.min(2, this.maximumFutureFrameCount), future);
+    if (future === this.futureFrameCount) return false;
+    this.futureFrameCount = future;
+    return true;
   }
 
   private selectAvailableTransfer(source: GaussianFrameSource) {

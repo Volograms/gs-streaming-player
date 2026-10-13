@@ -35,7 +35,7 @@ import type { GaussianFrameDecoderRegistry } from "@6g-path/gaussian-codec";
 
 const DEFAULT_COMPRESSED_BUFFER_BYTES = 200_000_000;
 const DEFAULT_TARGET_BUFFER_SECONDS = 5;
-const DEFAULT_FUTURE_FRAMES = 10;
+const DEFAULT_DECODED_BUFFER_BYTES = 500_000_000;
 const DEFAULT_MINIMUM_DETAIL = 0.25;
 
 export interface GaussianStreamingMediaElement {
@@ -67,7 +67,7 @@ export type GaussianStreamingQualityMode =
 
 export interface GaussianStreamingPlayerBufferOptions extends FrameRingBufferConfiguration {
   minimumReadyFrames?: number;
-  /** Automatic-quality reserve target; prefetch continues to fill the byte budget. */
+  /** Decoded lookahead and automatic-quality reserve target; compressed prefetch fills its byte budget. */
   targetBufferSeconds?: number;
 }
 
@@ -99,6 +99,15 @@ export interface GaussianStreamingPlayerSnapshot {
   decodedTimeRanges: readonly BufferedTimeRange[];
   /** Total resident ready/presented frames, including the current frame. */
   decodedFrameCount: number;
+  bufferDiagnostics?: Readonly<{
+    downloadedAheadSeconds: number;
+    decodedAheadSeconds: number;
+    compressedResidentBytes: number;
+    compressedCapacityBytes: number;
+    decodedResidentBytes: number;
+    decodedCapacityBytes: number;
+    decodedTargetFrames: number;
+  }>;
   currentFrameIndex: number;
   currentTimeSeconds: number;
   droppedFrameCount: number;
@@ -137,6 +146,13 @@ export class GaussianStreamingPlayer {
   private bufferedTimeRangesValue: readonly BufferedTimeRange[] = [];
   private decodedTimeRangesValue: readonly BufferedTimeRange[] = [];
   private decodedFrameCountValue = 0;
+  private bufferMemory = {
+    compressedResidentBytes: 0,
+    compressedCapacityBytes: 0,
+    decodedResidentBytes: 0,
+    decodedCapacityBytes: 0,
+    decodedTargetFrames: 0,
+  };
   private availableDynamicDetailLevels: readonly number[] | undefined;
   private unavailableQualityLevelsKey = "";
   private disposed = false;
@@ -154,6 +170,9 @@ export class GaussianStreamingPlayer {
   private readonly now: () => number;
   private readonly loop: boolean;
   private updatingQuality = false;
+  private qualityTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly preparationSamples: Array<{ bytes: number; durationMs: number }> =
+    [];
   private lastQualityUpdateAt = -Infinity;
   private lastQualityLifecycle: PlayerLifecycleState | undefined;
   private readonly renderer: GaussianRendererAdapter;
@@ -192,6 +211,13 @@ export class GaussianStreamingPlayer {
     this.now = now;
     this.loop = loop;
     this.unsubscribeBuffer = buffer.subscribe((snapshot) => {
+      this.bufferMemory = {
+        compressedResidentBytes: snapshot.compressedBuffer?.residentBytes ?? 0,
+        compressedCapacityBytes: snapshot.compressedBuffer?.capacityBytes ?? 0,
+        decodedResidentBytes: snapshot.decodedResidentBytes ?? 0,
+        decodedCapacityBytes: snapshot.decodedCapacityBytes ?? 0,
+        decodedTargetFrames: snapshot.capacity,
+      };
       const unavailable = snapshot.unavailableQualityLevels ?? [];
       const unavailableKey = unavailable.join(",");
       if (unavailableKey !== this.unavailableQualityLevelsKey) {
@@ -239,6 +265,7 @@ export class GaussianStreamingPlayer {
       audioClock.onChange = () => this.emit();
       if (audioClock.error !== undefined) this.handleAudioError(audioClock.error);
     }
+    this.scheduleQualityUpdate();
   }
 
   static async create(
@@ -292,17 +319,25 @@ export class GaussianStreamingPlayer {
       const now =
         options.clock === undefined ? performanceNow : () => options.clock!.now();
       const qualityLevels = sequenceQualityLevels(sequence);
+      const futureFrameCount =
+        bufferOptions.futureFrameCount ??
+        Math.min(
+          sequence.frameCount - 1,
+          Math.ceil(sequence.frameRate * targetBufferSeconds),
+        );
       const minimumDetail = qualityLevels[0]?.detailLevel ?? DEFAULT_MINIMUM_DETAIL;
       const facadeReference: { current?: GaussianStreamingPlayer } = {};
       const initialTransfers: Readonly<FrameRingBufferTraceEvent>[] = [];
       buffer = new FrameRingBuffer({
+        decodedBufferMaximumBytes:
+          bufferOptions.decodedBufferMaximumBytes ?? DEFAULT_DECODED_BUFFER_BYTES,
         compressedBufferMaximumBytes:
           bufferOptions.compressedBufferMaximumBytes ?? DEFAULT_COMPRESSED_BUFFER_BYTES,
         ...(options.fetch === undefined ? {} : { compressedFrameFetch: options.fetch }),
         ...(options.decoderRegistry === undefined
           ? {}
           : { decoderRegistry: options.decoderRegistry }),
-        futureFrameCount: bufferOptions.futureFrameCount ?? DEFAULT_FUTURE_FRAMES,
+        futureFrameCount,
         durationSeconds,
         loop: options.loop ?? bufferOptions.loop ?? false,
         maximumBasePreparationConcurrency:
@@ -330,7 +365,7 @@ export class GaussianStreamingPlayer {
       await buffer.initialise(0);
       const minimumReadyFrames =
         bufferOptions.minimumReadyFrames ??
-        Math.min(2, bufferOptions.futureFrameCount ?? DEFAULT_FUTURE_FRAMES);
+        Math.min(2, buffer.snapshot.futureFrameCount);
       playback = new SequencePlaybackController({
         buffer,
         ...(clock === undefined ? {} : { clock }),
@@ -391,6 +426,20 @@ export class GaussianStreamingPlayer {
       bufferedTimeRanges: this.bufferedTimeRangesValue,
       decodedTimeRanges: this.decodedTimeRangesValue,
       decodedFrameCount: this.decodedFrameCountValue,
+      bufferDiagnostics: {
+        ...this.bufferMemory,
+        downloadedAheadSeconds: this.compressedBufferAheadSeconds(
+          playback.currentTimeSeconds,
+        ),
+        decodedAheadSeconds: Math.max(
+          0,
+          (this.decodedTimeRangesValue.find(
+            (range) =>
+              range.startSeconds <= playback.currentTimeSeconds + 1e-7 &&
+              range.endSeconds > playback.currentTimeSeconds,
+          )?.endSeconds ?? playback.currentTimeSeconds) - playback.currentTimeSeconds,
+        ),
+      },
       currentFrameIndex: playback.currentFrameIndex,
       currentTimeSeconds: playback.currentTimeSeconds,
       droppedFrameCount: playback.droppedFrameCount,
@@ -497,6 +546,7 @@ export class GaussianStreamingPlayer {
         detailLevel: mode.detailLevel,
         minimumSplatCount: mode.minimumSplatCount ?? 100,
       });
+      this.refreshPausedQuality();
     } else {
       this.qualityModeValue = { mode: "automatic" };
       this.lastQualityUpdateAt = -Infinity;
@@ -523,6 +573,7 @@ export class GaussianStreamingPlayer {
       return;
     }
     this.disposed = true;
+    clearTimeout(this.qualityTimer);
     this.cancelPendingPlay();
     this.unsubscribePlayback?.();
     this.unsubscribeBuffer?.();
@@ -534,6 +585,17 @@ export class GaussianStreamingPlayer {
   }
 
   private observeTrace(event: Readonly<FrameRingBufferTraceEvent>): void {
+    if (
+      event.type === "base-ready" &&
+      (event.stageDurationMs ?? 0) > 0 &&
+      (event.totalBytes ?? 0) > 0
+    ) {
+      this.preparationSamples.push({
+        bytes: event.totalBytes!,
+        durationMs: event.stageDurationMs!,
+      });
+      if (this.preparationSamples.length > 16) this.preparationSamples.shift();
+    }
     if (
       event.type === "compressed-fetch-ready" &&
       event.fromCache !== true &&
@@ -597,8 +659,9 @@ export class GaussianStreamingPlayer {
           detailLevel: decision.dynamicFrameDetailLevel ?? DEFAULT_MINIMUM_DETAIL,
           minimumSplatCount: decision.minimumDynamicSplatCount ?? 100,
         },
-        { preservePreparedFrames: true },
+        { preservePreparedFrames: playback.isPlaying },
       );
+      this.refreshPausedQuality();
       if (decision.maximumBasePreparationConcurrency !== undefined) {
         this.buffer.setPreparationConcurrency(
           decision.maximumBasePreparationConcurrency,
@@ -609,6 +672,14 @@ export class GaussianStreamingPlayer {
     } finally {
       this.updatingQuality = false;
     }
+  }
+
+  private scheduleQualityUpdate(): void {
+    this.qualityTimer = setTimeout(() => {
+      if (this.disposed) return;
+      this.updateAutomaticQuality();
+      if (!this.disposed) this.scheduleQualityUpdate();
+    }, 250);
   }
 
   private toPlaybackState(): PlaybackState {
@@ -623,6 +694,24 @@ export class GaussianStreamingPlayer {
       minimumReadyFrames: this.minimumReadyFrames,
       playbackRate: 1,
     };
+  }
+
+  private refreshPausedQuality(): void {
+    const snapshot = this.playbackSnapshot;
+    if (
+      snapshot.isPlaying ||
+      this.pendingPlayRevision !== undefined ||
+      (snapshot.lifecycle !== "READY" &&
+        snapshot.lifecycle !== "PAUSED" &&
+        snapshot.lifecycle !== "ENDED")
+    )
+      return;
+    if (!this.buffer.invalidateCurrentTransfer()) return;
+    // The playback controller owns cancellation if Play, Seek or another quality
+    // selection supersedes this refresh. Keep the exact media position.
+    void this.playback
+      .seek(this.frameForTime(snapshot.currentTimeSeconds), snapshot.currentTimeSeconds)
+      .catch(() => undefined); // The controller exposes preparation failures in its snapshot.
   }
 
   private toPlayerMetrics(
@@ -664,6 +753,21 @@ export class GaussianStreamingPlayer {
         ) / this.sequence.frameRate,
       downloadedBytes: frames.reduce((sum, frame) => sum + frame.downloadedBytes, 0),
       droppedFrames: this.playbackSnapshot.droppedFrameCount,
+      ...(this.preparationSamples.length === 0
+        ? {}
+        : {
+            estimatedPreparationBytesPerSecond:
+              ((buffer.maximumBasePreparationConcurrency ?? 2) *
+                1_000 *
+                this.preparationSamples.reduce(
+                  (sum, sample) => sum + sample.bytes,
+                  0,
+                )) /
+              this.preparationSamples.reduce(
+                (sum, sample) => sum + sample.durationMs,
+                0,
+              ),
+          }),
       ...(estimatedBaseFrameBytes === undefined ? {} : { estimatedBaseFrameBytes }),
       ...(renderFramesPerSecond === undefined ? {} : { renderFramesPerSecond }),
       stallDurationSeconds: this.stallDurationSeconds,

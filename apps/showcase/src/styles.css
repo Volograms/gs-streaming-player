@@ -422,7 +422,8 @@ button {
   accent-color: var(--pink);
   cursor: pointer;
 }
-.timeline-ready-count {
+.timeline-ready-count,
+.timeline-download-count {
   position: absolute;
   right: 0;
   bottom: -12px;
@@ -432,6 +433,11 @@ button {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
   pointer-events: auto;
+}
+.timeline-download-count {
+  left: 0;
+  right: auto;
+  color: #b8b0c4;
 }
 .sr-only {
   position: absolute;
@@ -601,6 +607,10 @@ button {
   .timeline-ready-count {
     bottom: -11px;
     font-size: 8px;
+  }
+  .timeline-download-count,
+  .timeline-ready-duration {
+    display: none;
   }
   .transport > .icon-button:nth-of-type(1),
   .transport > .icon-button:nth-of-type(3),

@@ -431,6 +431,11 @@ export class SequencePlaybackController {
     // A buffer snapshot includes the compressed-cache summary. Read it once rather
     // than scanning that much larger cache for every future-frame readiness check.
     const buffer = this.buffer.snapshot;
+    const ready = new Set(
+      buffer.frames
+        .filter(({ status }) => status === "ready" || status === "presented")
+        .map(({ frameIndex }) => frameIndex),
+    );
     let frames = 0;
     let seconds = 0;
     let previousFrameIndex = this.currentFrameIndexValue;
@@ -439,10 +444,7 @@ export class SequencePlaybackController {
       if (frameIndex === undefined) {
         break;
       }
-      const frame = buffer.frames.find(
-        (candidate) => candidate.frameIndex === frameIndex,
-      );
-      if (frame?.status !== "ready" && frame?.status !== "presented") {
+      if (!ready.has(frameIndex)) {
         break;
       }
       frames += 1;

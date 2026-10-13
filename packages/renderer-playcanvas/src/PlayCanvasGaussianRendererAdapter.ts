@@ -463,6 +463,7 @@ export class PlayCanvasGaussianRendererAdapter
       });
 
       const prepared: PreparedFrame = {
+        estimatedMemoryBytes: estimateFrameMemory(asset, byteLength),
         frameIndex: frame.frameIndex,
         sequenceId,
         source: frame,
@@ -1093,6 +1094,15 @@ function readSplatCount(asset: Asset): number {
     );
   }
   return resource.numSplats;
+}
+
+function estimateFrameMemory(asset: Asset, compressedBytes: number): number {
+  const resource = asset.resource as GSplatResourceBase;
+  let textures = 0;
+  for (const texture of resource.streams.textures.values()) textures += texture.gpuSize;
+  // Reserve both GPU textures and their decoded upload sources. This deliberately
+  // remains conservative when PlayCanvas/browser releases an upload source early.
+  return Math.max(compressedBytes, textures * 2 + (resource.centers?.byteLength ?? 0));
 }
 
 function clearGsplatAsset(component: { asset: Asset | number }): void {

@@ -18,6 +18,8 @@ export interface PlayerMetrics {
   downloadedBytes: number;
   droppedFrames: number;
   estimatedBaseFrameBytes?: number;
+  /** Measured active decoder/renderer preparation capacity, including configured concurrency. */
+  estimatedPreparationBytesPerSecond?: number;
   renderFramesPerSecond?: number;
   stallDurationSeconds: number;
   targetFramesPerSecond?: number;

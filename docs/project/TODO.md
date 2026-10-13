@@ -67,8 +67,8 @@ Detailed experimental procedures and already captured baselines remain in the
       events.
 - [ ] E06-T06/T09 — Complete cancellation accounting and byte-based decoded/GPU memory
       eviction. Refinement aborts, frame-count eviction, and the compressed-byte budget
-      exist; cancelled work still needs distinct metrics and all resident
-      representations need one enforceable memory policy.
+      and an estimated decoded CPU/GPU budget exist; cancelled work still needs distinct
+      metrics and all resident representations need one enforceable memory policy.
 - [ ] E13-T04 — Add independent static-refinement concurrency and include it in the
       renderer/device budget policy.
 

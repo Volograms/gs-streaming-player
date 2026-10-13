@@ -46,20 +46,24 @@ the caller must choose one with `sequenceId`; simultaneous sequences are unsuppo
 
 Automatic quality starts at the manifest's minimum playable tier (or its lowest
 available tier). Content without an authored tier ladder retains the 25% progressive
-detail default. Buffer defaults are one previous and ten future frames, a 200 MB
-compressed cache, six concurrent fetches, two initial preparations, and two ready
-startup frames. The downloaded cache keeps filling its byte budget; five seconds is the
-default automatic-quality reserve target, not a limit on prefetch duration. Decoded and
-GPU frame ownership stays in the smaller ring. Configure the budget and target with
-`buffer.compressedBufferMaximumBytes` and `buffer.targetBufferSeconds`, and startup with
-`buffer.minimumReadyFrames`. Inject a custom policy with `qualityController`. Automatic
-policy can adjust preparation concurrency while playing.
+detail default. Buffer defaults are a five-second decoded lookahead, one previous frame,
+a 200 MB compressed cache, a separate 500 MB estimated decoded CPU/GPU budget, six
+concurrent fetches, two initial preparations, and two ready startup frames. The
+downloaded cache keeps filling its byte budget. The decoded window grows toward the time
+target as preparation completes, and shortens when its memory budget requires it. It no
+longer stops at ten future frames. Explicit `buffer.futureFrameCount` overrides the
+time-based frame limit. Configure the budgets with `buffer.compressedBufferMaximumBytes`
+and `buffer.decodedBufferMaximumBytes`, the target with `buffer.targetBufferSeconds`,
+and startup with `buffer.minimumReadyFrames`. Inject a custom policy with
+`qualityController`. Automatic policy can adjust preparation concurrency while playing.
 
 Both showcases accept `VITE_COMPRESSED_BUFFER_MB` (decimal MB, default `200`) and
-`VITE_TARGET_BUFFER_SECONDS` (default `5`) in their app's `.env.local`. For example:
+`VITE_DECODED_BUFFER_MB` (default `500`) and `VITE_TARGET_BUFFER_SECONDS` (default `5`)
+in their app's `.env.local`. For example:
 
 ```dotenv
 VITE_COMPRESSED_BUFFER_MB=400
+VITE_DECODED_BUFFER_MB=750
 VITE_TARGET_BUFFER_SECONDS=5
 ```
 
@@ -69,6 +73,14 @@ transfers. For a tier averaging `B` bytes per frame at `F` fps, five seconds nee
 approximately `5 * F * B` bytes, plus the current payload. Auto selects the highest tier
 that fits both the transfer budget and this reserve; manual quality may leave a shorter
 reserve.
+
+Compressed file size is not decoded memory size. PlayCanvas reports texture allocation
+and center storage, conservatively allowing a CPU upload copy as well as GPU textures.
+The ring learns the expansion factor for subsequent frames; other adapters can report
+`PreparedFrame.estimatedMemoryBytes`, with conservative metadata-based estimates used
+until measurements exist. Static content, temporary decode work, in-flight preparation
+and a visible frame awaiting replacement are additional allocations. At least the
+current/startup frames remain usable even when individual frames exceed the budget.
 
 Compressed prefetch planning stops at the byte budget instead of scanning the remaining
 sequence on every window update. Cached assets use their observed byte sizes. When sizes
@@ -116,6 +128,9 @@ The showcases draw decoded-ready ranges in a thin green lane and show a visible
 `Ready N frames` count. Grey means downloaded, green means decoded and prepared for
 playback, and pink means played. A long grey reserve can coexist with an empty green
 reserve; downloaded capacity alone does not establish decoder or renderer capacity.
+Desktop controls also show both reserves in seconds. Hover over either count for
+compressed and estimated decoded memory usage and limits, available in manual and Auto
+modes. `bufferDiagnostics` exposes the same values in player snapshots.
 
 In Auto, the quality menu reports the requested authored dynamic tier rather than the
 renderer-wide splat count, which may include static content. Its tooltip shows the
