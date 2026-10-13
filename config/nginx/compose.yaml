@@ -1,0 +1,51 @@
+name: gs-streaming-assets
+
+services:
+  assets:
+    image: nginx:1.31.6-alpine
+    restart: unless-stopped
+    ports:
+      - "${ASSET_BIND_ADDRESS:-127.0.0.1}:${ASSET_HTTP_PORT:-8080}:80"
+      - "${ASSET_BIND_ADDRESS:-127.0.0.1}:${ASSET_PORT:-8443}:443"
+    environment:
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
+      NGINX_ENVSUBST_FILTER: ^ASSET_
+      ASSET_MIME_TYPES: /etc/nginx/mime.types
+      ASSET_WORKERS: "1"
+      ASSET_CACHE_CONFIG: ""
+      ASSET_ORIGIN_SERVER: ""
+      ASSET_LOCATION_BODY: "            try_files $$uri =404;"
+      ASSET_PUBLIC_ROOT: /srv/public
+      # Keep slow Windows bind-mount reads off the nginx request-handling thread.
+      ASSET_FILE_IO: aio threads;
+      ASSET_LISTEN: 443 ssl
+      ASSET_HTTP_LISTEN: listen 80;
+      ASSET_PID: /var/run/nginx.pid
+      ASSET_ERROR_LOG: /dev/stderr
+      ASSET_TLS: |
+        ssl_certificate /etc/nginx/tls/cert.pem;
+        ssl_certificate_key /etc/nginx/tls/key.pem;
+        ssl_protocols TLSv1.2 TLSv1.3;
+    volumes:
+      - type: bind
+        source: ./assets.conf.template
+        target: /etc/nginx/templates/nginx.conf.template
+        read_only: true
+      - type: bind
+        source: ${ASSET_PUBLIC_DIR:-../../apps/6g-showcase/public}
+        target: /srv/public
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${ASSET_CERT_FILE:-../../.cert/localhost-cert.pem}
+        target: /etc/nginx/tls/cert.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${ASSET_KEY_FILE:-../../.cert/localhost-key.pem}
+        target: /etc/nginx/tls/key.pem
+        read_only: true
+        bind:
+          create_host_path: false

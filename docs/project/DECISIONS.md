@@ -68,6 +68,10 @@ used during day-to-day implementation.
   previous frame. The window size is configurable, base quality has priority over
   refinement, and a replacement never evicts the presented frame before it is
   presentation-ready.
+- Automatic fixed-tier upgrades during playback keep the decoded window and its queued
+  work, then append higher-quality frames as the window advances. An upgrade must not
+  discard the ready reserve to make the quality change visible sooner. Paused Auto and
+  explicit manual selections can refresh the current image directly.
 - Spark-specific LoD and foveation settings remain on the concrete adapter. The core
   quality decision is translated at the boundary so Spark properties do not leak into
   `player-core`.

@@ -7,9 +7,21 @@ export interface PlayerMetrics {
   bufferOccupancyRatio?: number;
   /** Attainable forward reserve, accounting for the configured window and clip end. */
   bufferCapacitySeconds?: number;
+  /** Downloaded/presentation-ready contiguous reserve, separate from the decoded ring. */
+  compressedBufferAheadSeconds?: number;
+  /** Compressed memory budget available for independently addressable frame tiers. */
+  compressedBufferCapacityBytes?: number;
+  /** Remaining clip duration, or one complete cycle when looping. */
+  compressedBufferWindowSeconds?: number;
+  /** Remaining common authored tiers after missing assets have been excluded. */
+  availableDynamicDetailLevels?: readonly number[];
   downloadedBytes: number;
   droppedFrames: number;
   estimatedBaseFrameBytes?: number;
+  /** Measured active decoder/renderer preparation capacity, including configured concurrency. */
+  estimatedPreparationBytesPerSecond?: number;
+  /** Actual displayed transfer tier; a downgrade may still be draining a higher-tier reserve. */
+  presentedDynamicDetailLevel?: number;
   renderFramesPerSecond?: number;
   stallDurationSeconds: number;
   targetFramesPerSecond?: number;

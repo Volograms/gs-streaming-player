@@ -332,7 +332,8 @@ describe("PlayCanvasGaussianRendererAdapter", () => {
           loadingCount: unknown,
         ) => void)
       | undefined;
-    const asset = { unload: vi.fn() };
+    const releaseTextureSources = vi.fn();
+    const asset = { resource: { releaseTextureSources }, unload: vi.fn() };
     const assets = { remove: vi.fn() };
     const gsplat = {
       asset: undefined as unknown,
@@ -407,6 +408,7 @@ describe("PlayCanvasGaussianRendererAdapter", () => {
 
     adapter.releaseFrame(prepared);
 
+    expect(releaseTextureSources).not.toHaveBeenCalled();
     expect(asset.unload).not.toHaveBeenCalled();
     expect(assets.remove).not.toHaveBeenCalled();
 
@@ -414,6 +416,7 @@ describe("PlayCanvasGaussianRendererAdapter", () => {
     await expect(presentation).resolves.toBeUndefined();
 
     expect(asset.unload).not.toHaveBeenCalled();
+    expect(releaseTextureSources).not.toHaveBeenCalled();
     expect(gsplat.enabled).toBe(false);
     events.fire("frameend");
 
@@ -422,5 +425,9 @@ describe("PlayCanvasGaussianRendererAdapter", () => {
     expect(assets.remove).toHaveBeenCalledTimes(1);
     expect(assets.remove).toHaveBeenCalledWith(asset);
     expect(asset.unload).toHaveBeenCalledOnce();
+    expect(releaseTextureSources).toHaveBeenCalledOnce();
+    expect(releaseTextureSources.mock.invocationCallOrder[0]).toBeLessThan(
+      asset.unload.mock.invocationCallOrder[0]!,
+    );
   });
 });

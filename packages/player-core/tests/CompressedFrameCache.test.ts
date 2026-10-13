@@ -22,6 +22,43 @@ function response(byteLength: number): Response {
 }
 
 describe("CompressedFrameCache", () => {
+  it("reports completed planned frames without download gaps or obsolete quality tiers", async () => {
+    const pending = new Map(
+      ["/0.sog", "/1.sog", "/2.sog", "/0-high.sog"].map((url) => [
+        url,
+        deferred<Response>(),
+      ]),
+    );
+    const cache = new CompressedFrameCache({
+      fetch: vi.fn(async (url) => pending.get(String(url))!.promise),
+      maximumBytes: 40,
+      maximumFetchConcurrency: 4,
+    });
+    const requests = [0, 1, 2].map((frameIndex) => ({
+      byteSize: 10,
+      frameIndex,
+      url: `/${frameIndex}.sog`,
+    }));
+    try {
+      cache.setPlan(requests);
+      const demanded = cache.get(requests[1]!);
+      pending.get("/0.sog")!.resolve(response(10));
+      pending.get("/2.sog")!.resolve(response(10));
+      await vi.waitFor(() => expect(cache.snapshot.readyFrameCount).toBe(2));
+      expect(cache.snapshot.readyFrameIndices).toEqual([0, 2]);
+
+      cache.setPlan([{ ...requests[0]!, url: "/0-high.sog" }, requests[2]!]);
+      pending.get("/1.sog")!.resolve(response(10));
+      await demanded;
+      expect(cache.snapshot.readyFrameIndices).toEqual([2]);
+      pending.get("/0-high.sog")!.resolve(response(10));
+      await vi.waitFor(() => expect(cache.snapshot.readyFrameIndices).toHaveLength(2));
+      expect([...cache.snapshot.readyFrameIndices].sort()).toEqual([0, 2]);
+    } finally {
+      cache.dispose();
+    }
+  });
+
   it.each([
     [0, 8, true],
     [0, 0, undefined],
@@ -265,6 +302,138 @@ describe("CompressedFrameCache", () => {
       cache.setPlan(requests());
       expect(visits).toBe(1);
       expect(fetchImplementation).toHaveBeenCalledOnce();
+    } finally {
+      cache.dispose();
+    }
+  });
+
+  it.each([undefined, 0])(
+    "continues an unknown-size factory plan to the byte budget while paused (%s)",
+    async (byteSize) => {
+      const fetchImplementation = vi.fn(async () => response(10));
+      const cache = new CompressedFrameCache({
+        fetch: fetchImplementation,
+        maximumBytes: 100,
+        maximumFetchConcurrency: 3,
+      });
+      function* requests() {
+        for (let frameIndex = 0; frameIndex < 100; frameIndex += 1) {
+          yield {
+            ...(byteSize === undefined ? {} : { byteSize }),
+            frameIndex,
+            url: `/${frameIndex}.sog`,
+          };
+        }
+      }
+      try {
+        cache.setPlan(requests);
+        await vi.waitFor(() =>
+          expect(cache.snapshot).toMatchObject({
+            activeFetchCount: 0,
+            contiguousReadyFrameCount: 10,
+            residentBytes: 100,
+          }),
+        );
+        expect(fetchImplementation).toHaveBeenCalledTimes(10);
+      } finally {
+        cache.dispose();
+      }
+    },
+  );
+
+  it.each([
+    {
+      maximumBytes: 200,
+      largeBytes: 120,
+      probeBytes: 1,
+      expectedBytes: 200,
+      expectedFetches: 81,
+    },
+    {
+      maximumBytes: 20,
+      largeBytes: 12,
+      probeBytes: 4,
+      expectedBytes: 17,
+      expectedFetches: 7,
+    },
+  ])(
+    "probes a pessimistic unknown-size boundary once and remembers its actual cost: $maximumBytes",
+    async ({
+      maximumBytes,
+      largeBytes,
+      probeBytes,
+      expectedBytes,
+      expectedFetches,
+    }) => {
+      const fetchImplementation = vi.fn(async (url: RequestInfo | URL) => {
+        const index = Number(String(url).match(/\/(\d+)\.sog$/)![1]);
+        return response(index === 5 ? largeBytes : index === 6 ? probeBytes : 1);
+      });
+      const cache = new CompressedFrameCache({
+        fetch: fetchImplementation,
+        maximumBytes,
+        maximumFetchConcurrency: 6,
+      });
+      try {
+        cache.setPlan(() =>
+          Array.from({ length: 100 }, (_, frameIndex) => ({
+            frameIndex,
+            url: `/${frameIndex}.sog`,
+          })),
+        );
+        await vi.waitFor(() =>
+          expect(cache.snapshot).toMatchObject({
+            activeFetchCount: 0,
+            residentBytes: expectedBytes,
+          }),
+        );
+        expect(fetchImplementation).toHaveBeenCalledTimes(expectedFetches);
+      } finally {
+        cache.dispose();
+      }
+    },
+  );
+
+  it("does not endlessly retry failed unknown-size factory plans", async () => {
+    const fetchImplementation = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const cache = new CompressedFrameCache({
+      fetch: fetchImplementation,
+      maximumBytes: 100,
+      maximumFetchConcurrency: 3,
+    });
+    try {
+      cache.setPlan(() =>
+        Array.from({ length: 20 }, (_, frameIndex) => ({
+          frameIndex,
+          url: `/${frameIndex}.sog`,
+        })),
+      );
+      await vi.waitFor(() => expect(cache.snapshot.activeFetchCount).toBe(0));
+      expect(fetchImplementation).toHaveBeenCalledTimes(3);
+    } finally {
+      cache.dispose();
+    }
+  });
+
+  it("does not endlessly refill oversized unknown-size payloads", async () => {
+    const fetchImplementation = vi.fn(async () => response(100));
+    const cache = new CompressedFrameCache({
+      fetch: fetchImplementation,
+      maximumBytes: 25,
+      maximumFetchConcurrency: 3,
+    });
+    try {
+      cache.setPlan(() =>
+        Array.from({ length: 20 }, (_, frameIndex) => ({
+          frameIndex,
+          url: `/${frameIndex}.sog`,
+        })),
+      );
+      await vi.waitFor(() => expect(cache.snapshot.activeFetchCount).toBe(0));
+      expect(cache.snapshot.residentBytes).toBeLessThanOrEqual(25);
+      expect(fetchImplementation).toHaveBeenCalledTimes(3);
     } finally {
       cache.dispose();
     }

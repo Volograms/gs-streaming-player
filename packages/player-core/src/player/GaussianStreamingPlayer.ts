@@ -1,3 +1,7 @@
+import {
+  bufferedTimeRanges,
+  decodedTimeRanges,
+} from "../buffering/bufferedTimeRanges.js";
 import { FrameRingBuffer } from "../buffering/FrameRingBuffer.js";
 import { loadManifest } from "../manifest/loader.js";
 import { sequencePlaybackDurationSeconds } from "../manifest/timeline.js";
@@ -13,6 +17,7 @@ import type {
   PlaybackClock,
   SequencePlaybackSnapshot,
 } from "./SequencePlaybackController.js";
+import type { BufferedTimeRange } from "../buffering/bufferedTimeRanges.js";
 import type {
   FrameRingBufferConfiguration,
   FrameRingBufferTraceEvent,
@@ -29,7 +34,8 @@ import type { GaussianRendererAdapter, RendererMetrics } from "../renderer/types
 import type { GaussianFrameDecoderRegistry } from "@6g-path/gaussian-codec";
 
 const DEFAULT_COMPRESSED_BUFFER_BYTES = 200_000_000;
-const DEFAULT_FUTURE_FRAMES = 10;
+const DEFAULT_TARGET_BUFFER_SECONDS = 5;
+const DEFAULT_DECODED_BUFFER_BYTES = 500_000_000;
 const DEFAULT_MINIMUM_DETAIL = 0.25;
 
 export interface GaussianStreamingMediaElement {
@@ -61,6 +67,8 @@ export type GaussianStreamingQualityMode =
 
 export interface GaussianStreamingPlayerBufferOptions extends FrameRingBufferConfiguration {
   minimumReadyFrames?: number;
+  /** Decoded lookahead and automatic-quality reserve target; compressed prefetch fills its byte budget. */
+  targetBufferSeconds?: number;
 }
 
 export interface GaussianStreamingPlayerOptions {
@@ -85,6 +93,21 @@ export interface GaussianStreamingPlayerSnapshot {
     volume: number;
   };
   bufferAheadFrames: number;
+  /** Downloaded/prepared frame intervals; excludes in-flight downloads and gaps. */
+  bufferedTimeRanges: readonly BufferedTimeRange[];
+  /** Resident frames fully decoded/prepared and ready for presentation. */
+  decodedTimeRanges: readonly BufferedTimeRange[];
+  /** Total resident ready/presented frames, including the current frame. */
+  decodedFrameCount: number;
+  bufferDiagnostics?: Readonly<{
+    downloadedAheadSeconds: number;
+    decodedAheadSeconds: number;
+    compressedResidentBytes: number;
+    compressedCapacityBytes: number;
+    decodedResidentBytes: number;
+    decodedCapacityBytes: number;
+    decodedTargetFrames: number;
+  }>;
   currentFrameIndex: number;
   currentTimeSeconds: number;
   droppedFrameCount: number;
@@ -94,8 +117,20 @@ export interface GaussianStreamingPlayerSnapshot {
   lifecycle: PlayerLifecycleState;
   manifestId: string;
   qualityMode: GaussianStreamingQualityMode;
+  /** Latest automatic-policy inputs and requested tier, distinct from rendered splat count. */
+  qualityDiagnostics?: Readonly<{
+    bufferAheadSeconds: number;
+    compressedBufferAheadSeconds?: number;
+    dynamicFrameDetailLevel: number;
+    presentedDynamicDetailLevel?: number;
+    estimatedThroughputBps: number;
+    networkConfidence: number;
+    targetBufferSeconds: number;
+    targetFramesPerSecond?: number;
+  }>;
   renderer: RendererMetrics;
   sequenceId: string;
+  presentationTiming?: SequencePlaybackSnapshot["presentationTiming"];
 }
 
 type SnapshotListener = (snapshot: Readonly<GaussianStreamingPlayerSnapshot>) => void;
@@ -109,6 +144,18 @@ export class GaussianStreamingPlayer {
   private readonly audioClock: MediaPlaybackClock | undefined;
   private audioError: unknown;
   private readonly buffer: FrameRingBuffer;
+  private bufferedTimeRangesValue: readonly BufferedTimeRange[] = [];
+  private decodedTimeRangesValue: readonly BufferedTimeRange[] = [];
+  private decodedFrameCountValue = 0;
+  private bufferMemory = {
+    compressedResidentBytes: 0,
+    compressedCapacityBytes: 0,
+    decodedResidentBytes: 0,
+    decodedCapacityBytes: 0,
+    decodedTargetFrames: 0,
+  };
+  private availableDynamicDetailLevels: readonly number[] | undefined;
+  private unavailableQualityLevelsKey = "";
   private disposed = false;
   private operationRevision = 0;
   private pendingPlayRevision: number | undefined;
@@ -119,10 +166,14 @@ export class GaussianStreamingPlayer {
   private readonly playback: SequencePlaybackController;
   private playbackSnapshot: SequencePlaybackSnapshot;
   private qualityModeValue: GaussianStreamingQualityMode = { mode: "automatic" };
+  private qualityDiagnosticsValue: GaussianStreamingPlayerSnapshot["qualityDiagnostics"];
   private readonly qualityController: QualityController;
   private readonly now: () => number;
   private readonly loop: boolean;
   private updatingQuality = false;
+  private qualityTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly preparationSamples: Array<{ bytes: number; durationMs: number }> =
+    [];
   private lastQualityUpdateAt = -Infinity;
   private lastQualityLifecycle: PlayerLifecycleState | undefined;
   private readonly renderer: GaussianRendererAdapter;
@@ -160,7 +211,46 @@ export class GaussianStreamingPlayer {
     this.minimumReadyFrames = minimumReadyFrames;
     this.now = now;
     this.loop = loop;
-    this.unsubscribeBuffer = buffer.subscribe(() => {
+    this.unsubscribeBuffer = buffer.subscribe((snapshot) => {
+      this.bufferMemory = {
+        compressedResidentBytes: snapshot.compressedBuffer?.residentBytes ?? 0,
+        compressedCapacityBytes: snapshot.compressedBuffer?.capacityBytes ?? 0,
+        decodedResidentBytes: snapshot.decodedResidentBytes ?? 0,
+        decodedCapacityBytes: snapshot.decodedCapacityBytes ?? 0,
+        decodedTargetFrames: snapshot.capacity,
+      };
+      const unavailable = snapshot.unavailableQualityLevels ?? [];
+      const unavailableKey = unavailable.join(",");
+      if (unavailableKey !== this.unavailableQualityLevelsKey) {
+        this.unavailableQualityLevelsKey = unavailableKey;
+        this.availableDynamicDetailLevels = sequenceQualityLevels({
+          ...this.sequence,
+          frames: this.sequence.frames.map((frame) => ({
+            ...frame,
+            ...(frame.qualityLevels === undefined
+              ? {}
+              : {
+                  qualityLevels: frame.qualityLevels.filter(
+                    ({ level }) => !unavailable.includes(level),
+                  ),
+                }),
+          })),
+        }).map(({ detailLevel }) => detailLevel);
+      }
+      // Reuse the emitted buffer snapshot; never scan the cache on UI snapshot reads.
+      this.bufferedTimeRangesValue = bufferedTimeRanges(
+        snapshot,
+        this.sequence,
+        this.durationSeconds,
+      );
+      this.decodedTimeRangesValue = decodedTimeRanges(
+        snapshot,
+        this.sequence,
+        this.durationSeconds,
+      );
+      this.decodedFrameCountValue = snapshot.frames.filter(
+        ({ status }) => status === "ready" || status === "presented",
+      ).length;
       this.updateAutomaticQuality();
       this.emit();
     });
@@ -176,6 +266,7 @@ export class GaussianStreamingPlayer {
       audioClock.onChange = () => this.emit();
       if (audioClock.error !== undefined) this.handleAudioError(audioClock.error);
     }
+    this.scheduleQualityUpdate();
   }
 
   static async create(
@@ -221,20 +312,33 @@ export class GaussianStreamingPlayer {
         manifest.durationSeconds,
       );
       const bufferOptions = options.buffer ?? {};
+      const targetBufferSeconds =
+        bufferOptions.targetBufferSeconds ?? DEFAULT_TARGET_BUFFER_SECONDS;
+      if (!Number.isFinite(targetBufferSeconds) || targetBufferSeconds <= 0) {
+        throw new RangeError("targetBufferSeconds must be a positive finite number.");
+      }
       const now =
         options.clock === undefined ? performanceNow : () => options.clock!.now();
       const qualityLevels = sequenceQualityLevels(sequence);
+      const futureFrameCount =
+        bufferOptions.futureFrameCount ??
+        Math.min(
+          sequence.frameCount - 1,
+          Math.ceil(sequence.frameRate * targetBufferSeconds),
+        );
       const minimumDetail = qualityLevels[0]?.detailLevel ?? DEFAULT_MINIMUM_DETAIL;
       const facadeReference: { current?: GaussianStreamingPlayer } = {};
       const initialTransfers: Readonly<FrameRingBufferTraceEvent>[] = [];
       buffer = new FrameRingBuffer({
+        decodedBufferMaximumBytes:
+          bufferOptions.decodedBufferMaximumBytes ?? DEFAULT_DECODED_BUFFER_BYTES,
         compressedBufferMaximumBytes:
           bufferOptions.compressedBufferMaximumBytes ?? DEFAULT_COMPRESSED_BUFFER_BYTES,
         ...(options.fetch === undefined ? {} : { compressedFrameFetch: options.fetch }),
         ...(options.decoderRegistry === undefined
           ? {}
           : { decoderRegistry: options.decoderRegistry }),
-        futureFrameCount: bufferOptions.futureFrameCount ?? DEFAULT_FUTURE_FRAMES,
+        futureFrameCount,
         durationSeconds,
         loop: options.loop ?? bufferOptions.loop ?? false,
         maximumBasePreparationConcurrency:
@@ -262,13 +366,14 @@ export class GaussianStreamingPlayer {
       await buffer.initialise(0);
       const minimumReadyFrames =
         bufferOptions.minimumReadyFrames ??
-        Math.min(2, bufferOptions.futureFrameCount ?? DEFAULT_FUTURE_FRAMES);
+        Math.min(2, buffer.snapshot.futureFrameCount);
       playback = new SequencePlaybackController({
         buffer,
         ...(clock === undefined ? {} : { clock }),
         durationSeconds,
         loop: options.loop ?? bufferOptions.loop ?? false,
         minimumReadyFrames,
+        now,
         sequence,
       });
       const qualityController =
@@ -280,16 +385,7 @@ export class GaussianStreamingPlayer {
             : { dynamicQualityLevels: qualityLevels }),
           minimumDynamicDetailLevel: minimumDetail,
           minimumSplatCount: 100,
-          targetBufferSeconds:
-            (Math.max(
-              1,
-              Math.min(
-                bufferOptions.futureFrameCount ?? DEFAULT_FUTURE_FRAMES,
-                sequence.frameCount - 1,
-              ),
-            ) *
-              0.7) /
-            sequence.frameRate,
+          targetBufferSeconds,
         });
       const facade = new GaussianStreamingPlayer(
         manifest,
@@ -328,6 +424,23 @@ export class GaussianStreamingPlayer {
         volume: this.audioClock?.volume ?? 1,
       },
       bufferAheadFrames: playback.bufferAheadFrames,
+      bufferedTimeRanges: this.bufferedTimeRangesValue,
+      decodedTimeRanges: this.decodedTimeRangesValue,
+      decodedFrameCount: this.decodedFrameCountValue,
+      bufferDiagnostics: {
+        ...this.bufferMemory,
+        downloadedAheadSeconds: this.compressedBufferAheadSeconds(
+          playback.currentTimeSeconds,
+        ),
+        decodedAheadSeconds: Math.max(
+          0,
+          (this.decodedTimeRangesValue.find(
+            (range) =>
+              range.startSeconds <= playback.currentTimeSeconds + 1e-7 &&
+              range.endSeconds > playback.currentTimeSeconds,
+          )?.endSeconds ?? playback.currentTimeSeconds) - playback.currentTimeSeconds,
+        ),
+      },
       currentFrameIndex: playback.currentFrameIndex,
       currentTimeSeconds: playback.currentTimeSeconds,
       droppedFrameCount: playback.droppedFrameCount,
@@ -342,8 +455,15 @@ export class GaussianStreamingPlayer {
             : playback.lifecycle,
       manifestId: this.manifest.id,
       qualityMode: { ...this.qualityModeValue },
+      ...(this.qualityModeValue.mode !== "automatic" ||
+      this.qualityDiagnosticsValue === undefined
+        ? {}
+        : { qualityDiagnostics: this.qualityDiagnosticsValue }),
       renderer: this.renderer.getMetrics(),
       sequenceId: this.sequence.id,
+      ...(playback.presentationTiming === undefined
+        ? {}
+        : { presentationTiming: playback.presentationTiming }),
     };
   }
 
@@ -427,6 +547,7 @@ export class GaussianStreamingPlayer {
         detailLevel: mode.detailLevel,
         minimumSplatCount: mode.minimumSplatCount ?? 100,
       });
+      this.refreshPausedQuality();
     } else {
       this.qualityModeValue = { mode: "automatic" };
       this.lastQualityUpdateAt = -Infinity;
@@ -453,6 +574,7 @@ export class GaussianStreamingPlayer {
       return;
     }
     this.disposed = true;
+    clearTimeout(this.qualityTimer);
     this.cancelPendingPlay();
     this.unsubscribePlayback?.();
     this.unsubscribeBuffer?.();
@@ -464,6 +586,17 @@ export class GaussianStreamingPlayer {
   }
 
   private observeTrace(event: Readonly<FrameRingBufferTraceEvent>): void {
+    if (
+      event.type === "base-ready" &&
+      (event.stageDurationMs ?? 0) > 0 &&
+      (event.totalBytes ?? 0) > 0
+    ) {
+      this.preparationSamples.push({
+        bytes: event.totalBytes!,
+        durationMs: event.stageDurationMs!,
+      });
+      if (this.preparationSamples.length > 16) this.preparationSamples.shift();
+    }
     if (
       event.type === "compressed-fetch-ready" &&
       event.fromCache !== true &&
@@ -506,15 +639,33 @@ export class GaussianStreamingPlayer {
         source: "client-measured",
         timestampMs: now,
       };
-      const metrics = this.toPlayerMetrics(now);
+      const metrics = this.toPlayerMetrics(now, playback);
       const decision = this.qualityController.update(playback, network, metrics);
+      this.qualityDiagnosticsValue = Object.freeze({
+        bufferAheadSeconds: playback.bufferAheadSeconds,
+        ...(metrics.compressedBufferAheadSeconds === undefined
+          ? {}
+          : {
+              compressedBufferAheadSeconds: metrics.compressedBufferAheadSeconds,
+            }),
+        dynamicFrameDetailLevel:
+          decision.dynamicFrameDetailLevel ?? DEFAULT_MINIMUM_DETAIL,
+        ...(metrics.presentedDynamicDetailLevel === undefined
+          ? {}
+          : { presentedDynamicDetailLevel: metrics.presentedDynamicDetailLevel }),
+        estimatedThroughputBps: network.estimatedThroughputBps,
+        networkConfidence: network.confidence ?? 0,
+        targetBufferSeconds: decision.targetBufferSeconds,
+        targetFramesPerSecond: this.sequence.frameRate,
+      });
       this.buffer.setPresentationQualityTarget(
         {
           detailLevel: decision.dynamicFrameDetailLevel ?? DEFAULT_MINIMUM_DETAIL,
           minimumSplatCount: decision.minimumDynamicSplatCount ?? 100,
         },
-        { preservePreparedFrames: true },
+        { preservePreparedFrames: playback.isPlaying },
       );
+      this.refreshPausedQuality();
       if (decision.maximumBasePreparationConcurrency !== undefined) {
         this.buffer.setPreparationConcurrency(
           decision.maximumBasePreparationConcurrency,
@@ -525,6 +676,14 @@ export class GaussianStreamingPlayer {
     } finally {
       this.updatingQuality = false;
     }
+  }
+
+  private scheduleQualityUpdate(): void {
+    this.qualityTimer = setTimeout(() => {
+      if (this.disposed) return;
+      this.updateAutomaticQuality();
+      if (!this.disposed) this.scheduleQualityUpdate();
+    }, 250);
   }
 
   private toPlaybackState(): PlaybackState {
@@ -541,7 +700,28 @@ export class GaussianStreamingPlayer {
     };
   }
 
-  private toPlayerMetrics(now: number): PlayerMetrics {
+  private refreshPausedQuality(): void {
+    const snapshot = this.playbackSnapshot;
+    if (
+      snapshot.isPlaying ||
+      this.pendingPlayRevision !== undefined ||
+      (snapshot.lifecycle !== "READY" &&
+        snapshot.lifecycle !== "PAUSED" &&
+        snapshot.lifecycle !== "ENDED")
+    )
+      return;
+    if (!this.buffer.invalidateCurrentTransfer()) return;
+    // The playback controller owns cancellation if Play, Seek or another quality
+    // selection supersedes this refresh. Keep the exact media position.
+    void this.playback
+      .seek(this.frameForTime(snapshot.currentTimeSeconds), snapshot.currentTimeSeconds)
+      .catch(() => undefined); // The controller exposes preparation failures in its snapshot.
+  }
+
+  private toPlayerMetrics(
+    now: number,
+    playback: Readonly<PlaybackState>,
+  ): PlayerMetrics {
     const buffer = this.buffer.snapshot;
     const frames = buffer.frames;
     const requested = frames.filter((frame) => frame.requestedBytes > 0);
@@ -550,24 +730,80 @@ export class GaussianStreamingPlayer {
         ? undefined
         : requested.reduce((sum, frame) => sum + frame.requestedBytes, 0) /
           requested.length;
-    const renderFramesPerSecond = this.renderer.getMetrics().renderFramesPerSecond;
+    const renderer = this.renderer.getMetrics();
+    const renderFramesPerSecond = renderer.renderFramesPerSecond;
+    const presentedDynamicDetailLevel = frames.find(
+      (frame) =>
+        frame.frameIndex === (renderer.activeFrameIndex ?? buffer.currentFrameIndex),
+    )?.transferDetailLevel;
     return {
       timestampMs: now,
+      ...(this.availableDynamicDetailLevels === undefined
+        ? {}
+        : { availableDynamicDetailLevels: this.availableDynamicDetailLevels }),
+      ...(buffer.compressedBuffer === undefined
+        ? {}
+        : {
+            compressedBufferAheadSeconds: this.compressedBufferAheadSeconds(
+              playback.currentTimeSeconds,
+            ),
+            compressedBufferCapacityBytes: buffer.compressedBuffer.capacityBytes,
+            compressedBufferWindowSeconds: this.loop
+              ? this.durationSeconds
+              : Math.max(0, this.durationSeconds - playback.currentTimeSeconds),
+          }),
       bufferCapacitySeconds:
         Math.min(
           buffer.futureFrameCount,
           this.sequence.frameCount - 1,
           this.loop
             ? Infinity
-            : this.sequence.frameCount - 1 - this.playbackSnapshot.currentFrameIndex,
+            : this.sequence.frameCount - 1 - playback.currentFrameIndex,
         ) / this.sequence.frameRate,
       downloadedBytes: frames.reduce((sum, frame) => sum + frame.downloadedBytes, 0),
       droppedFrames: this.playbackSnapshot.droppedFrameCount,
+      ...(this.preparationSamples.length === 0
+        ? {}
+        : {
+            estimatedPreparationBytesPerSecond:
+              ((buffer.maximumBasePreparationConcurrency ?? 2) *
+                1_000 *
+                this.preparationSamples.reduce(
+                  (sum, sample) => sum + sample.bytes,
+                  0,
+                )) /
+              this.preparationSamples.reduce(
+                (sum, sample) => sum + sample.durationMs,
+                0,
+              ),
+          }),
       ...(estimatedBaseFrameBytes === undefined ? {} : { estimatedBaseFrameBytes }),
+      ...(presentedDynamicDetailLevel === undefined
+        ? {}
+        : { presentedDynamicDetailLevel }),
       ...(renderFramesPerSecond === undefined ? {} : { renderFramesPerSecond }),
       stallDurationSeconds: this.stallDurationSeconds,
       targetFramesPerSecond: this.sequence.frameRate,
     };
+  }
+
+  private compressedBufferAheadSeconds(currentTime: number): number {
+    const ranges = this.bufferedTimeRangesValue;
+    const range = ranges.find(
+      ({ startSeconds, endSeconds }) =>
+        startSeconds <= currentTime + 1e-7 && currentTime < endSeconds,
+    );
+    if (range === undefined) return 0;
+    if (!this.loop || range.endSeconds < this.durationSeconds)
+      return range.endSeconds - currentTime;
+    const first = ranges[0];
+    // A fully resident looping clip provides an uninterrupted reserve every cycle.
+    if (first === range && first.startSeconds === 0) return this.durationSeconds;
+    return (
+      range.endSeconds -
+      currentTime +
+      (first?.startSeconds === 0 ? first.endSeconds : 0)
+    );
   }
 
   private observePlayback(snapshot: SequencePlaybackSnapshot): void {

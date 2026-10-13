@@ -1,0 +1,98 @@
+name: gs-streaming-assets
+
+services:
+  assets:
+    # Equal memory and memory+swap limits prevent container cache pages swapping.
+    mem_limit: ${ASSET_CACHE_MEMORY_LIMIT_BYTES:-7516192768}
+    memswap_limit: ${ASSET_CACHE_MEMORY_LIMIT_BYTES:-7516192768}
+    # Validate the cache budget before starting nginx. Requests then populate
+    # the bounded tmpfs on demand through the local origin server.
+    entrypoint:
+      - /bin/sh
+      - /usr/local/bin/05-warm-assets.sh
+    command: ["nginx", "-g", "daemon off;"]
+    environment:
+      ASSET_CACHE_SOURCE: /srv/source
+      ASSET_CACHE_DEST: /srv/cache
+      ASSET_CACHE_SIZE_BYTES: ${ASSET_CACHE_SIZE_BYTES:-6442450944}
+      ASSET_CACHE_MAX_SIZE_BYTES: ${ASSET_CACHE_MAX_SIZE_BYTES:-5368709120}
+      ASSET_CACHE_HEADROOM_BYTES: ${ASSET_CACHE_HEADROOM_BYTES:-536870912}
+      ASSET_CACHE_CONFIG: |
+        proxy_cache_path /srv/cache levels=1:2 keys_zone=asset_bytes:16m max_size=${ASSET_CACHE_MAX_SIZE_BYTES:-5368709120} inactive=24h use_temp_path=off;
+        map $$uri $$asset_skip_cache {
+            default 0;
+            ~*\.json$ 1;
+        }
+      ASSET_ORIGIN_SERVER: |
+        server {
+            listen 127.0.0.1:8090;
+            server_name localhost;
+            root /srv/source;
+            autoindex off;
+            aio threads;
+            # Do not duplicate frontend request logs when diagnosing cache misses.
+            access_log off;
+            add_header Cache-Control "no-cache" always;
+
+            if ($$request_method !~ ^(GET|HEAD)$) {
+                return 405;
+            }
+            location ~ (^|/)\. {
+                return 404;
+            }
+            location / {
+                try_files $$uri =404;
+            }
+        }
+      ASSET_LOCATION_BODY: |
+        proxy_pass http://127.0.0.1:8090;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_cache asset_bytes;
+        proxy_cache_key $$request_uri;
+        proxy_cache_lock on;
+        proxy_cache_lock_timeout 30s;
+        proxy_cache_lock_age 30s;
+        proxy_cache_bypass $$asset_skip_cache;
+        proxy_no_cache $$asset_skip_cache;
+        proxy_hide_header Cache-Control;
+        proxy_ignore_headers Cache-Control Expires;
+        proxy_cache_valid 200 24h;
+        proxy_cache_valid 404 0s;
+        proxy_force_ranges on;
+        proxy_set_header Range "";
+        proxy_set_header If-Range "";
+      # A tmpfs avoids the Windows bind-mount I/O path for cached responses.
+      ASSET_WORKERS: auto
+      ASSET_FILE_IO: ""
+    volumes: !override
+      - type: bind
+        source: ./assets.conf.template
+        target: /etc/nginx/templates/nginx.conf.template
+        read_only: true
+      - type: bind
+        source: ./05-warm-assets.sh
+        target: /usr/local/bin/05-warm-assets.sh
+        read_only: true
+      - type: bind
+        source: ${ASSET_PUBLIC_DIR:-../../apps/6g-showcase/public}
+        target: /srv/source
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: tmpfs
+        target: /srv/cache
+        tmpfs:
+          size: ${ASSET_CACHE_SIZE_BYTES:-6442450944}
+      - type: bind
+        source: ${ASSET_CERT_FILE:-../../.cert/localhost-cert.pem}
+        target: /etc/nginx/tls/cert.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${ASSET_KEY_FILE:-../../.cert/localhost-key.pem}
+        target: /etc/nginx/tls/key.pem
+        read_only: true
+        bind:
+          create_host_path: false

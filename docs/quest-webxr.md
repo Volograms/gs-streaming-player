@@ -5,9 +5,34 @@ not add teleport or smooth locomotion.
 
 ## Local HTTPS
 
+Local WebXR does not require a public domain or a publicly issued certificate. Use a
+local mkcert CA trusted on each browser device. Vite and the
+[nginx asset server](nginx-assets.md) can share the same development certificate pair.
+
 Install [mkcert](https://github.com/FiloSottile/mkcert), create its local authority, and
 generate a certificate in the ignored `.cert/` directory. Include the development
 machine's LAN IP because the Quest connects by IP rather than `localhost`:
+
+For a Windows x64 machine without mkcert on its PATH, download the
+[official v1.4.4 binary](https://github.com/FiloSottile/mkcert/releases/tag/v1.4.4) into
+the ignored certificate directory, then use its explicit path:
+
+```powershell
+New-Item -ItemType Directory -Force .cert/tools
+Invoke-WebRequest -Uri https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-windows-amd64.exe -OutFile .cert/tools/mkcert.exe
+./.cert/tools/mkcert.exe -install
+./.cert/tools/mkcert.exe -key-file .cert/localhost-key.pem `
+  -cert-file .cert/localhost-cert.pem `
+  localhost 127.0.0.1 ::1 <development-machine-ip>
+```
+
+Preserve an existing certificate pair before regenerating it, especially if other
+devices use it. If it was issued on another computer, installing a new CA here does not
+trust the old pair: either install the original issuing `rootCA.pem`, or generate a new
+pair as above and trust its CA on each device. The CA private key stays on the issuing
+computer.
+
+If mkcert is already on your PATH:
 
 ```powershell
 mkcert -install

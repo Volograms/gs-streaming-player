@@ -14,6 +14,7 @@ export class MediaPlaybackClock implements PlaybackClock {
   private mediaAnchorSeconds = 0;
   private lastClockMs = 0;
   private usingMedia = false;
+  private resumeMediaPosition = false;
   private playing = false;
   private disposed = false;
   private revision = 0;
@@ -83,6 +84,8 @@ export class MediaPlaybackClock implements PlaybackClock {
   }
 
   now(): number {
+    // Keep buffering and resume-notification work out of the audio timeline.
+    if (this.resumeMediaPosition) return this.lastClockMs;
     const elapsedMs = this.usingMedia
       ? (this.media.currentTime - this.mediaAnchorSeconds) * 1000
       : this.fallbackClock.now() - this.wallAnchorMs;
@@ -141,6 +144,7 @@ export class MediaPlaybackClock implements PlaybackClock {
     this.cancelPrime = undefined;
     this.clearBoundary();
     this.useMedia(false);
+    this.resumeMediaPosition = false;
     this.media.pause();
     this.media.muted = this.mutedValue;
     this.setWaiting(false);
@@ -157,14 +161,23 @@ export class MediaPlaybackClock implements PlaybackClock {
     const wrapped = timeSeconds + 1e-6 < this.lastTimelineSeconds;
     this.lastTimelineSeconds = timeSeconds;
     this.clearBoundary();
+    const mediaTime = timeSeconds - this.offsetSeconds;
     if (!shouldPlay) {
+      const preservePosition =
+        !wrapped &&
+        (this.usingMedia || this.resumeMediaPosition) &&
+        mediaTime >= 0 &&
+        (!Number.isFinite(this.media.duration) || mediaTime < this.media.duration);
       this.stop();
-      this.setMediaTime(timeSeconds - this.offsetSeconds);
+      this.resumeMediaPosition = preservePosition;
+      // Audio runs independently of JavaScript. Its actual paused position can
+      // be ahead of the snapshot; seeking to that snapshot repeats heard audio.
+      if (!preservePosition) this.setMediaTime(mediaTime);
       return;
     }
     this.playing = true;
-    const mediaTime = timeSeconds - this.offsetSeconds;
     if (mediaTime < 0) {
+      this.resumeMediaPosition = false;
       this.useMedia(false);
       this.media.pause();
       this.setMediaTime(0);
@@ -181,15 +194,31 @@ export class MediaPlaybackClock implements PlaybackClock {
       Number.isFinite(this.media.duration) &&
       mediaTime >= this.media.duration - 1e-7
     ) {
+      this.resumeMediaPosition = false;
       this.useMedia(false);
       this.media.pause();
       this.setWaiting(false);
       return;
     }
-    if (wrapped || !this.usingMedia) this.setMediaTime(mediaTime);
+    const resumePosition = this.resumeMediaPosition && !wrapped;
+    if (!resumePosition) this.resumeMediaPosition = false;
+    if (wrapped || (!this.usingMedia && !resumePosition)) this.setMediaTime(mediaTime);
     if (this.usingMedia) return;
     // Hold scheduler time while play() waits for audio data, then follow its progress.
     this.useMedia(true);
+    this.resumeMediaPosition = false;
+    if (resumePosition) {
+      // Reconcile frame timing with audio heard after the buffering snapshot.
+      // Resume from the native position without accumulating audio/video drift.
+      this.mediaAnchorSeconds = mediaTime;
+      if (this.media.ended) {
+        // play() at the track's end can restart it before video reaches its loop.
+        // Keep the reconciled time, then let the fallback clock finish the cycle.
+        this.useMedia(false);
+        this.setWaiting(false);
+        return;
+      }
+    }
     const revision = this.revision;
     try {
       void this.media.play().then(

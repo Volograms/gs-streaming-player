@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { SequencePlaybackController } from "../src/index.js";
+import { FrameRingBuffer, SequencePlaybackController } from "../src/index.js";
 
 import type {
   DynamicGaussianSequence,
   FramePresentationOptions,
+  FramePreparationOptions,
   FrameRingBufferSnapshot,
+  GaussianFrameSource,
+  GaussianRendererAdapter,
   PlaybackClock,
   PreparedFrame,
   SequencePlaybackBuffer,
@@ -190,6 +193,128 @@ function createBufferHarness(options: { allReady?: boolean } = {}) {
 }
 
 describe("SequencePlaybackController", () => {
+  it.each(["startup", "recovery"] as const)(
+    "uses the attainable reserve for %s after larger tiers shrink the decoded window",
+    async (phase) => {
+      const sequence = createSequence(10);
+      sequence.frames = sequence.frames.map((frame) => ({
+        ...frame,
+        qualityLevels: [0.25, 1].map((detailLevel, level) => ({
+          byteSize: level === 0 ? 20 : 45,
+          detailLevel,
+          level,
+          minimumPlayable: level === 0,
+          url: `/frame-${frame.frameIndex}-${detailLevel}.sog`,
+        })),
+      }));
+      const pending = new Map<number, Deferred<void>>();
+      const renderer = {
+        getFramePresentationQuality: () => ({
+          detailLevel: 1,
+          selectedSplatCount: 1_000,
+          state: "presentable",
+        }),
+        prepareFrame: vi.fn(
+          async (
+            sequenceId: string,
+            source: GaussianFrameSource,
+            options: FramePreparationOptions,
+          ): Promise<PreparedFrame> => {
+            await pending.get(source.frameIndex)?.promise;
+            return {
+              frameIndex: source.frameIndex,
+              qualityLevel: 1,
+              rendererResource: {},
+              sequenceId,
+              source,
+              ...(options.transferQuality === undefined
+                ? {}
+                : { transferQuality: options.transferQuality }),
+            };
+          },
+        ),
+        presentFrame: vi.fn(),
+        releaseFrame: vi.fn(),
+        setFrameRefinement: vi.fn(),
+      } as unknown as GaussianRendererAdapter;
+      const budget = 7 * 20 * 8;
+      const buffer = new FrameRingBuffer({
+        decodedBufferMaximumBytes: budget,
+        futureFrameCount: 6,
+        previousFrameCount: 0,
+        renderer,
+        sequence,
+      });
+      const clock = new FakePlaybackClock();
+      await buffer.initialise(0);
+      await buffer.whenPresentationReadyAhead(6);
+      const controller = new SequencePlaybackController({
+        buffer,
+        clock,
+        minimumReadyFrames: 5,
+        sequence,
+      });
+      const reserve = deferred<void>();
+      pending.set(phase === "startup" ? 2 : 3, reserve);
+      const missedFrame = deferred<void>();
+      if (phase === "recovery") {
+        controller.play();
+        await vi.waitFor(() => expect(controller.snapshot.lifecycle).toBe("PLAYING"));
+        pending.set(1, missedFrame);
+      }
+
+      buffer.setPresentationQualityTarget({ detailLevel: 1, minimumSplatCount: 2 });
+      expect(buffer.snapshot.futureFrameCount).toBe(2);
+      if (phase === "startup") {
+        controller.play();
+      } else {
+        await clock.advanceTo(1000 / 30);
+        expect(controller.snapshot.lifecycle).toBe("BUFFERING");
+        missedFrame.resolve(undefined);
+        await vi.waitFor(() => expect(controller.snapshot.currentFrameIndex).toBe(1));
+      }
+      await flushPromises();
+      expect(controller.snapshot.lifecycle).toBe("BUFFERING");
+
+      reserve.resolve(undefined);
+      await vi.waitFor(() => expect(controller.snapshot.lifecycle).toBe("PLAYING"));
+      expect(controller.snapshot.error).toBeUndefined();
+      expect(controller.snapshot.bufferAheadFrames).toBe(2);
+      expect(buffer.snapshot.decodedResidentBytes).toBeLessThanOrEqual(budget);
+      controller.dispose();
+      buffer.dispose();
+    },
+  );
+
+  it("measures listener work separately without changing the playback clock", async () => {
+    const clock = new FakePlaybackClock();
+    const harness = createBufferHarness({ allReady: true });
+    let observerWallTime = 0;
+    const controller = new SequencePlaybackController({
+      buffer: harness.buffer,
+      clock,
+      now: () => clock.now() + observerWallTime,
+      sequence: createSequence(),
+    });
+    controller.subscribe((snapshot) => {
+      if (snapshot.currentFrameIndex === 1) observerWallTime += 7;
+    });
+    controller.play();
+    await flushPromises();
+    await clock.advanceTo(1000 / 30);
+    expect(controller.snapshot.currentFrameIndex).toBe(1);
+    expect(controller.snapshot.droppedFrameCount).toBe(0);
+    expect(controller.snapshot.presentationTiming).toMatchObject({
+      callbackLatenessMs: 0,
+      callbackWallLatenessMs: 0,
+      notificationDurationMs: 7,
+      presentationDurationMs: 0,
+      pipelineDurationMs: 7,
+      maximumPipelineDurationMs: 7,
+    });
+    controller.dispose();
+  });
+
   it("reads the buffer once when reporting contiguous readiness", () => {
     const harness = createBufferHarness({ allReady: true });
     const controller = new SequencePlaybackController({

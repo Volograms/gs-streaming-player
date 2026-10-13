@@ -7,6 +7,60 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Clamp startup and buffering-recovery reserves to the decoded window's current
+  capacity, including a window shrink during an active readiness wait. Avoid errors and
+  attempts to recreate evicted tail frames when a larger tier uses more memory.
+- Explicitly close native SOG image sources when frames retire, after any pending
+  presentation fence, instead of waiting for garbage collection to reclaim them. Retain
+  sources for live and buffered frames so context restoration remains possible.
+
+- Apply automatic upgrades to new frames entering at the decoded window's tail,
+  retaining the existing decoded reserve and queued work. Keep memory accounting and
+  compressed prefetch aligned with those retained tiers, preserve unplayed frames
+  through safe handoff, and judge rendering cost after the new tier reaches the screen.
+
+- Let Auto recover from Preview with a guarded one-tier retry after sustained buffer
+  recovery, including when low-tier speed estimates are conservative or network samples
+  have expired. Tolerate brief render-FPS dips during upgrade observation, respect
+  missing tiers and memory limits, and space retries to avoid rapid quality oscillation.
+
+- Step automatic quality down one available authored tier at a time with a two-second
+  recovery window. Preserve the decoded reserve on downgrades, keep fixed-tier
+  preparation concurrency from collapsing under buffer pressure, and distinguish the
+  displayed tier from the requested tier before attributing rendering overload. Add 6G
+  explainer Live/Frozen/Hidden comparisons, an asset-free baseline, and CPU/GPU,
+  pipeline, and decoded-reserve diagnostics behind the debug option.
+
+- Build a five-second decoded reserve instead of stopping at ten future frames, with a
+  separate configurable 500 MB estimated decoded CPU/GPU budget. Show reserve seconds
+  and memory usage alongside the downloaded and decoded timeline lanes. Auto upgrades
+  while filling, accounts for measured preparation capacity, tolerates isolated late
+  frames, and appends higher-quality frames as playback consumes the reserve. Paused
+  Auto loads the best available tier and refreshes the displayed frame without moving
+  media time.
+
+- Show downloaded and decoded-ready timeline ranges separately in both showcases and XR
+  controls, with a visible ready-frame count. Report Auto's selected authored tier and
+  reserve/rendering diagnostics instead of using scene-wide splat counts as its quality
+  label, and show playback buffering in the status header. Expose lightweight
+  presentation-pipeline, deadline, and listener timings to distinguish downloaded
+  capacity from presentation stalls.
+
+- Fill the compressed cache to its byte budget even when frame sizes must be learned
+  while paused. Target a five-second downloaded reserve for automatic quality, select
+  the highest tier that fits throughput and memory, and retain decoded/readiness
+  pressure checks. Expose compressed MB and reserve-target settings in both showcases.
+  Fall back from missing fixed-tier assets (HTTP 404/410) without retrying them every
+  frame or crossing the manifest's minimum playable tier.
+
+- Show cached timeline ranges in grey beneath playback progress in both showcases and
+  their XR controls. Report downloaded and prepared frame ranges from the player,
+  preserving gaps, authored frame timing, and loop boundaries.
+
+- Preserve the native audio element's stopped position during frame-buffering recovery,
+  including audio progress while JavaScript processes a stall. Resume without a media
+  seek and catch frame timing up to the audio already heard.
+
 - Preserve the exact playback position through frame-buffering recovery instead of
   seeking audio back to the previous or newly prepared frame's timestamp. Cover late
   callbacks, repeated stalls, irregular timestamps, and buffering at a loop boundary.
@@ -71,13 +125,21 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- Support `VITE_STATIC_GS_LOD_LEVEL` in the 6G showcase to pin static Streamed SOG
+  detail for performance comparisons, with automatic selection when blank or unset and a
+  quality-control tooltip that reports the static LOD mode.
+
 - Add a shared nginx asset configuration, Docker deployment and native Windows launcher
   for the 6G showcase, with HTTP/HTTPS, CORS, byte ranges and direct delivery of
   dynamic, static, audio and explainer assets. Document local setup and deployment
   configuration. Use shared, locally trusted mkcert certificates for the HTTPS WebXR app
   and asset server; document local CA setup and headset addresses without a public
   certificate. Enable threaded file I/O in the Linux image to reduce Windows bind-mount
-  stalls and expose cross-origin resource timings for transfer diagnostics.
+  stalls and expose cross-origin resource timings for transfer diagnostics. Add an
+  optional shared, bounded RAM cache with multiple nginx workers, disabled container
+  swap, cache-hit diagnostics and a prewarm command for multi-device runs. Disable
+  per-request access logs on the frontend and cache origin while retaining warnings and
+  errors.
 
 - The 6G showcase explainer layer. The demo object stands large on the floor beside the
   presenter and is revealed, turned, dissolved and stepped through its training

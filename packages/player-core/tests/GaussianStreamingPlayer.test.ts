@@ -147,8 +147,22 @@ describe("GaussianStreamingPlayer", () => {
         manifestId: "preview",
         sequenceId: "actor-0",
       });
+      await vi.waitFor(() =>
+        expect(player.snapshot.bufferedTimeRanges).toEqual([
+          { startSeconds: 0, endSeconds: 0.1 },
+        ]),
+      );
+      expect(player.snapshot.decodedTimeRanges).toEqual([
+        { startSeconds: 0, endSeconds: 0.1 },
+      ]);
+      expect(player.snapshot.decodedFrameCount).toBe(3);
+      expect(player.snapshot.qualityDiagnostics).toMatchObject({
+        dynamicFrameDetailLevel: 0.25,
+        targetBufferSeconds: 5,
+      });
 
       player.setQualityMode({ detailLevel: 0.5, mode: "manual" });
+      expect(player.snapshot.qualityDiagnostics).toBeUndefined();
       await player.seek(2 / 30);
       expect(player.snapshot.currentFrameIndex).toBe(2);
       await player.stepFrames(-1);

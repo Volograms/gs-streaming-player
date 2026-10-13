@@ -45,8 +45,8 @@ milliseconds to seconds over Vite's HTTP/2 path; HTTP/1.1 avoids that path. Rest
 server after changing its transport configuration, reload the demo, and check the
 Protocol column in browser Network tools.
 
-For sustained streaming experiments, serve the generated dataset from a static file
-server such as nginx, or an object store/CDN, and keep Vite for application development.
-Use HTTPS and the CORS policy above when the dataset has a different origin. Compare
-transfer timings beyond the initial prefetch window: a large byte buffer can hide an
-unsustainable delivery rate until playback consumes its reserve.
+For sustained streaming experiments, use a dedicated static file server and keep Vite
+for application development. The [nginx asset-server guide](nginx-assets.md) includes a
+runnable Docker deployment and a native Windows launcher for the 6G showcase's existing
+local dataset. Use HTTPS for assets loaded by an HTTPS app, and verify CORS on the
+manifest and every referenced asset.

@@ -21,28 +21,38 @@ export interface BufferedFrame {
   requestedBytes: number;
   status: BufferedFrameStatus;
   targetQualityLevel: number;
+  /** Authored detail of this resident/requested payload, independent of policy target. */
+  transferDetailLevel?: number;
   timestampSeconds: number;
 }
 
 export interface FrameRingBufferSnapshot {
+  decodedResidentBytes?: number;
+  decodedCapacityBytes?: number;
   activeBasePreparationCount: number;
+  maximumBasePreparationConcurrency?: number;
   capacity: number;
   currentFrameIndex?: number;
   frames: readonly BufferedFrame[];
   futureFrameCount: number;
   previousFrameCount: number;
   queuedBasePreparationCount: number;
+  /** Fixed tiers excluded for this session after a missing-asset response. */
+  unavailableQualityLevels?: readonly number[];
   compressedBuffer?: Readonly<{
     activeFetchCount: number;
     capacityBytes: number;
     contiguousReadyFrameCount: number;
     queuedFetchCount: number;
     readyFrameCount: number;
+    readyFrameIndices: readonly number[];
     residentBytes: number;
   }>;
 }
 
 export interface FrameRingBufferConfiguration {
+  /** Budget for estimated decoded CPU/GPU resources, separate from compressed bytes. */
+  decodedBufferMaximumBytes?: number;
   compressedBufferMaximumBytes?: number;
   maximumCompressedFetchConcurrency?: number;
   futureFrameCount?: number;
@@ -97,6 +107,7 @@ export interface FrameRingBufferTraceEvent {
   durationMs?: number;
   displayCommitIntervalsMs?: readonly number[];
   errorMessage?: string;
+  httpStatus?: number;
   frameIndex?: number;
   frames?: readonly FrameRingBufferTraceFrame[];
   loadedBytes?: number;

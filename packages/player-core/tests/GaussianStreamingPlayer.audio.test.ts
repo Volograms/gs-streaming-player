@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GaussianStreamingPlayer } from "../src/index.js";
+import { MediaPlaybackClock } from "../src/player/MediaPlaybackClock.js";
 
 import type {
   GaussianRendererAdapter,
@@ -34,6 +35,7 @@ class AdvancingAudio implements GaussianStreamingMediaElement {
   frozen = false;
   muted = false;
   paused = true;
+  advanceBeforePauseMs = 0;
   preload = "";
   src = "audio/track.ogg";
   volume = 1;
@@ -75,6 +77,8 @@ class AdvancingAudio implements GaussianStreamingMediaElement {
   }
 
   pause(): void {
+    // Native audio can advance between the scheduler's snapshot and pause().
+    this.advance(this.advanceBeforePauseMs);
     this.paused = true;
   }
 
@@ -322,6 +326,32 @@ async function harness(
 }
 
 describe("GaussianStreamingPlayer audio integration", () => {
+  it("holds paused native audio time through buffering and resume work", async () => {
+    const audio = new AdvancingAudio();
+    const clock = new MediaTestClock(audio);
+    const mediaClock = new MediaPlaybackClock(audio, 0, clock);
+    try {
+      mediaClock.synchronise(0, true);
+      await clock.advanceTo(50);
+      audio.advanceBeforePauseMs = 12;
+      mediaClock.synchronise(0.05, false);
+      const resumeAnchorMs = mediaClock.now();
+
+      await clock.advanceTo(250);
+      expect(mediaClock.now()).toBe(resumeAnchorMs);
+      // Snapshot/readiness work can also take time after the resume anchor is read.
+      await clock.advanceTo(270);
+      mediaClock.synchronise(0.05, true);
+      expect(audio.currentTime).toBeCloseTo(0.062, 6);
+      expect(mediaClock.now() - resumeAnchorMs).toBeCloseTo(12, 6);
+      await clock.advanceTo(300);
+      expect(mediaClock.now() - resumeAnchorMs).toBeCloseTo(42, 6);
+      expect(audio.currentTime).toBeCloseTo(0.092, 6);
+    } finally {
+      mediaClock.dispose();
+    }
+  });
+
   it("preserves leading audio before a nonzero first timestamp, including loops", async () => {
     const { audio, clock, player, presentations } = await harness({
       frameRate: 10,
@@ -778,6 +808,58 @@ describe("GaussianStreamingPlayer audio integration", () => {
   });
 
   it.each([25, 30])(
+    "preserves native audio progress during repeated %i fps buffering notifications",
+    async (frameRate) => {
+      const firstFrame = deferred();
+      const secondFrame = deferred();
+      const { audio, clock, player } = await harness({
+        blocked: new Map([
+          [2, firstFrame.promise],
+          [5, secondFrame.promise],
+        ]),
+        frameRate,
+      });
+      const frameMs = 1000 / frameRate;
+      await player.play();
+      await clock.advanceTo(frameMs * 1.5);
+      audio.advanceBeforePauseMs = 12;
+      const seekMedia = vi.spyOn(audio, "currentTime", "set");
+
+      await clock.advanceTo(frameMs * 2 + 1);
+      const firstStopTime = (frameMs * 2 + 12) / 1000;
+      expect(player.snapshot.lifecycle).toBe("BUFFERING");
+      expect(audio.paused).toBe(true);
+      expect(audio.currentTime).toBeCloseTo(firstStopTime, 6);
+      await clock.advanceTo(frameMs * 2 + 201);
+      firstFrame.resolve();
+      await flushPromises();
+      expect(player.snapshot.lifecycle).toBe("PLAYING");
+      expect(audio.currentTime).toBeCloseTo(firstStopTime, 6);
+      await clock.advanceTo(frameMs * 3 + 201 - 12 + 1);
+      expect(player.snapshot.currentFrameIndex).toBe(3);
+      expect(player.snapshot.currentTimeSeconds).toBeCloseTo((frameMs * 3) / 1000, 6);
+      expect(audio.currentTime).toBeCloseTo((frameMs * 3 + 1) / 1000, 6);
+
+      await clock.advanceTo(frameMs * 5 + 201 - 12);
+      const secondStopTime = (frameMs * 5 + 12) / 1000;
+      expect(player.snapshot.lifecycle).toBe("BUFFERING");
+      expect(audio.paused).toBe(true);
+      expect(audio.currentTime).toBeCloseTo(secondStopTime, 6);
+      await clock.advanceTo(frameMs * 5 + 401);
+      secondFrame.resolve();
+      await flushPromises();
+      expect(player.snapshot.lifecycle).toBe("PLAYING");
+      expect(audio.paused).toBe(false);
+      expect(audio.currentTime).toBeCloseTo(secondStopTime, 6);
+      await clock.advanceTo(frameMs * 6 + 401 - 12 + 1);
+      expect(player.snapshot.currentFrameIndex).toBe(6);
+      expect(player.snapshot.currentTimeSeconds).toBeCloseTo((frameMs * 6) / 1000, 6);
+      expect(audio.currentTime).toBeCloseTo((frameMs * 6 + 1) / 1000, 6);
+      expect(seekMedia).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([25, 30])(
     "does not replay audio after repeated late %i fps frame misses",
     async (frameRate) => {
       const firstFrame = deferred();
@@ -884,6 +966,36 @@ describe("GaussianStreamingPlayer audio integration", () => {
     await clock.advanceTo((9 * 1000) / 30 + 202);
     expect(player.snapshot.currentFrameIndex).toBe(1);
     expect(audio.currentTime).toBeCloseTo(1 / 30, 2);
+  });
+
+  it("does not restart ended audio before the buffered video reaches its loop", async () => {
+    const blockedFrame = deferred();
+    const { audio, clock, player } = await harness({
+      blocked: new Map([[6, blockedFrame.promise]]),
+      frameCount: 8,
+      frameRate: 25,
+      loop: true,
+    });
+    await player.play();
+    await clock.advanceTo(201);
+    audio.advanceBeforePauseMs = 100;
+    await clock.advanceTo(241);
+    expect(player.snapshot.lifecycle).toBe("BUFFERING");
+    expect(audio.ended).toBe(true);
+    expect(audio.currentTime).toBeCloseTo(0.32, 6);
+    const playCount = audio.play.mock.calls.length;
+
+    await clock.advanceTo(441);
+    blockedFrame.resolve();
+    await flushPromises();
+    expect(audio.play).toHaveBeenCalledTimes(playCount);
+    expect(audio.paused).toBe(true);
+    await clock.advanceTo(451);
+    expect(player.snapshot.lifecycle).toBe("PLAYING");
+    expect(player.snapshot.currentFrameIndex).toBe(0);
+    expect(audio.ended).toBe(false);
+    expect(audio.paused).toBe(false);
+    expect(audio.play).toHaveBeenCalledTimes(playCount + 1);
   });
 
   it("continues video after a shorter audio track ends", async () => {

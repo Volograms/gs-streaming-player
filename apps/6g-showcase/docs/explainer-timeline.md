@@ -121,6 +121,37 @@ Environment overrides:
   time and frame, active cues, ±1 s, jump to any cue start, and toggles for each visual.
   The panel is DOM-only, so it is not visible inside a headset.
 
+### Comparing animation and playback cost
+
+Reload `#/demo?debug=1` to enable the performance readout and one GPU timing sample per
+second on supported devices. The explainer comparison selector has three modes:
+
+- **Live animation** evaluates and applies the current cues on each render update.
+- **Frozen visuals** keeps the last visual state on screen and stops explainer updates.
+- **Hidden** stops explainer updates and hides all its visuals, while retaining its
+  assets.
+
+Returning to Live evaluates the current presenter frame. These controls do not pause the
+presenter or alter the selected streaming quality. For a baseline without explainer
+asset downloads, construction, or residency, reload `#/demo?debug=1&explainer=off`.
+Remove `explainer=off` and reload to restore it.
+
+Compare the same time range at a fixed manual quality after the decoded reserve fills.
+Compare Live with Frozen to isolate animation-update cost, then Frozen with Hidden to
+isolate drawing cost. A separate `explainer=off` run also excludes asset loading and
+residency. Do not interpret runs with different quality, cue ranges, or browser
+visibility as a controlled comparison. Use a production build for final performance
+conclusions.
+
+The readout reports render cadence, CPU render/update time, sampled GPU frame time,
+presentation-pipeline and handoff latency, decoded reserve, and explainer CPU p95 over
+the last 120 updates. Changing mode resets the explainer samples. The snapshot, cue, and
+scene timings divide its synchronous work; they exclude asset loading and GPU work. Auto
+also shows the requested transfer tier separately from the tier currently on screen. GPU
+timing can report unsupported or waiting rather than a measured duration. A short GPU
+frame does not establish decode throughput, and a prepared frame still needs its render
+handoff. Profiling and the comparison UI are disabled by default.
+
 Transparent explainer meshes are drawn in PlayCanvas's `UI` layer. Splats do not write
 depth, so a transparent mesh in the world layer can be painted over by the environment.
 Development builds expose `window.__showcase = { adapter, player }` for inspection.

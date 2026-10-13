@@ -31,8 +31,18 @@ A task is checked only after its acceptance criteria are implemented and verifie
 
 ## Renderer, codec, and device validation
 
+- [ ] Profile the foreground 6G showcase's remaining presentation misses with a ready
+      decoded reserve. Capture preparation throughput, main-thread long tasks, timer
+      lateness, and initial explainer construction separately, using the fixed-quality
+      Live/Frozen/Hidden/off comparisons in `PERFORMANCE.md`. Verify sustained 30 fps
+      and uninterrupted audio before treating the adaptation fixes as a stall fix.
+
 - [ ] Complete the PlayCanvas/SOG production benchmark matrix at 25%, 50%, and 100% on
       the same desktop and Quest 3 sessions:
+  - [ ] Compare one versus two concurrent SOG preparations with resident bytes and the
+        full scene on Quest. Attribute WebP/image loading and main-thread callback
+        delays separately before adding decoder workers; the short desktop component
+        sample in `PERFORMANCE.md` gained no throughput from a second preparation.
   - [ ] Compare WebGL2 CPU sort with WebGPU GPU sort using repeated p50/p95 samples for
         preparation, sorting, GPU frame time, presented cadence, memory, and stalls.
   - [ ] Capture a full-tier Quest trace and any WebGPU XR run that reports
@@ -67,8 +77,8 @@ Detailed experimental procedures and already captured baselines remain in the
       events.
 - [ ] E06-T06/T09 — Complete cancellation accounting and byte-based decoded/GPU memory
       eviction. Refinement aborts, frame-count eviction, and the compressed-byte budget
-      exist; cancelled work still needs distinct metrics and all resident
-      representations need one enforceable memory policy.
+      and an estimated decoded CPU/GPU budget exist; cancelled work still needs distinct
+      metrics and all resident representations need one enforceable memory policy.
 - [ ] E13-T04 — Add independent static-refinement concurrency and include it in the
       renderer/device budget policy.
 

@@ -33,6 +33,8 @@ export interface SequencePlaybackControllerOptions {
   durationSeconds?: number;
   loop?: boolean;
   minimumReadyFrames?: number;
+  /** Independent monotonic wall clock for diagnostics; playback still uses clock. */
+  now?: () => number;
   sequence: DynamicGaussianSequence;
 }
 
@@ -46,6 +48,15 @@ export interface SequencePlaybackSnapshot {
   isPlaying: boolean;
   lifecycle: PlayerLifecycleState;
   targetFramesPerSecond: number;
+  presentationTiming?: Readonly<{
+    callbackLatenessMs: number;
+    callbackWallLatenessMs: number;
+    notificationDurationMs: number;
+    pipelineDurationMs: number;
+    presentationDurationMs: number;
+    maximumPipelineDurationMs: number;
+    maximumCallbackLatenessMs: number;
+  }>;
 }
 
 type SnapshotListener = (snapshot: SequencePlaybackSnapshot) => void;
@@ -70,6 +81,8 @@ export class SequencePlaybackController {
   private readonly listeners = new Set<SnapshotListener>();
   private readonly loop: boolean;
   private readonly minimumReadyFrames: number;
+  private readonly now: () => number;
+  private presentationTiming: SequencePlaybackSnapshot["presentationTiming"];
   private operationRevision = 0;
   private presentationController: AbortController | undefined;
   private readonly sequence: DynamicGaussianSequence;
@@ -81,6 +94,7 @@ export class SequencePlaybackController {
   constructor(options: SequencePlaybackControllerOptions) {
     this.buffer = options.buffer;
     this.clock = options.clock ?? defaultClock;
+    this.now = options.now ?? (() => performance.now());
     this.sequence = options.sequence;
     this.currentFrameIndexValue = options.buffer.snapshot.currentFrameIndex ?? 0;
     this.currentOrdinal = this.currentFrameIndexValue;
@@ -149,6 +163,9 @@ export class SequencePlaybackController {
       isPlaying: this.desiredPlaying,
       lifecycle: this.lifecycleValue,
       targetFramesPerSecond: this.sequence.frameRate,
+      ...(this.presentationTiming === undefined
+        ? {}
+        : { presentationTiming: this.presentationTiming }),
     };
   }
 
@@ -251,7 +268,7 @@ export class SequencePlaybackController {
   }
 
   private async startAfterBuffering(revision: number): Promise<void> {
-    await this.buffer.whenPresentationReadyAhead(this.minimumReadyFrames);
+    await this.whenReadyToPlay();
     if (!this.isPlayableOperation(revision)) {
       return;
     }
@@ -274,23 +291,37 @@ export class SequencePlaybackController {
     const deadlineMs =
       this.wallAnchorMs +
       (this.timelineForOrdinal(nextOrdinal) - this.timelineAnchorSeconds) * 1000;
-    this.timerHandle = this.clock.setTimeout(
-      () => {
-        this.timerHandle = undefined;
-        void this.advanceAtDeadline(revision).catch((error: unknown) => {
+    const delayMs = Math.max(0, deadlineMs - this.clock.now());
+    const expectedCallbackAt = this.now() + delayMs;
+    this.timerHandle = this.clock.setTimeout(() => {
+      this.timerHandle = undefined;
+      void this.advanceAtDeadline(revision, deadlineMs, expectedCallbackAt).catch(
+        (error: unknown) => {
           this.handleOperationError(revision, error);
-        });
-      },
-      Math.max(0, deadlineMs - this.clock.now()),
-    );
+        },
+      );
+    }, delayMs);
   }
 
-  private async advanceAtDeadline(revision: number): Promise<void> {
+  private async advanceAtDeadline(
+    revision: number,
+    deadlineMs: number,
+    expectedCallbackAt: number,
+  ): Promise<void> {
     if (!this.isPlayableOperation(revision)) {
       return;
     }
+    const startedAt = this.now();
+    const clockTime = this.clock.now();
+    const callbackLatenessMs = Math.max(0, clockTime - deadlineMs);
+    let notificationDurationMs = 0;
+    const notify = () => {
+      const notifyStartedAt = this.now();
+      this.emit();
+      notificationDurationMs += this.now() - notifyStartedAt;
+    };
     const dueTimelineSeconds =
-      this.timelineAnchorSeconds + (this.clock.now() - this.wallAnchorMs) / 1000 + 1e-7;
+      this.timelineAnchorSeconds + (clockTime - this.wallAnchorMs) / 1000 + 1e-7;
     let dueOrdinal = Math.max(
       this.currentOrdinal + 1,
       this.ordinalAtOrBefore(dueTimelineSeconds),
@@ -305,7 +336,7 @@ export class SequencePlaybackController {
       // Publishing that older timestamp would seek audio backwards on every miss.
       this.timelinePositionSeconds = this.activeTimelineSeconds();
       this.lifecycleValue = "BUFFERING";
-      this.emit();
+      notify();
       await this.buffer.prepareForPresentation(frameIndex);
       if (!this.isPlayableOperation(revision)) {
         return;
@@ -314,7 +345,9 @@ export class SequencePlaybackController {
 
     const controller = new AbortController();
     this.presentationController = controller;
+    const presentationStartedAt = this.now();
     await this.buffer.present(frameIndex, { signal: controller.signal });
+    const presentationDurationMs = this.now() - presentationStartedAt;
     if (this.presentationController === controller) {
       this.presentationController = undefined;
     }
@@ -328,19 +361,43 @@ export class SequencePlaybackController {
     if (readyAtDeadline) {
       this.timelinePositionSeconds = this.timelineForOrdinal(dueOrdinal);
     }
-    this.emit();
+    notify();
 
     if (!readyAtDeadline) {
-      await this.buffer.whenPresentationReadyAhead(this.minimumReadyFrames);
+      await this.whenReadyToPlay();
       if (!this.isPlayableOperation(revision)) {
         return;
       }
       this.timelineAnchorSeconds = this.timelinePositionSeconds;
       this.wallAnchorMs = this.clock.now();
       this.lifecycleValue = "PLAYING";
-      this.emit();
+      notify();
     }
+    const pipelineDurationMs = this.now() - startedAt;
+    this.presentationTiming = Object.freeze({
+      callbackLatenessMs,
+      callbackWallLatenessMs: Math.max(0, startedAt - expectedCallbackAt),
+      notificationDurationMs,
+      pipelineDurationMs,
+      presentationDurationMs,
+      maximumPipelineDurationMs: Math.max(
+        pipelineDurationMs,
+        this.presentationTiming?.maximumPipelineDurationMs ?? 0,
+      ),
+      maximumCallbackLatenessMs: Math.max(
+        callbackLatenessMs,
+        this.presentationTiming?.maximumCallbackLatenessMs ?? 0,
+      ),
+    });
     this.scheduleNextFrame(revision);
+  }
+
+  private whenReadyToPlay(): Promise<void> {
+    // Larger transfer tiers can shorten the decoded window after construction.
+    // Wait for the configured reserve only while that many frames still fit.
+    return this.buffer.whenPresentationReadyAhead(
+      Math.min(this.minimumReadyFrames, this.buffer.snapshot.futureFrameCount),
+    );
   }
 
   private scheduleEnd(revision: number): void {
@@ -382,6 +439,11 @@ export class SequencePlaybackController {
     // A buffer snapshot includes the compressed-cache summary. Read it once rather
     // than scanning that much larger cache for every future-frame readiness check.
     const buffer = this.buffer.snapshot;
+    const ready = new Set(
+      buffer.frames
+        .filter(({ status }) => status === "ready" || status === "presented")
+        .map(({ frameIndex }) => frameIndex),
+    );
     let frames = 0;
     let seconds = 0;
     let previousFrameIndex = this.currentFrameIndexValue;
@@ -390,10 +452,7 @@ export class SequencePlaybackController {
       if (frameIndex === undefined) {
         break;
       }
-      const frame = buffer.frames.find(
-        (candidate) => candidate.frameIndex === frameIndex,
-      );
-      if (frame?.status !== "ready" && frame?.status !== "presented") {
+      if (!ready.has(frameIndex)) {
         break;
       }
       frames += 1;

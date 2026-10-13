@@ -165,6 +165,15 @@ ratios. Pinning fixes the per-node representation, so the active count normally 
 at that level's scene-wide count after its chunks load. The setting affects Streamed SOG
 octrees and has no useful effect on a bundled single-resource `.sog`.
 
+The 6G showcase also reads `VITE_STATIC_GS_LOD_LEVEL`. Set it in
+`apps/6g-showcase/.env.local`, then restart `pnpm dev:6g-showcase` or
+`pnpm dev:6g-showcase:https`. For a deployed build, set it before building and rebuild
+the app. Leave it blank or unset for automatic selection; `0` pins the finest level, and
+higher non-negative integers pin coarser exported levels, clamped to each asset's
+available range. The streaming-quality dropdown still controls the dynamic sequence; its
+tooltip reports whether the static LOD is automatic or pinned. The separate
+`VITE_PLAYCANVAS_SPLAT_BUDGET` setting below is supported by `demo-playcanvas` only.
+
 Alternatively, leave the level automatic and set a global PlayCanvas budget:
 
 ```dotenv

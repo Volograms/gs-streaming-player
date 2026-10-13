@@ -14,6 +14,7 @@ target/
 !apps/showcase/.env.https
 !apps/6g-showcase/.env.https
 .cert/
+.nginx/
 
 # Developer-provided renderer fixtures are staged here for local smoke tests only.
 apps/demo/public/assets/static-sog/
