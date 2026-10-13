@@ -190,6 +190,22 @@ function createBufferHarness(options: { allReady?: boolean } = {}) {
 }
 
 describe("SequencePlaybackController", () => {
+  it("reads the buffer once when reporting contiguous readiness", () => {
+    const harness = createBufferHarness({ allReady: true });
+    const controller = new SequencePlaybackController({
+      buffer: harness.buffer,
+      sequence: createSequence(),
+    });
+    const readSnapshot = vi.spyOn(harness.buffer, "snapshot", "get");
+
+    expect(controller.snapshot).toMatchObject({
+      bufferAheadFrames: 3,
+      bufferAheadSeconds: 0.1,
+    });
+    expect(readSnapshot).toHaveBeenCalledOnce();
+    controller.dispose();
+  });
+
   it("uses absolute 30 fps deadlines without accumulating timer drift", async () => {
     const clock = new FakePlaybackClock();
     const harness = createBufferHarness({ allReady: true });
