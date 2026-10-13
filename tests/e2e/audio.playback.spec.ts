@@ -10,6 +10,9 @@ import type {
 interface AudioHarness {
   audio: HTMLAudioElement;
   bufferingStops: number[];
+  bufferingMediaSeeks: AudioHarness["mediaSeeks"];
+  readonly bufferingPauseDelayed: boolean;
+  readonly bufferingRecoveryComplete: boolean;
   errors: string[];
   mediaSeeks: { fromSeconds: number; toSeconds: number; muted: boolean }[];
   player: GaussianStreamingPlayer;
@@ -66,6 +69,24 @@ for (const { frameRate, manifestVersion } of [
         const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
         const audio = new Audio(url);
         const mediaSeeks: AudioHarness["mediaSeeks"] = [];
+        const bufferingMediaSeeks: AudioHarness["mediaSeeks"] = [];
+        let testingBufferingRecovery = false;
+        let delayNextPause = false;
+        let delayedPause = false;
+        const pause = audio.pause.bind(audio);
+        audio.pause = () => {
+          if (delayNextPause && !audio.paused && !audio.muted) {
+            delayNextPause = false;
+            delayedPause = true;
+            testingBufferingRecovery = true;
+            // Audio keeps running during a busy main-thread buffering callback.
+            const deadline = performance.now() + 60;
+            while (performance.now() < deadline) {
+              // Simulate the snapshot/renderer work preceding the native pause.
+            }
+          }
+          pause();
+        };
         const mediaTime = Object.getOwnPropertyDescriptor(
           HTMLMediaElement.prototype,
           "currentTime",
@@ -73,11 +94,13 @@ for (const { frameRate, manifestVersion } of [
         Object.defineProperty(audio, "currentTime", {
           get: () => mediaTime.get!.call(audio) as number,
           set: (value: number) => {
-            mediaSeeks.push({
+            const seek = {
               fromSeconds: audio.currentTime,
               muted: audio.muted,
               toSeconds: value,
-            });
+            };
+            mediaSeeks.push(seek);
+            if (testingBufferingRecovery) bufferingMediaSeeks.push(seek);
             mediaTime.set!.call(audio, value);
           },
         });
@@ -169,6 +192,10 @@ for (const { frameRate, manifestVersion } of [
         let previousLifecycle = player.snapshot.lifecycle;
         player.subscribe((snapshot) => {
           if (snapshot.error !== undefined) errors.push(String(snapshot.error));
+          if (snapshot.lifecycle === "PLAYING" && !audio.paused) {
+            if (!delayedPause) delayNextPause = true;
+            else testingBufferingRecovery = false;
+          }
           if (
             previousLifecycle === "PLAYING" &&
             snapshot.lifecycle === "BUFFERING" &&
@@ -179,7 +206,14 @@ for (const { frameRate, manifestVersion } of [
         });
         window.audioHarness = {
           audio,
+          bufferingMediaSeeks,
           bufferingStops,
+          get bufferingPauseDelayed() {
+            return delayedPause;
+          },
+          get bufferingRecoveryComplete() {
+            return delayedPause && !testingBufferingRecovery;
+          },
           errors,
           mediaSeeks,
           player,
@@ -203,6 +237,9 @@ for (const { frameRate, manifestVersion } of [
       .poll(() => page.evaluate(() => window.audioHarness.bufferingStops.length))
       .toBeGreaterThanOrEqual(1);
     expect(await page.evaluate(() => window.audioHarness.audio.paused)).toBe(true);
+    expect(await page.evaluate(() => window.audioHarness.bufferingPauseDelayed)).toBe(
+      true,
+    );
     await page.evaluate(() => window.audioHarness.releaseBlockedFrames());
     await expect
       .poll(() =>
@@ -211,14 +248,13 @@ for (const { frameRate, manifestVersion } of [
         ),
       )
       .toBe(true);
-    // Ignore sub-millisecond sampling differences and muted gesture priming.
-    expect(
-      await page.evaluate(() =>
-        window.audioHarness.mediaSeeks.filter(
-          (seek) => !seek.muted && seek.toSeconds < seek.fromSeconds - 0.001,
-        ),
-      ),
-    ).toEqual([]);
+    await expect
+      .poll(() => page.evaluate(() => window.audioHarness.bufferingRecoveryComplete))
+      .toBe(true);
+    // Buffer recovery must never seek, even if a native getter samples an old time.
+    expect(await page.evaluate(() => window.audioHarness.bufferingMediaSeeks)).toEqual(
+      [],
+    );
     await expect
       .poll(
         () =>

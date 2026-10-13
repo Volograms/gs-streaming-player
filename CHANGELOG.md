@@ -7,6 +7,10 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Preserve the native audio element's stopped position during frame-buffering recovery,
+  including audio progress while JavaScript processes a stall. Resume without a media
+  seek and catch frame timing up to the audio already heard.
+
 - Preserve the exact playback position through frame-buffering recovery instead of
   seeking audio back to the previous or newly prepared frame's timestamp. Cover late
   callbacks, repeated stalls, irregular timestamps, and buffering at a loop boundary.
@@ -71,13 +75,19 @@ All notable changes to this project will be documented here. The project uses
 
 ### Added
 
+- Support `VITE_STATIC_GS_LOD_LEVEL` in the 6G showcase to pin static Streamed SOG
+  detail for performance comparisons, with automatic selection when blank or unset and a
+  quality-control tooltip that reports the static LOD mode.
+
 - Add a shared nginx asset configuration, Docker deployment and native Windows launcher
   for the 6G showcase, with HTTP/HTTPS, CORS, byte ranges and direct delivery of
   dynamic, static, audio and explainer assets. Document local setup and deployment
   configuration. Use shared, locally trusted mkcert certificates for the HTTPS WebXR app
   and asset server; document local CA setup and headset addresses without a public
   certificate. Enable threaded file I/O in the Linux image to reduce Windows bind-mount
-  stalls and expose cross-origin resource timings for transfer diagnostics.
+  stalls and expose cross-origin resource timings for transfer diagnostics. Add an
+  optional shared, bounded RAM cache with multiple nginx workers, disabled container
+  swap, cache-hit diagnostics and a prewarm command for multi-device runs.
 
 - The 6G showcase explainer layer. The demo object stands large on the floor beside the
   presenter and is revealed, turned, dissolved and stepped through its training
