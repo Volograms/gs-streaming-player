@@ -6,6 +6,7 @@ import {
 } from "../src/index.js";
 
 import type { GaussianFrameSource, PreparedFrame } from "@6g-path/gaussian-player";
+import type { Asset } from "playcanvas";
 
 const FRAME: GaussianFrameSource = {
   codec: PLAYCANVAS_SOG_CODEC_ID,
@@ -47,6 +48,12 @@ function createApplicationEvents() {
 
 describe("PlayCanvasGaussianRendererAdapter", () => {
   it("validates optional LOD and splat-budget controls", () => {
+    expect(
+      () => new PlayCanvasGaussianRendererAdapter({ sogPreparationWorkers: -1 }),
+    ).toThrow(/sogPreparationWorkers/);
+    expect(
+      () => new PlayCanvasGaussianRendererAdapter({ sogPreparationWorkers: 0 }),
+    ).not.toThrow();
     expect(() => new PlayCanvasGaussianRendererAdapter({ staticLodLevel: -1 })).toThrow(
       /staticLodLevel must be a non-negative integer/i,
     );
@@ -153,6 +160,42 @@ describe("PlayCanvasGaussianRendererAdapter", () => {
     await expect(adapter.prepareFrame("sequence", FRAME, {})).rejects.toThrow(
       /requires complete compressed SOG bytes/i,
     );
+  });
+
+  it("uses native asset loading when worker startup is blocked", async () => {
+    vi.stubGlobal(
+      "Worker",
+      class {
+        constructor() {
+          throw new Error("Worker blocked by CSP");
+        }
+      },
+    );
+    const adapter = new PlayCanvasGaussianRendererAdapter({ sogPreparationWorkers: 1 });
+    const loadAsset = vi.fn(async () => undefined);
+    Object.assign(adapter, { initialised: true, loadAsset });
+    try {
+      const asset = {} as Asset;
+      await (
+        adapter as unknown as {
+          loadSogFrameAsset(
+            asset: Asset,
+            bytes: ArrayBuffer,
+            url: string,
+            signal: AbortSignal | undefined,
+          ): Promise<void>;
+        }
+      ).loadSogFrameAsset(asset, new ArrayBuffer(4), FRAME.url, undefined);
+      expect(loadAsset).toHaveBeenCalledWith(asset, undefined);
+      expect(adapter.getMetrics().sogPreparation).toMatchObject({
+        execution: "native",
+        workerCount: 0,
+        fallbackReason: "Worker blocked by CSP",
+      });
+    } finally {
+      adapter.dispose();
+      vi.unstubAllGlobals();
+    }
   });
 
   it("rejects renderer-neutral and unsupported compressed frame paths", async () => {

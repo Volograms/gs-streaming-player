@@ -31,14 +31,14 @@ const player = await GaussianStreamingPlayer.create({
 The PlayCanvas adapter uses engine 2.23.2 and disables stochastic alpha by default for
 applications it creates, preserving sorted alpha blending. Set `stochasticAlpha: true`
 to experiment with sort-free dithered coverage and depth writes on the WebGPU GPU
-renderer. This can introduce visible sampling noise. WebGL2 and the CPU-sort path
-use sorted rendering. Caller-owned applications retain their stochastic setting unless
-the option is supplied explicitly.
+renderer. This can introduce visible sampling noise. WebGL2 and the CPU-sort path use
+sorted rendering. Caller-owned applications retain their stochastic setting unless the
+option is supplied explicitly.
 
 All three PlayCanvas apps accept `VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA` in their
-`.env.local`, defaulting to `false`. Set it to `true` and restart the dev server to
-try stochastic rendering. `renderer.getRuntimeInfo().stochasticAlpha` reports whether
-the mode is active on the selected renderer.
+`.env.local`, defaulting to `false`. Set it to `true` and restart the dev server to try
+stochastic rendering. `renderer.getRuntimeInfo().stochasticAlpha` reports whether the
+mode is active on the selected renderer.
 
 Only one dynamic sequence can be active. A manifest may list several alternatives, but
 the caller must choose one with `sequenceId`; simultaneous sequences are unsupported.
@@ -82,6 +82,7 @@ VITE_DECODED_BUFFER_MB=750
 VITE_TARGET_BUFFER_SECONDS=5
 VITE_PREPARATION_CONCURRENCY=1
 VITE_FETCH_CONCURRENCY=6
+VITE_SOG_PREPARATION_WORKERS=1
 ```
 
 `VITE_PREPARATION_CONCURRENCY` and `VITE_FETCH_CONCURRENCY` accept positive integers.
@@ -93,9 +94,16 @@ authored SOG tiers); leaving fetch blank uses six requests. Set preparation to `
 equivalent library options are `buffer.maximumBasePreparationConcurrency` and
 `buffer.maximumCompressedFetchConcurrency`.
 
-Preparation jobs are not dedicated decoder threads. One native SOG preparation can
-decode several WebP images concurrently, with the browser controlling its internal
-threads. Download requests are asynchronous and do not require a download worker.
+Preparation jobs are not dedicated decoder threads. The PlayCanvas adapter defaults to
+one SOG worker for ZIP/metadata and WebP image preparation. Set
+`VITE_SOG_PREPARATION_WORKERS` to a non-negative integer: `1` is the default, `2` uses
+two workers, and `0` selects native loading for comparison. This setting also exists in
+the PlayCanvas demo; the library option is `sogPreparationWorkers` on the renderer. One
+worker overlaps up to four frame preparations, within the player's preparation-job
+limit. For example, fetch `2`, preparation `4`, and SOG workers `1` allows two downloads
+and four preparations through one worker. Start with one worker on Quest; more workers
+can contend with rendering. The browser also manages internal image-decoding threads.
+Download requests are asynchronous and do not require a download worker.
 
 Restart the Vite dev server after changing these settings. The compressed budget is
 additional to decoded frames, renderer resources, static content, and in-flight

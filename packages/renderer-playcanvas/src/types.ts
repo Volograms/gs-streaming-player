@@ -42,6 +42,24 @@ export interface PlayCanvasGpuTimingSnapshot {
 
 export interface PlayCanvasRendererMetrics extends RendererMetrics {
   readonly gpuTimings: PlayCanvasGpuTimingSnapshot;
+  readonly sogPreparation?: PlayCanvasSogPreparationMetrics;
+}
+
+export interface PlayCanvasSogPreparationMetrics {
+  readonly execution: "worker" | "native";
+  readonly workerCount: number;
+  /** End-to-end preparation including queue, decode, and renderer resource creation. */
+  readonly totalDurationMs: number;
+  /** Worker path only: renderer resource creation, including any CPU-sort GPU readback wait. */
+  readonly resourceDurationMs?: number;
+  readonly queueDurationMs?: number;
+  /** Worker elapsed time; includes asynchronous browser image decode waits. */
+  readonly workerDurationMs?: number;
+  readonly imageDecodeDurationMs?: number;
+  readonly unpackDurationMs?: number;
+  /** Includes input cloning, worker startup, work, and main-thread delivery delay. */
+  readonly roundTripDurationMs?: number;
+  readonly fallbackReason?: string;
 }
 
 export type PlayCanvasXrSupportReason =
@@ -88,6 +106,13 @@ export interface PlayCanvasRendererAdapterOptions {
    * setting when omitted. Ignored by the CPU-sort renderer, including WebGL2.
    */
   stochasticAlpha?: boolean;
+  /**
+   * Workers for dynamic SOG unpacking and WebP ImageBitmap preparation. Defaults
+   * to one; zero uses native PlayCanvas loading for comparisons. Each worker can
+   * overlap up to four frame preparations, also bounded by player preparation
+   * concurrency. Unsupported worker environments fall back to native loading.
+   */
+  sogPreparationWorkers?: number;
   /** Configure automatic canvas resolution. Defaults to true for adapter-owned applications. */
   manageResize?: boolean;
   /** Reject projected splats smaller than this screen-space radius. PlayCanvas defaults to 2. */

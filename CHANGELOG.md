@@ -7,6 +7,12 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Offload dynamic SOG ZIP/metadata and WebP ImageBitmap preparation to a bounded worker
+  pool, defaulting to one worker. Transfer decoded images back for PlayCanvas
+  texture/resource creation, preserve compressed cache bytes, and close cancelled or
+  retired images. Expose `sogPreparationWorkers` / `VITE_SOG_PREPARATION_WORKERS`,
+  native-loading fallback and comparison mode, and preparation-stage diagnostics.
+
 - Align all PlayCanvas engine dependencies, including content-tool peers, to 2.23.2.
   Keep stochastic alpha disabled by default in the adapter and all PlayCanvas apps,
   expose `VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA=true` as an opt-in experiment, and

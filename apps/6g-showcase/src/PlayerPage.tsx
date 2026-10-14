@@ -540,6 +540,9 @@ async function createPlayer(
   const adapter = new PlayCanvasGaussianRendererAdapter({
     canvas,
     graphicsBackend: backend,
+    sogPreparationWorkers: Number(
+      import.meta.env.VITE_SOG_PREPARATION_WORKERS?.trim() || 1,
+    ),
     gaussianSort: "auto",
     stochasticAlpha: readStrictBooleanEnvironmentValue(
       import.meta.env.VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA,

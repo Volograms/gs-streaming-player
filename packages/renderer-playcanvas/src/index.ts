@@ -26,6 +26,7 @@ export type {
   PlayCanvasRendererContext,
   PlayCanvasRendererMetrics,
   PlayCanvasRendererRuntimeInfo,
+  PlayCanvasSogPreparationMetrics,
   PlayCanvasXrSupportInfo,
   PlayCanvasXrSupportReason,
   PlayCanvasXrStartOptions,

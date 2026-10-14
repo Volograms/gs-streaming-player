@@ -21,17 +21,47 @@ selected frame/tier .sog bytes
 player compressed-byte cache
         |
         v
-PlayCanvas adapter -> native SOG asset -> persistent dynamic entity
+SOG worker (ZIP + WebP ImageBitmaps)
+        |
+        v
+PlayCanvas adapter -> native SOG resource -> persistent dynamic entity
                                       -> PlayCanvas WebGL2 CPU sort
                                       -> PlayCanvas WebGPU GPU sort / WebXR
                                          (stochastic alpha is opt-in)
 ```
 
-The adapter advertises only the explicit `sog-v2` compressed-frame capability. It hands
-the cached `ArrayBuffer` to PlayCanvas's SOG asset loader, retains prepared native
-assets for the bounded frame window, and changes the asset attached to one persistent
-dynamic entity at presentation. It applies the same player transform contract as the
-other adapters and releases native assets when the frame buffer evicts them.
+The adapter advertises only the explicit `sog-v2` compressed-frame capability. It copies
+cached compressed bytes to a bounded worker pool, which reads the ZIP directory,
+extracts metadata/images, and creates WebP `ImageBitmap`s. Transferring those bitmaps
+back transfers ownership without serialising decoded pixels. The renderer creates
+PlayCanvas textures, codebooks, and native SOG resources on its own thread. It retains
+these assets for the bounded frame window and changes the asset attached to one
+persistent dynamic entity at presentation. Compressed cache buffers remain reusable.
+Static scenes continue through PlayCanvas's existing asset loader.
+
+`PlayCanvasRendererAdapterOptions.sogPreparationWorkers` defaults to `1`. Use `0` for
+native PlayCanvas loading, or a positive integer to set the actual worker count. The
+PlayCanvas demo and both showcases expose this as `VITE_SOG_PREPARATION_WORKERS`. Each
+worker overlaps up to four asynchronous frame preparations; the player's
+`buffer.maximumBasePreparationConcurrency` still limits total in-flight preparations.
+Thus four preparation jobs can run through one worker without creating four JavaScript
+threads. Start with one worker on Quest and measure before increasing it.
+
+The worker path supports stored and deflated bundled images, including optional SH
+textures. Unsupported worker capabilities, worker startup/runtime failures, or assets
+requiring native handling fall back to the native loader. Corrupt image/bundle errors
+remain preparation errors. Cancelled jobs close decoded images and retain their worker
+slot until outstanding browser decode finishes, preventing rapid seeks from creating
+unbounded decode work. Disposal terminates the pool. Buffered/live bitmaps remain
+available for context restoration and close through the existing retirement fence.
+
+`getMetrics().sogPreparation` reports the last completed preparation's execution mode,
+worker count, queue time, worker elapsed time, unpack/image-decode time, round-trip
+time, and renderer resource time (worker path only). These elapsed durations include
+asynchronous waits; they are not CPU/GPU execution measurements. Round-trip time also
+includes input cloning, first-use worker startup, and delivery delay. The 6G debug
+overlay shows the active mode, worker count, total preparation, and resource time;
+fallback reasons appear in its tooltip.
 
 Normal playback follows PlayCanvas's native GSplat flipbook behavior: assigning the next
 asset and requesting a render completes the handoff without blocking the playback clock
@@ -226,12 +256,11 @@ VITE_PLAYCANVAS_GSPLAT_SORT=cpu
 ```
 
 `auto` selects the GPU renderer on WebGPU and CPU sorting on WebGL2; `gpu` explicitly
-requires WebGPU. The GPU renderer skips sorting when stochastic alpha is enabled.
-CPU sorting moves radix-sort work off the GPU but retains CPU splat
-centers and adds worker/ordering-transfer cost, so compare it at the same scene, pose,
-splat budget, and XR state. Select the mode before loading any SOG assets; the adapter
-does this during initialisation. The demo reports the active sort path and whether CPU
-centers are kept.
+requires WebGPU. The GPU renderer skips sorting when stochastic alpha is enabled. CPU
+sorting moves radix-sort work off the GPU but retains CPU splat centers and adds
+worker/ordering-transfer cost, so compare it at the same scene, pose, splat budget, and
+XR state. Select the mode before loading any SOG assets; the adapter does this during
+initialisation. The demo reports the active sort path and whether CPU centers are kept.
 
 The PlayCanvas demo enables a low-overhead WebGPU timing sampler by default:
 
@@ -301,11 +330,11 @@ directly interchangeable.
 The adapter and all three PlayCanvas apps disable stochastic alpha by default, using
 sorted alpha blending. Stochastic alpha is an optional experiment on the WebGPU GPU
 renderer. The mode projects and culls splats on the GPU, then renders them without depth
-sorting, using dithered coverage, opaque blending, and depth writes.
-PlayCanvas's default blue-noise pattern is retained. Sampling noise and transparency
-differences can be visible, particularly at edges; temporal antialiasing is not enabled
-automatically by this change. WebGL2 and an explicitly selected CPU-sort renderer retain
-sorted alpha blending.
+sorting, using dithered coverage, opaque blending, and depth writes. PlayCanvas's
+default blue-noise pattern is retained. Sampling noise and transparency differences can
+be visible, particularly at edges; temporal antialiasing is not enabled automatically by
+this change. WebGL2 and an explicitly selected CPU-sort renderer retain sorted alpha
+blending.
 
 Select WebGPU with the default sorted rendering in the PlayCanvas demo:
 
@@ -314,11 +343,11 @@ VITE_PLAYCANVAS_GRAPHICS_BACKEND=webgpu
 VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA=false
 ```
 
-Set `VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA=true` to try stochastic alpha. The
-same stochastic-alpha setting is supported by both showcases. Library embedders can
-set `stochasticAlpha` in the adapter options; caller-owned applications retain their
-scene setting when the option is omitted. Runtime diagnostics report the active mode,
-so an ignored stochastic setting on WebGL2 is not labelled as sort-free rendering.
+Set `VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA=true` to try stochastic alpha. The same
+stochastic-alpha setting is supported by both showcases. Library embedders can set
+`stochasticAlpha` in the adapter options; caller-owned applications retain their scene
+setting when the option is omitted. Runtime diagnostics report the active mode, so an
+ignored stochastic setting on WebGL2 is not labelled as sort-free rendering.
 
 For the sorted-rendering comparison below, use
 `VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA=false`. The demo retains WebGL2 as its default
@@ -346,10 +375,9 @@ Run a controlled WebGL2/WebGPU pair in the same production session:
    record SOG prepare, sort, FPS/cadence, memory, and a trace.
 2. Set `VITE_PLAYCANVAS_GRAPHICS_BACKEND=webgpu`, rebuild, verify the two diagnostics
    above, then repeat with the same frame range, tier, cache state, camera motion, and
-   browser window size.
-   Repeat with stochastic alpha enabled and record both frame timing and visible
-   sampling/edge quality; its diagnostics should identify stochastic alpha instead of
-   GPU sorting.
+   browser window size. Repeat with stochastic alpha enabled and record both frame
+   timing and visible sampling/edge quality; its diagnostics should identify stochastic
+   alpha instead of GPU sorting.
 3. Test minimum, medium, and full without reducing the source tier to make a slow case
    pass. Record flat playback and immersive WebXR separately because their frame budgets
    and browser capabilities differ.

@@ -166,7 +166,7 @@ export function App() {
   const [rendererRuntime, setRendererRuntime] =
     useState<PlayCanvasRendererRuntimeInfo>();
   const [gsplatRenderConfiguration, setGsplatRenderConfiguration] =
-    useState<GsplatRenderConfiguration>({});
+    useState<GsplatRenderConfiguration>({ stochasticAlpha: false });
   const [staticGsPosition, setStaticGsPosition] = useState<ScenePositionInputs>(
     configuredStaticGsPositionInputs,
   );
@@ -278,6 +278,9 @@ export function App() {
           canvas: targetCanvas,
           gpuTimingSampleIntervalMs,
           graphicsBackend,
+          sogPreparationWorkers: Number(
+            import.meta.env.VITE_SOG_PREPARATION_WORKERS?.trim() || 1,
+          ),
           ...parsedGsplatRenderConfiguration,
           ...(staticLodConfiguration.splatBudget === undefined
             ? {}
@@ -758,7 +761,9 @@ export function App() {
               : rendererRuntime.stochasticAlpha
                 ? "stochastic alpha"
                 : `${rendererRuntime.gaussianSort} (${
-                    rendererRuntime.splatCentersEnabled ? "CPU centers" : "no CPU centers"
+                    rendererRuntime.splatCentersEnabled
+                      ? "CPU centers"
+                      : "no CPU centers"
                   })`
           }
         />

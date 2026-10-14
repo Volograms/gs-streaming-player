@@ -59,6 +59,53 @@ full frames, or 2.1 seconds, but substantially more minimum and medium frames.
 
 ## Recorded results
 
+### SOG worker offload validation and component comparison — 2026-10-14
+
+Dynamic SOG preparation now uses one worker by default, configurable with
+`sogPreparationWorkers` / `VITE_SOG_PREPARATION_WORKERS`. Zero selects native loading.
+Each worker can overlap four frame jobs while the player's preparation concurrency
+remains the outer limit. ZIP directory/metadata processing, optional deflate, Blob
+creation, and WebP ImageBitmap requests run in the worker. The compressed cache buffer
+is cloned only when dispatched; decoded bitmaps transfer back for renderer-owned
+textures, codebooks, and SOG resources. Downloads retain their existing concurrency.
+
+A real Medium frame (101,243 splats, 1,183,396 bytes, five WebPs) was checked through
+native and worker loading on both WebGPU and WebGL2 in Chrome 155 on the development
+machine. All decoded image pixel hashes matched. The worker path made zero main-thread
+ImageBitmap calls, preserved compressed bytes, retained live image sources, closed
+unpresented sources immediately and presented sources after the existing retirement
+fence, and survived cancellation of one frame while another completed. Disposal rejected
+pending work. Target-device context restoration and optional SH rendering remain to be
+verified; stored/deflated bundles and optional SH image extraction have focused unit
+coverage.
+
+A separate short development-server comparison used twelve distinct cached Medium
+frames, four preparation jobs, four warm-up frames per mode, a 640x480 WebGPU adapter
+with its render loop active, and no static scene, explainer, playback clock, or audio.
+This is one small component batch per setting, not a sustained playback benchmark.
+
+| SOG workers | Prepared frames/s | Preparation p50 / p95 | Main-thread Blob / ImageBitmap calls |
+| ----------: | ----------------: | --------------------: | -----------------------------------: |
+|  0 (native) |              85.9 |        45.0 / 63.1 ms |                              60 / 60 |
+|           1 |              94.3 |        41.2 / 50.3 ms |                                0 / 0 |
+|           2 |             137.0 |        27.8 / 30.1 ms |                                0 / 0 |
+
+Renderer resource creation after worker delivery averaged about 1.2 ms with one worker
+and 1.0 ms with two. These are elapsed times, not sampled CPU costs. The worker's
+reported decode time includes browser scheduling and asynchronous image decoding;
+round-trip time additionally includes input copying, startup, and main-thread delivery.
+The sample supports testing two workers on desktop but does not establish an optimal
+count or guarantee improved scene FPS/GPU utilisation. Keep one as the default pending
+Quest measurements. Use identical frame concurrency and cache state when comparing.
+
+Local artifacts: `test-results/verify-sog-worker.mjs`,
+`test-results/sog-worker-check.json`, `test-results/compare-sog-workers.mjs`, and
+`test-results/sog-worker-comparison.json`. The same pixel/ownership checks passed with
+the minified production worker on WebGPU and WebGL2, recorded in
+`test-results/sog-worker-production-check.json`. Renderer/dependency and production Vite
+builds passed; large local public fixtures were excluded from the Vite build check. All
+26 focused tests, renderer/three-app type checks, and scoped lint passed.
+
 ### 6G main-thread CPU attribution — 2026-10-14
 
 Short foreground, focused Chrome CPU profiles and timeline traces of the full live 6G

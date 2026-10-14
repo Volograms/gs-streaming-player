@@ -83,6 +83,18 @@ export function ExplainerDebugPanel({
         Decoded {snapshot?.decodedFrameCount ?? 0} frames ·{" "}
         {snapshot?.bufferDiagnostics?.decodedAheadSeconds.toFixed(2) ?? "0"} s ahead
       </p>
+      {metrics?.sogPreparation === undefined ? null : (
+        <p title={metrics.sogPreparation.fallbackReason}>
+          SOG {metrics.sogPreparation.execution}
+          {metrics.sogPreparation.execution === "worker"
+            ? ` ×${metrics.sogPreparation.workerCount}`
+            : ""}
+          {" · "}prepare {ms(metrics.sogPreparation.totalDurationMs)}
+          {metrics.sogPreparation.resourceDurationMs === undefined
+            ? null
+            : ` · resource ${ms(metrics.sogPreparation.resourceDurationMs)}`}
+        </p>
+      )}
       {snapshot?.qualityMode.mode !== "automatic" ||
       snapshot.qualityDiagnostics?.presentedDynamicDetailLevel === undefined ? null : (
         <p>

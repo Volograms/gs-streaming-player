@@ -20,6 +20,9 @@ import {
   queryPlayCanvasImmersiveVrSupport,
   readPlayCanvasRendererRuntimeInfo,
 } from "./graphicsBackend.js";
+import { createSogResource } from "./sog/createSogResource.js";
+import { closeSogImages } from "./sog/sogPreparation.js";
+import { SogPreparationPool, SogWorkerUnavailableError } from "./SogPreparationPool.js";
 import { applyPlayCanvasTransform } from "./transform.js";
 
 import type {
@@ -28,6 +31,7 @@ import type {
   PlayCanvasRendererContext,
   PlayCanvasRendererMetrics,
   PlayCanvasRendererRuntimeInfo,
+  PlayCanvasSogPreparationMetrics,
   PlayCanvasXrSupportInfo,
   PlayCanvasXrStartOptions,
 } from "./types.js";
@@ -104,10 +108,16 @@ export class PlayCanvasGaussianRendererAdapter
   >();
   private presentationQueue: Promise<void> = Promise.resolve();
   private readonly resourceMetrics = new Map<string, MutableResourceMetric>();
+  private sogPreparationPool: SogPreparationPool | undefined;
+  private sogPreparationMetrics: PlayCanvasSogPreparationMetrics | undefined;
 
   constructor(options: PlayCanvasRendererAdapterOptions) {
     validateOptionalNonNegativeInteger(options.splatBudget, "splatBudget");
     validateOptionalNonNegativeInteger(options.staticLodLevel, "staticLodLevel");
+    validateOptionalNonNegativeInteger(
+      options.sogPreparationWorkers,
+      "sogPreparationWorkers",
+    );
     validateOptionalNonNegativeNumber(options.minPixelSize, "minPixelSize");
     validateOptionalNonNegativeNumber(options.minContribution, "minContribution");
     validateOptionalNonNegativeNumber(options.foveationStrength, "foveationStrength");
@@ -442,7 +452,12 @@ export class PlayCanvasGaussianRendererAdapter
     };
     this.resourceMetrics.set(resourceId, metric);
     try {
-      await this.loadAsset(asset, options.signal);
+      await this.loadSogFrameAsset(
+        asset,
+        options.compressedBytes,
+        frame.url,
+        options.signal,
+      );
       this.assertInitialised();
       throwIfAborted(options.signal);
       releaseSourceContents(asset);
@@ -635,6 +650,9 @@ export class PlayCanvasGaussianRendererAdapter
         : { activeFrameIndex: this.activeFrame.frameIndex }),
       failedResourceLoadCount: this.failedResourceLoadCount,
       gpuTimings: this.gpuTimingSampler?.getSnapshot() ?? DISABLED_GPU_TIMING_SNAPSHOT,
+      ...(this.sogPreparationMetrics === undefined
+        ? {}
+        : { sogPreparation: this.sogPreparationMetrics }),
       ...(this.frameCommitTimeMs === undefined
         ? {}
         : { frameCommitTimeMs: this.frameCommitTimeMs }),
@@ -681,6 +699,7 @@ export class PlayCanvasGaussianRendererAdapter
     for (const cancel of [...this.pendingLoadCancellations]) {
       cancel(disposalError);
     }
+    this.sogPreparationPool?.dispose();
     for (const cancel of [...this.pendingPresentationCancellations]) {
       cancel(disposalError);
     }
@@ -991,6 +1010,83 @@ export class PlayCanvasGaussianRendererAdapter
 
   private loadAsset(asset: Asset, signal: AbortSignal | undefined): Promise<void> {
     return this.loadRegisteredAsset(asset, signal);
+  }
+
+  private async loadSogFrameAsset(
+    asset: Asset,
+    bytes: ArrayBuffer,
+    url: string,
+    signal: AbortSignal | undefined,
+  ): Promise<void> {
+    const startedAt = this.now();
+    const count = this.options.sogPreparationWorkers ?? 1;
+    let fallbackReason: string | undefined;
+    if (count > 0 && typeof Worker === "function") {
+      const controller = new AbortController();
+      const cancel = (error: Error) => controller.abort(error);
+      const aborted = () => controller.abort(signal?.reason);
+      this.pendingLoadCancellations.add(cancel);
+      signal?.addEventListener("abort", aborted, { once: true });
+      if (signal?.aborted) aborted();
+      try {
+        this.sogPreparationPool ??= new SogPreparationPool({
+          maximumWorkers: count,
+          now: this.now,
+        });
+        const images = await this.sogPreparationPool.prepare(bytes, controller.signal);
+        // Disposal/seek may win after the worker transferred its images.
+        if (controller.signal.aborted) {
+          closeSogImages(images);
+          controller.signal.throwIfAborted();
+        }
+        const resourceStartedAt = this.now();
+        const resource = await createSogResource(
+          this.application.graphicsDevice,
+          url,
+          images,
+          this.application.scene.gsplatCentersEnabled !== false,
+          controller.signal,
+        );
+        if (controller.signal.aborted) {
+          resource.releaseTextureSources();
+          resource.destroy();
+          controller.signal.throwIfAborted();
+        }
+        asset.resource = resource;
+        asset.loaded = true;
+        asset.fire("load", asset);
+        this.sogPreparationMetrics = {
+          execution: "worker",
+          workerCount: this.sogPreparationPool.workerCount,
+          totalDurationMs: this.now() - startedAt,
+          resourceDurationMs: this.now() - resourceStartedAt,
+          queueDurationMs: images.queueDurationMs,
+          workerDurationMs: images.workerDurationMs,
+          unpackDurationMs: images.unpackDurationMs,
+          imageDecodeDurationMs: images.imageDecodeDurationMs,
+          roundTripDurationMs: images.roundTripDurationMs,
+        };
+        return;
+      } catch (error) {
+        controller.signal.throwIfAborted();
+        if (!(error instanceof SogWorkerUnavailableError)) throw error;
+        fallbackReason = error.message;
+      } finally {
+        signal?.removeEventListener("abort", aborted);
+        this.pendingLoadCancellations.delete(cancel);
+      }
+    } else if (count > 0) {
+      fallbackReason = "Web Workers are unavailable.";
+    }
+    this.assertInitialised();
+    throwIfAborted(signal);
+    await this.loadAsset(asset, signal);
+    this.sogPreparationMetrics = {
+      execution: "native",
+      workerCount: 0,
+      totalDurationMs: this.now() - startedAt,
+      ...(fallbackReason === undefined ? {} : { fallbackReason }),
+    };
   }
 
   private loadRegisteredAsset(

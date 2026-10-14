@@ -34,23 +34,24 @@ A task is checked only after its acceptance criteria are implemented and verifie
 - [ ] Profile the foreground 6G showcase's remaining presentation misses with a ready
       decoded reserve. Short development profiles identified React publication and
       repeated tier selection; these costs are reduced. Attribute the remaining native
-      Blob/image preparation and unattributed browser time, then capture preparation
-      throughput, main-thread long tasks, timer lateness, and initial explainer
-      construction separately, using the fixed-quality Live/Frozen/Hidden/off
+      browser time after SOG Blob/image preparation moves to workers, then capture
+      preparation throughput, main-thread long tasks, timer lateness, and initial
+      explainer construction separately, using the fixed-quality Live/Frozen/Hidden/off
       comparisons in `PERFORMANCE.md`. Verify sustained 30 fps and uninterrupted audio
       before treating the changes as a stall fix.
 
 - [ ] Complete the PlayCanvas/SOG production benchmark matrix at 25%, 50%, and 100% on
       the same desktop and Quest 3 sessions:
-  - [ ] Compare one versus two concurrent SOG preparations with resident bytes and the
-        full scene on Quest. Attribute WebP/image loading and main-thread callback
-        delays separately before adding decoder workers; the short desktop component
-        sample in `PERFORMANCE.md` gained no throughput from a second preparation.
+  - [ ] Compare native SOG loading with one and two preparation workers, holding frame
+        preparation concurrency and resident bytes constant, in the full scene on Quest.
+        Attribute WebP decode waits, worker delivery delay, and main-thread resource
+        creation separately. Verify context restoration and optional SH textures on
+        target hardware as well as sustained playback and audio.
   - [ ] Compare WebGL2 CPU sort with WebGPU GPU sort using repeated p50/p95 samples for
         preparation, sorting, GPU frame time, presented cadence, memory, and stalls.
-        Keep stochastic alpha disabled for the default sorted baseline, then compare
-        the opt-in stochastic mode for frame timing, sampling noise, edge quality, and
-        XR stereo.
+        Keep stochastic alpha disabled for the default sorted baseline, then compare the
+        opt-in stochastic mode for frame timing, sampling noise, edge quality, and XR
+        stereo.
   - [ ] Capture a full-tier Quest trace and any WebGPU XR run that reports
         `XRGPUBinding`; verify both eyes during paused and continuous WebGL2 XR
         playback.
