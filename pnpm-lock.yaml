@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  playcanvas: 2.23.2
+
 patchedDependencies:
   '@babylonjs/core@9.17.0': 0fbb9dd141c3be5b3842448541df237339181f75d5f0a6009031f909b777db77
   '@playcanvas/splat-transform@3.6.4': b8ccbedd6f4e18f143e58b528f77883af2aa9ec3612c1e7b1f84768772c5ddc2
@@ -86,8 +89,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/renderer-playcanvas
       playcanvas:
-        specifier: 2.21.0
-        version: 2.21.0
+        specifier: 2.23.2
+        version: 2.23.2
       react:
         specifier: ^19.2.7
         version: 19.2.7
@@ -207,7 +210,7 @@ importers:
         version: link:../player-core
       '@playcanvas/splat-transform':
         specifier: 3.6.4
-        version: 3.6.4(patch_hash=b8ccbedd6f4e18f143e58b528f77883af2aa9ec3612c1e7b1f84768772c5ddc2)(playcanvas@2.21.0)
+        version: 3.6.4(patch_hash=b8ccbedd6f4e18f143e58b528f77883af2aa9ec3612c1e7b1f84768772c5ddc2)(playcanvas@2.23.2)
 
   packages/cue-timeline: {}
 
@@ -265,8 +268,8 @@ importers:
         specifier: workspace:*
         version: link:../shared
       playcanvas:
-        specifier: 2.21.0
-        version: 2.21.0
+        specifier: 2.23.2
+        version: 2.23.2
 
   packages/renderer-spark:
     dependencies:
@@ -805,7 +808,7 @@ packages:
     engines: {node: '>=22.0.0'}
     hasBin: true
     peerDependencies:
-      playcanvas: ^2.0.0
+      playcanvas: 2.23.2
 
   '@playwright/test@1.61.1':
     resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
@@ -1885,8 +1888,8 @@ packages:
   pkg-types@1.3.1:
     resolution: {integrity: sha512-/Jm5M4RvtBFVkKWRu2BLUTNP8/M2a+UwuAX+ae4770q1qVGtfjG+WTCupoZixokjmHiry8uI+dlY8KXYV5HVVQ==}
 
-  playcanvas@2.21.0:
-    resolution: {integrity: sha512-9O94i5WHPkhXbPhhzWixBpXij1gsI+LvEUrUyl1hZ4/9w57892BNvWeXXM1DTe7vqAFtX0WaptOdtVy4AOvCZA==}
+  playcanvas@2.23.2:
+    resolution: {integrity: sha512-NplQOAJ0jtgBrP4Q1d7IooAsMDvu5NfiXDToEzlg7VuqDqfLSyqilwElEXZDbGUKKYm2Y7iGrEJD8tWUMc7xwA==}
     engines: {node: '>=18.3.0'}
 
   playwright-core@1.61.1:
@@ -2628,10 +2631,10 @@ snapshots:
 
   '@oxc-project/types@0.139.0': {}
 
-  '@playcanvas/splat-transform@3.6.4(patch_hash=b8ccbedd6f4e18f143e58b528f77883af2aa9ec3612c1e7b1f84768772c5ddc2)(playcanvas@2.21.0)':
+  '@playcanvas/splat-transform@3.6.4(patch_hash=b8ccbedd6f4e18f143e58b528f77883af2aa9ec3612c1e7b1f84768772c5ddc2)(playcanvas@2.23.2)':
     dependencies:
       '@adobe/spz': 0.2.3
-      playcanvas: 2.21.0
+      playcanvas: 2.23.2
       webgpu: 0.4.0
     transitivePeerDependencies:
       - supports-color
@@ -3573,7 +3576,7 @@ snapshots:
       mlly: 1.8.2
       pathe: 2.0.3
 
-  playcanvas@2.21.0:
+  playcanvas@2.23.2:
     dependencies:
       '@types/webxr': 0.5.24
       '@webgpu/types': 0.1.71

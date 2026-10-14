@@ -15,6 +15,7 @@ const renderer = new PlayCanvasGaussianRendererAdapter({
   canvas,
   graphicsBackend: "webgpu",
   gaussianSort: "auto",
+  stochasticAlpha: false,
   manageResize: true,
 });
 
@@ -26,6 +27,18 @@ const player = await GaussianStreamingPlayer.create({
   signal: abortController.signal,
 });
 ```
+
+The PlayCanvas adapter uses engine 2.23.2 and disables stochastic alpha by default for
+applications it creates, preserving sorted alpha blending. Set `stochasticAlpha: true`
+to experiment with sort-free dithered coverage and depth writes on the WebGPU GPU
+renderer. This can introduce visible sampling noise. WebGL2 and the CPU-sort path
+use sorted rendering. Caller-owned applications retain their stochastic setting unless
+the option is supplied explicitly.
+
+All three PlayCanvas apps accept `VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA` in their
+`.env.local`, defaulting to `false`. Set it to `true` and restart the dev server to
+try stochastic rendering. `renderer.getRuntimeInfo().stochasticAlpha` reports whether
+the mode is active on the selected renderer.
 
 Only one dynamic sequence can be active. A manifest may list several alternatives, but
 the caller must choose one with `sequenceId`; simultaneous sequences are unsupported.
@@ -55,7 +68,9 @@ longer stops at ten future frames. Explicit `buffer.futureFrameCount` overrides 
 time-based frame limit. Configure the budgets with `buffer.compressedBufferMaximumBytes`
 and `buffer.decodedBufferMaximumBytes`, the target with `buffer.targetBufferSeconds`,
 and startup with `buffer.minimumReadyFrames`. Inject a custom policy with
-`qualityController`. Automatic policy can adjust preparation concurrency while playing.
+`qualityController`. Automatic policy can adjust preparation concurrency when
+`buffer.maximumBasePreparationConcurrency` is omitted. Supplying it fixes the
+preparation-job limit in both automatic and manual quality modes.
 
 Both showcases accept `VITE_COMPRESSED_BUFFER_MB` (decimal MB, default `200`) and
 `VITE_DECODED_BUFFER_MB` (default `500`) and `VITE_TARGET_BUFFER_SECONDS` (default `5`)
@@ -65,7 +80,22 @@ in their app's `.env.local`. For example:
 VITE_COMPRESSED_BUFFER_MB=400
 VITE_DECODED_BUFFER_MB=750
 VITE_TARGET_BUFFER_SECONDS=5
+VITE_PREPARATION_CONCURRENCY=1
+VITE_FETCH_CONCURRENCY=6
 ```
+
+`VITE_PREPARATION_CONCURRENCY` and `VITE_FETCH_CONCURRENCY` accept positive integers.
+They limit simultaneous dynamic frame preparations and compressed download requests,
+respectively. Leaving preparation blank retains Auto's policy (two to three jobs for
+authored SOG tiers); leaving fetch blank uses six requests. Set preparation to `1` or
+`2` for a controlled Quest comparison. For the 6G demo, edit
+`apps/6g-showcase/.env.local`; the regular showcase uses `apps/showcase/.env.local`. The
+equivalent library options are `buffer.maximumBasePreparationConcurrency` and
+`buffer.maximumCompressedFetchConcurrency`.
+
+Preparation jobs are not dedicated decoder threads. One native SOG preparation can
+decode several WebP images concurrently, with the browser controlling its internal
+threads. Download requests are asynchronous and do not require a download worker.
 
 Restart the Vite dev server after changing these settings. The compressed budget is
 additional to decoded frames, renderer resources, static content, and in-flight

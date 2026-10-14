@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { parseGsplatRenderConfiguration } from "./gsplatRenderConfiguration.js";
 
 describe("parseGsplatRenderConfiguration", () => {
-  it("leaves PlayCanvas projection rejection at its defaults", () => {
-    expect(parseGsplatRenderConfiguration({})).toEqual({});
+  it("disables stochastic alpha and leaves projection rejection at its defaults", () => {
+    expect(parseGsplatRenderConfiguration({})).toEqual({ stochasticAlpha: false });
   });
 
   it("accepts screen-space and foveated rejection controls", () => {
@@ -25,6 +25,7 @@ describe("parseGsplatRenderConfiguration", () => {
       gaussianSort: "cpu",
       minContribution: 5,
       minPixelSize: 4,
+      stochasticAlpha: false,
       xrFixedFoveation: 0.75,
     });
   });

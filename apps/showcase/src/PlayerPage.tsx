@@ -468,6 +468,11 @@ async function createPlayer(
     canvas,
     graphicsBackend: backend,
     gaussianSort: "auto",
+    stochasticAlpha: readStrictBooleanEnvironmentValue(
+      import.meta.env.VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA,
+      "VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA",
+      false,
+    ),
     manageResize: true,
   });
   const player = await GaussianStreamingPlayer.create({
@@ -478,6 +483,18 @@ async function createPlayer(
     buffer,
   });
   return { adapter, backend, player };
+}
+
+function readStrictBooleanEnvironmentValue(
+  value: string | undefined,
+  settingName: string,
+  fallback: boolean,
+): boolean {
+  const trimmed = value?.trim();
+  if (trimmed === undefined || trimmed === "") return fallback;
+  if (trimmed === "true") return true;
+  if (trimmed === "false") return false;
+  throw new Error(`${settingName} must be 'true' or 'false'.`);
 }
 
 function readBufferOptions() {
@@ -493,6 +510,16 @@ function readBufferOptions() {
     import.meta.env.VITE_DECODED_BUFFER_MB,
     "VITE_DECODED_BUFFER_MB",
   );
+  const preparationConcurrency = readPositiveFiniteEnvironmentValue(
+    import.meta.env.VITE_PREPARATION_CONCURRENCY,
+    "VITE_PREPARATION_CONCURRENCY",
+    true,
+  );
+  const fetchConcurrency = readPositiveFiniteEnvironmentValue(
+    import.meta.env.VITE_FETCH_CONCURRENCY,
+    "VITE_FETCH_CONCURRENCY",
+    true,
+  );
   return {
     ...(decodedBufferMb === undefined
       ? {}
@@ -501,18 +528,31 @@ function readBufferOptions() {
       ? {}
       : { compressedBufferMaximumBytes: compressedBufferMb * 1_000_000 }),
     ...(targetBufferSeconds === undefined ? {} : { targetBufferSeconds }),
+    ...(preparationConcurrency === undefined
+      ? {}
+      : { maximumBasePreparationConcurrency: preparationConcurrency }),
+    ...(fetchConcurrency === undefined
+      ? {}
+      : { maximumCompressedFetchConcurrency: fetchConcurrency }),
   };
 }
 
 function readPositiveFiniteEnvironmentValue(
   value: string | undefined,
   settingName: string,
+  requireInteger = false,
 ): number | undefined {
   const trimmed = value?.trim();
   if (trimmed === undefined || trimmed === "") return undefined;
   const parsed = Number(trimmed);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error(`${settingName} must be a positive finite number.`);
+  if (
+    !Number.isFinite(parsed) ||
+    parsed <= 0 ||
+    (requireInteger && !Number.isInteger(parsed))
+  ) {
+    throw new Error(
+      `${settingName} must be a positive ${requireInteger ? "integer" : "finite number"}.`,
+    );
   }
   return parsed;
 }

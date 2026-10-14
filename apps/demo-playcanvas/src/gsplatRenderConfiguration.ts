@@ -5,6 +5,7 @@ export interface GsplatRenderEnvironmentConfiguration {
   readonly gaussianSort?: string;
   readonly minContribution?: string;
   readonly minPixelSize?: string;
+  readonly stochasticAlpha?: string;
   readonly xrFixedFoveation?: string;
 }
 
@@ -15,6 +16,7 @@ export interface GsplatRenderConfiguration {
   readonly gaussianSort?: "auto" | "cpu" | "gpu";
   readonly minContribution?: number;
   readonly minPixelSize?: number;
+  readonly stochasticAlpha: boolean;
   readonly xrFixedFoveation?: number;
 }
 
@@ -25,9 +27,11 @@ export function parseGsplatRenderConfiguration({
   gaussianSort,
   minContribution,
   minPixelSize,
+  stochasticAlpha,
   xrFixedFoveation,
 }: GsplatRenderEnvironmentConfiguration): GsplatRenderConfiguration {
   return {
+    stochasticAlpha: parseStochasticAlpha(stochasticAlpha),
     ...optionalUnitNumber(
       alphaClipForward,
       "VITE_PLAYCANVAS_GSPLAT_ALPHA_CLIP_FORWARD",
@@ -60,6 +64,22 @@ export function parseGsplatRenderConfiguration({
       "xrFixedFoveation",
     ),
   };
+}
+
+function parseStochasticAlpha(value: string | undefined): boolean {
+  const trimmed = value?.trim();
+  if (trimmed === undefined || trimmed === "") {
+    return false;
+  }
+  if (trimmed === "true") {
+    return true;
+  }
+  if (trimmed === "false") {
+    return false;
+  }
+  throw new Error(
+    "VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA must be 'true' or 'false'.",
+  );
 }
 
 function optionalGaussianSort(

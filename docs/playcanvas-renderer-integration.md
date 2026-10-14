@@ -1,10 +1,10 @@
 # PlayCanvas SOG Renderer Integration
 
 `@6g-path/gaussian-renderer-playcanvas` is an independent `GaussianRendererAdapter` for
-PlayCanvas's native SOG v2 path. It shares renderer-neutral fetching, compressed-byte
-caching, frame scheduling, transfer-tier selection, and playback timing with the other
-demos, but it does not decode SOG into the neutral floating-point Gaussian frame used by
-SPZ integrations.
+PlayCanvas 2.23.2's native SOG v2 path. It shares renderer-neutral fetching,
+compressed-byte caching, frame scheduling, transfer-tier selection, and playback timing
+with the other demos, but it does not decode SOG into the neutral floating-point
+Gaussian frame used by SPZ integrations.
 
 The implementation is ready for browser testing; sustained cadence, memory use, and
 stereo correctness on Quest 3 remain to be measured.
@@ -24,6 +24,7 @@ player compressed-byte cache
 PlayCanvas adapter -> native SOG asset -> persistent dynamic entity
                                       -> PlayCanvas WebGL2 CPU sort
                                       -> PlayCanvas WebGPU GPU sort / WebXR
+                                         (stochastic alpha is opt-in)
 ```
 
 The adapter advertises only the explicit `sog-v2` compressed-frame capability. It hands
@@ -35,8 +36,8 @@ other adapters and releases native assets when the frame buffer evicts them.
 Normal playback follows PlayCanvas's native GSplat flipbook behavior: assigning the next
 asset and requesting a render completes the handoff without blocking the playback clock
 on the diagnostic `frame:ready` event. Embedders that need a fully sorted capture fence
-can enable `waitForFrameReady`; that optional wait is bounded and is not used by the
-demo.
+can disable `stochasticAlpha` and enable `waitForFrameReady`; that optional wait is
+bounded and is not used by the demo.
 
 There is no runtime SPZ-to-SOG transcode and no silent fallback to Spark or Babylon. A
 source index or environment codec that does not declare `sog-v2` fails before playback.
@@ -224,8 +225,9 @@ VITE_PLAYCANVAS_GRAPHICS_BACKEND=webgpu
 VITE_PLAYCANVAS_GSPLAT_SORT=cpu
 ```
 
-`auto` selects GPU sorting on WebGPU and CPU sorting on WebGL2; `gpu` explicitly
-requires WebGPU. CPU sorting moves radix-sort work off the GPU but retains CPU splat
+`auto` selects the GPU renderer on WebGPU and CPU sorting on WebGL2; `gpu` explicitly
+requires WebGPU. The GPU renderer skips sorting when stochastic alpha is enabled.
+CPU sorting moves radix-sort work off the GPU but retains CPU splat
 centers and adds worker/ordering-transfer cost, so compare it at the same scene, pose,
 splat budget, and XR state. Select the mode before loading any SOG assets; the adapter
 does this during initialisation. The demo reports the active sort path and whether CPU
@@ -294,14 +296,33 @@ comparing PlayCanvas/SOG with another adapter/codec path. Record content convers
 runtime versions with the result; SOG and SPZ byte sizes and decode stages are not
 directly interchangeable.
 
-## WebGPU GPU-sort experiment
+## WebGPU stochastic alpha and sorted-rendering comparison
 
-The demo retains WebGL2 as its default comparison baseline. Select PlayCanvas's WebGPU
-device and stable GPU-sort Gaussian renderer explicitly with:
+The adapter and all three PlayCanvas apps disable stochastic alpha by default, using
+sorted alpha blending. Stochastic alpha is an optional experiment on the WebGPU GPU
+renderer. The mode projects and culls splats on the GPU, then renders them without depth
+sorting, using dithered coverage, opaque blending, and depth writes.
+PlayCanvas's default blue-noise pattern is retained. Sampling noise and transparency
+differences can be visible, particularly at edges; temporal antialiasing is not enabled
+automatically by this change. WebGL2 and an explicitly selected CPU-sort renderer retain
+sorted alpha blending.
+
+Select WebGPU with the default sorted rendering in the PlayCanvas demo:
 
 ```dotenv
 VITE_PLAYCANVAS_GRAPHICS_BACKEND=webgpu
+VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA=false
 ```
+
+Set `VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA=true` to try stochastic alpha. The
+same stochastic-alpha setting is supported by both showcases. Library embedders can
+set `stochasticAlpha` in the adapter options; caller-owned applications retain their
+scene setting when the option is omitted. Runtime diagnostics report the active mode,
+so an ignored stochastic setting on WebGL2 is not labelled as sort-free rendering.
+
+For the sorted-rendering comparison below, use
+`VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA=false`. The demo retains WebGL2 as its default
+when no graphics backend is configured.
 
 WebGPU initialisation is strict for this experiment. PlayCanvas normally appends WebGL2
 as a device fallback, but the adapter rejects that fallback when `webgpu` was requested
@@ -316,7 +337,7 @@ Sort path  gpu (no CPU centers)
 The adapter disables `scene.gsplatCentersEnabled` before loading any SOG asset on this
 path. That prevents PlayCanvas from generating centers, reading them back from the GPU,
 cloning the center array, and feeding its WebGL CPU-sort worker. Attribute
-reconstruction, GPU upload, GPU sorting/culling, and rasterisation remain
+reconstruction, GPU upload, culling, rasterisation, and sorting when enabled remain
 PlayCanvas-owned work.
 
 Run a controlled WebGL2/WebGPU pair in the same production session:
@@ -326,6 +347,9 @@ Run a controlled WebGL2/WebGPU pair in the same production session:
 2. Set `VITE_PLAYCANVAS_GRAPHICS_BACKEND=webgpu`, rebuild, verify the two diagnostics
    above, then repeat with the same frame range, tier, cache state, camera motion, and
    browser window size.
+   Repeat with stochastic alpha enabled and record both frame timing and visible
+   sampling/edge quality; its diagnostics should identify stochastic alpha instead of
+   GPU sorting.
 3. Test minimum, medium, and full without reducing the source tier to make a slow case
    pass. Record flat playback and immersive WebXR separately because their frame budgets
    and browser capabilities differ.

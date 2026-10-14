@@ -12,6 +12,7 @@ import { ExplainerController } from "./explainer/ExplainerController.js";
 import { ExplainerDebugPanel } from "./explainer/ExplainerDebugPanel.js";
 import { explainerSceneConfig } from "./explainer/explainerSceneConfig.js";
 import { PauseIcon, PlayIcon, SoundIcon, VrIcon } from "./icons.js";
+import { subscribeToPlayerUi } from "./playerUiUpdates.js";
 import { collectShowcaseQualityOptions } from "./qualityOptions.js";
 import { XrTransportPanel } from "./XrTransportPanel.js";
 
@@ -104,8 +105,8 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
         }
         setQualityOptions(collectShowcaseQualityOptions(result.player.sequence));
         setBackend(result.backend);
-        unsubscribe = result.player.subscribe((next) => {
-          setSnapshot({ ...next });
+        unsubscribe = subscribeToPlayerUi(result.player, (next) => {
+          setSnapshot(next);
           if (next.error !== undefined) setError(describeShowcaseError(next.error));
         });
         const support = await result.adapter.getXrSupportInfo();
@@ -500,7 +501,7 @@ export function PlayerPage({ requestedManifestUrl }: PlayerPageProps) {
           adapter={debugContext?.adapter}
           controller={explainer}
           error={explainerError}
-          player={debugContext?.player}
+          snapshot={snapshot}
           seek={seek}
         />
       ) : null}
@@ -540,6 +541,11 @@ async function createPlayer(
     canvas,
     graphicsBackend: backend,
     gaussianSort: "auto",
+    stochasticAlpha: readStrictBooleanEnvironmentValue(
+      import.meta.env.VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA,
+      "VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA",
+      false,
+    ),
     gpuTimingSampleIntervalMs: isExplainerDebugEnabled() ? 1_000 : 0,
     manageResize: true,
     ...(configuredStaticLodLevel === undefined
@@ -556,6 +562,18 @@ async function createPlayer(
   return { adapter, backend, player };
 }
 
+function readStrictBooleanEnvironmentValue(
+  value: string | undefined,
+  settingName: string,
+  fallback: boolean,
+): boolean {
+  const trimmed = value?.trim();
+  if (trimmed === undefined || trimmed === "") return fallback;
+  if (trimmed === "true") return true;
+  if (trimmed === "false") return false;
+  throw new Error(settingName + " must be 'true' or 'false'.");
+}
+
 function readBufferOptions() {
   const compressedBufferMb = readPositiveFiniteEnvironmentValue(
     import.meta.env.VITE_COMPRESSED_BUFFER_MB,
@@ -569,6 +587,16 @@ function readBufferOptions() {
     import.meta.env.VITE_DECODED_BUFFER_MB,
     "VITE_DECODED_BUFFER_MB",
   );
+  const preparationConcurrency = readPositiveFiniteEnvironmentValue(
+    import.meta.env.VITE_PREPARATION_CONCURRENCY,
+    "VITE_PREPARATION_CONCURRENCY",
+    true,
+  );
+  const fetchConcurrency = readPositiveFiniteEnvironmentValue(
+    import.meta.env.VITE_FETCH_CONCURRENCY,
+    "VITE_FETCH_CONCURRENCY",
+    true,
+  );
   return {
     ...(decodedBufferMb === undefined
       ? {}
@@ -577,18 +605,31 @@ function readBufferOptions() {
       ? {}
       : { compressedBufferMaximumBytes: compressedBufferMb * 1_000_000 }),
     ...(targetBufferSeconds === undefined ? {} : { targetBufferSeconds }),
+    ...(preparationConcurrency === undefined
+      ? {}
+      : { maximumBasePreparationConcurrency: preparationConcurrency }),
+    ...(fetchConcurrency === undefined
+      ? {}
+      : { maximumCompressedFetchConcurrency: fetchConcurrency }),
   };
 }
 
 function readPositiveFiniteEnvironmentValue(
   value: string | undefined,
   settingName: string,
+  requireInteger = false,
 ): number | undefined {
   const trimmed = value?.trim();
   if (trimmed === undefined || trimmed === "") return undefined;
   const parsed = Number(trimmed);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error(`${settingName} must be a positive finite number.`);
+  if (
+    !Number.isFinite(parsed) ||
+    parsed <= 0 ||
+    (requireInteger && !Number.isInteger(parsed))
+  ) {
+    throw new Error(
+      `${settingName} must be a positive ${requireInteger ? "integer" : "finite number"}.`,
+    );
   }
   return parsed;
 }

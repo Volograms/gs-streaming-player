@@ -15,46 +15,65 @@ export function selectFrameTransferQuality(
   source: GaussianFrameSource,
   requestedDetailLevel: number,
 ): SelectedFrameTransfer | undefined {
-  const candidates = frameTransferQualityCandidates(source);
-  if (candidates.length === 0) {
-    return undefined;
+  // This is queried for every frame in the rolling cache plan. Select directly
+  // without allocating/cloning/sorting the whole tier ladder on each query.
+  const qualities = source.qualityLevels ?? [];
+  let floor: number | undefined;
+  for (const quality of qualities) {
+    if (quality === undefined) continue;
+    const detail = qualityDetailLevel(quality);
+    if (detail !== undefined && quality.minimumPlayable === true) {
+      floor = Math.min(floor ?? detail, detail);
+    }
   }
-
-  const minimumPlayable = candidates.find(
-    ({ quality }) => quality.minimumPlayable === true,
-  );
-  const effectiveTarget = Math.max(
-    requestedDetailLevel,
-    minimumPlayable?.detailLevel ?? 0,
-  );
-  const selected =
-    candidates.find(({ detailLevel }) => detailLevel >= effectiveTarget) ??
-    candidates.at(-1);
+  const effectiveTarget = Math.max(requestedDetailLevel, floor ?? 0);
+  let selected: GaussianQualityLevel | undefined;
+  let selectedDetail = Infinity;
+  let highest: GaussianQualityLevel | undefined;
+  let highestDetail = -Infinity;
+  for (const quality of qualities) {
+    if (quality === undefined) continue;
+    const detail = qualityDetailLevel(quality);
+    if (detail === undefined) continue;
+    if (
+      highest === undefined ||
+      detail > highestDetail ||
+      (detail === highestDetail && quality.level >= highest.level)
+    ) {
+      highest = quality;
+      highestDetail = detail;
+    }
+    if (
+      detail >= effectiveTarget &&
+      (selected === undefined ||
+        detail < selectedDetail ||
+        (detail === selectedDetail && quality.level < selected.level))
+    ) {
+      selected = quality;
+      selectedDetail = detail;
+    }
+  }
   if (selected === undefined) {
-    return undefined;
+    selected = highest;
+    selectedDetail = highestDetail;
   }
+  if (selected === undefined) return undefined;
 
   return {
     quality: {
-      ...(selected.quality.codec === undefined && source.codec === undefined
+      ...(selected.codec === undefined && source.codec === undefined
         ? {}
-        : { codec: selected.quality.codec ?? source.codec }),
-      detailLevel: selected.detailLevel,
-      level: selected.quality.level,
+        : { codec: selected.codec ?? source.codec }),
+      detailLevel: selectedDetail,
+      level: selected.level,
       mode: "fixed",
-      ...(selected.quality.splatCount === undefined
-        ? {}
-        : { splatCount: selected.quality.splatCount }),
+      ...(selected.splatCount === undefined ? {} : { splatCount: selected.splatCount }),
     },
     source: {
       ...source,
-      ...(selected.quality.codec === undefined
-        ? {}
-        : { codec: selected.quality.codec }),
-      ...(selected.quality.byteSize === undefined
-        ? {}
-        : { byteSize: selected.quality.byteSize }),
-      url: selected.quality.url,
+      ...(selected.codec === undefined ? {} : { codec: selected.codec }),
+      ...(selected.byteSize === undefined ? {} : { byteSize: selected.byteSize }),
+      url: selected.url!,
     },
   };
 }
@@ -78,9 +97,16 @@ export function frameTransferQualityCandidates(
 }
 
 function toCandidate(quality: GaussianQualityLevel): QualityCandidate | undefined {
-  if (quality.url === undefined) {
-    return undefined;
-  }
+  const detailLevel = qualityDetailLevel(quality);
+  if (detailLevel === undefined) return undefined;
+  return {
+    detailLevel,
+    quality: { ...quality, url: quality.url! },
+  };
+}
+
+function qualityDetailLevel(quality: GaussianQualityLevel): number | undefined {
+  if (quality.url === undefined) return undefined;
   const detailLevel =
     quality.detailLevel ??
     readMetadataRatio(quality.metadata, "targetLeafRatio") ??
@@ -93,10 +119,7 @@ function toCandidate(quality: GaussianQualityLevel): QualityCandidate | undefine
   ) {
     return undefined;
   }
-  return {
-    detailLevel,
-    quality: { ...quality, url: quality.url },
-  };
+  return detailLevel;
 }
 
 function readMetadataRatio(

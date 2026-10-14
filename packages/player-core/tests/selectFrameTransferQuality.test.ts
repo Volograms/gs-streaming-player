@@ -65,4 +65,44 @@ describe("selectFrameTransferQuality", () => {
       ),
     ).toBeUndefined();
   });
+
+  it("selects an unsorted ladder with the same duplicate-detail tie breaks", () => {
+    const frame = {
+      ...source,
+      qualityLevels: [
+        { level: 3, detailLevel: 0.5, url: "/same-detail-later.sog" },
+        { level: 0, detailLevel: 0.1, url: "/preview.sog" },
+        { level: 2, detailLevel: 0.5, url: "/same-detail-first.sog" },
+      ],
+    };
+    expect(selectFrameTransferQuality(frame, 0.4)?.source.url).toBe(
+      "/same-detail-first.sog",
+    );
+    expect(selectFrameTransferQuality(frame, 1)?.source.url).toBe(
+      "/same-detail-later.sog",
+    );
+  });
+
+  it("uses the lowest valid marked floor and skips invalid or unaddressable tiers", () => {
+    const frame = {
+      ...source,
+      qualityLevels: [
+        { level: 4, detailLevel: 0.9, url: "/high.sog", minimumPlayable: true },
+        { level: 3, detailLevel: NaN, url: "/invalid.sog", minimumPlayable: true },
+        { level: 0, detailLevel: 0.1, minimumPlayable: true },
+        { level: 2, detailLevel: 0.5, url: "/medium.sog", minimumPlayable: true },
+        { level: 1, detailLevel: 0.25, url: "/low.sog" },
+      ],
+    };
+    expect(selectFrameTransferQuality(frame, 0.1)?.source.url).toBe("/medium.sog");
+    expect(selectFrameTransferQuality(frame, 0.6)?.source.url).toBe("/high.sog");
+  });
+
+  it("skips holes in a caller-provided tier ladder", () => {
+    const qualityLevels: NonNullable<GaussianFrameSource["qualityLevels"]> = [];
+    qualityLevels[1] = source.qualityLevels![1]!;
+    expect(
+      selectFrameTransferQuality({ ...source, qualityLevels }, 0.1)?.source.url,
+    ).toBe("/frame-minimum.spz");
+  });
 });

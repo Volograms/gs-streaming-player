@@ -191,6 +191,11 @@ export class PlayCanvasGaussianRendererAdapter
           this.options.gaussianSort,
         );
       }
+      const stochasticAlpha =
+        this.options.stochasticAlpha ?? (ownsApplication ? false : undefined);
+      if (stochasticAlpha !== undefined) {
+        application.scene.gsplat.stochastic = stochasticAlpha;
+      }
       if (this.options.splatBudget !== undefined) {
         application.scene.gsplat.splatBudget = this.options.splatBudget;
       }

@@ -22,6 +22,6 @@
   "dependencies": {
     "@6g-path/gaussian-player": "workspace:*",
     "@6g-path/shared": "workspace:*",
-    "playcanvas": "2.21.0"
+    "playcanvas": "2.23.2"
   }
 }

@@ -38,6 +38,8 @@ async function harness(
   const presented: number[] = [];
   const prepared = new Set<PreparedFrame>();
   let maximumPrepared = 0;
+  let activePreparations = 0;
+  let maximumActivePreparations = 0;
   const quality = (frame: PreparedFrame) => ({
     detailLevel: frame.transferQuality!.detailLevel,
     selectedSplatCount: 1_000,
@@ -48,7 +50,13 @@ async function harness(
     dispose: () => undefined,
     canPrepareCompressedFrame: () => true,
     prepareFrame: async (sequenceId, source, options) => {
+      activePreparations += 1;
+      maximumActivePreparations = Math.max(
+        maximumActivePreparations,
+        activePreparations,
+      );
       await new Promise<void>((resolve) => setTimeout(resolve, preparationDelay));
+      activePreparations -= 1;
       const frame: PreparedFrame = {
         estimatedMemoryBytes: (source.byteSize ?? 0) * 8,
         sequenceId,
@@ -158,6 +166,12 @@ async function harness(
     get preparedCount() {
       return prepared.size;
     },
+    get maximumActivePreparations() {
+      return maximumActivePreparations;
+    },
+    resetPreparationPeak() {
+      maximumActivePreparations = activePreparations;
+    },
     get preparedFrames() {
       return [...prepared];
     },
@@ -177,6 +191,37 @@ async function harness(
 }
 
 describe("GaussianStreamingPlayer automatic quality", () => {
+  it.each([1, 2, 4])(
+    "keeps the explicit %i-job preparation limit across automatic and manual quality",
+    async (concurrency) => {
+      const result = await harness(30, undefined, undefined, {
+        maximumBasePreparationConcurrency: concurrency,
+      });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(result.lastDetail).toBe(1);
+      expect(result.maximumActivePreparations).toBe(concurrency);
+
+      result.resetPreparationPeak();
+      result.player.setQualityMode({ mode: "manual", detailLevel: 0.25 });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(result.maximumActivePreparations).toBe(concurrency);
+
+      result.resetPreparationPeak();
+      result.player.setQualityMode({ mode: "automatic" });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(result.lastDetail).toBe(1);
+      expect(result.maximumActivePreparations).toBe(concurrency);
+      expect(result.player.snapshot.error).toBeUndefined();
+    },
+  );
+
+  it("lets automatic quality adjust preparation concurrency when no limit is supplied", async () => {
+    const result = await harness(30);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(result.lastDetail).toBe(1);
+    expect(result.maximumActivePreparations).toBe(3);
+  });
+
   it("fills a five-second decoded reserve and refreshes the paused image to the best available tier", async () => {
     const result = await harness(30, undefined, { details: [1], status: 404 });
     await vi.advanceTimersByTimeAsync(1_000);

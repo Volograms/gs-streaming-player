@@ -7,6 +7,25 @@ All notable changes to this project will be documented here. The project uses
 
 ### Changed
 
+- Align all PlayCanvas engine dependencies, including content-tool peers, to 2.23.2.
+  Keep stochastic alpha disabled by default in the adapter and all PlayCanvas apps,
+  expose `VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA=true` as an opt-in experiment, and
+  report the active stochastic mode in diagnostics. WebGL2 retains CPU sorting.
+
+- Use the same player snapshot for the 6G debug panel and transport, preventing
+  independently sampled decoded-reserve readouts from disagreeing during handoff.
+  Coalesce routine 6G transport/debug updates to 10 Hz, while publishing playback,
+  error, quality-control, and audio-control changes immediately. Keep frame scheduling
+  and rendering at their existing cadence.
+
+- Select per-frame transfer tiers directly from the authored ladder, avoiding repeated
+  candidate cloning and sorting while rebuilding rolling buffer/cache plans.
+
+- Expose preparation and download concurrency in both showcases through
+  `VITE_PREPARATION_CONCURRENCY` and `VITE_FETCH_CONCURRENCY`. Keep an explicitly
+  configured preparation-job limit when Auto changes quality, allowing controlled
+  one-versus-two-job comparisons on Quest.
+
 - Clamp startup and buffering-recovery reserves to the decoded window's current
   capacity, including a window shrink during an active readiness wait. Avoid errors and
   attempts to recreate evicted tail frames when a larger tier uses more memory.

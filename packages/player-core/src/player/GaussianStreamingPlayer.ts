@@ -66,6 +66,8 @@ export type GaussianStreamingQualityMode =
   | { detailLevel: number; minimumSplatCount?: number; mode: "manual" };
 
 export interface GaussianStreamingPlayerBufferOptions extends FrameRingBufferConfiguration {
+  /** Explicit preparation-job limit. When supplied, automatic quality keeps this limit. */
+  maximumBasePreparationConcurrency?: number;
   minimumReadyFrames?: number;
   /** Decoded lookahead and automatic-quality reserve target; compressed prefetch fills its byte budget. */
   targetBufferSeconds?: number;
@@ -163,6 +165,7 @@ export class GaussianStreamingPlayer {
   private readonly listeners = new Set<SnapshotListener>();
   readonly manifest: GaussianSequenceManifest;
   private readonly minimumReadyFrames: number;
+  private readonly preparationConcurrencyOverride: number | undefined;
   private readonly playback: SequencePlaybackController;
   private playbackSnapshot: SequencePlaybackSnapshot;
   private qualityModeValue: GaussianStreamingQualityMode = { mode: "automatic" };
@@ -195,6 +198,7 @@ export class GaussianStreamingPlayer {
     minimumReadyFrames: number,
     now: () => number,
     loop: boolean,
+    preparationConcurrencyOverride: number | undefined,
   ) {
     this.manifest = manifest;
     this.sequence = sequence;
@@ -209,6 +213,7 @@ export class GaussianStreamingPlayer {
     this.qualityController = qualityController;
     this.audioClock = audioClock;
     this.minimumReadyFrames = minimumReadyFrames;
+    this.preparationConcurrencyOverride = preparationConcurrencyOverride;
     this.now = now;
     this.loop = loop;
     this.unsubscribeBuffer = buffer.subscribe((snapshot) => {
@@ -398,6 +403,7 @@ export class GaussianStreamingPlayer {
         minimumReadyFrames,
         now,
         options.loop ?? bufferOptions.loop ?? false,
+        bufferOptions.maximumBasePreparationConcurrency,
       );
       facadeReference.current = facade;
       for (const event of initialTransfers) facade.observeTrace(event);
@@ -666,9 +672,12 @@ export class GaussianStreamingPlayer {
         { preservePreparedFrames: playback.isPlaying },
       );
       this.refreshPausedQuality();
-      if (decision.maximumBasePreparationConcurrency !== undefined) {
+      const preparationConcurrency =
+        this.preparationConcurrencyOverride ??
+        decision.maximumBasePreparationConcurrency;
+      if (preparationConcurrency !== undefined) {
         this.buffer.setPreparationConcurrency(
-          decision.maximumBasePreparationConcurrency,
+          preparationConcurrency,
           decision.maximumRefinementConcurrency ?? 1,
         );
       }

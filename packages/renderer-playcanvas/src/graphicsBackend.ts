@@ -56,6 +56,9 @@ export function readPlayCanvasRendererRuntimeInfo(
     gaussianSort: renderer === GSPLAT_RENDERER_RASTER_GPU_SORT ? "gpu" : "cpu",
     graphicsBackend: readGraphicsBackend(application),
     splatCentersEnabled: application.scene.gsplatCentersEnabled,
+    stochasticAlpha:
+      renderer === GSPLAT_RENDERER_RASTER_GPU_SORT &&
+      application.scene.gsplat.stochastic === true,
     xrFixedFoveation: application.xr?.fixedFoveation ?? null,
   };
 }

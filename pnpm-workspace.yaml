@@ -8,6 +8,9 @@ allowBuilds:
   unrs-resolver: true
   webgpu: true
 
+overrides:
+  playcanvas: 2.23.2
+
 patchedDependencies:
   "@babylonjs/core@9.17.0": patches/@babylonjs__core@9.17.0.patch
   "@playcanvas/splat-transform@3.6.4": patches/@playcanvas__splat-transform@3.6.4.patch

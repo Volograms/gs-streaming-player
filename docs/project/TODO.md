@@ -32,10 +32,13 @@ A task is checked only after its acceptance criteria are implemented and verifie
 ## Renderer, codec, and device validation
 
 - [ ] Profile the foreground 6G showcase's remaining presentation misses with a ready
-      decoded reserve. Capture preparation throughput, main-thread long tasks, timer
-      lateness, and initial explainer construction separately, using the fixed-quality
-      Live/Frozen/Hidden/off comparisons in `PERFORMANCE.md`. Verify sustained 30 fps
-      and uninterrupted audio before treating the adaptation fixes as a stall fix.
+      decoded reserve. Short development profiles identified React publication and
+      repeated tier selection; these costs are reduced. Attribute the remaining native
+      Blob/image preparation and unattributed browser time, then capture preparation
+      throughput, main-thread long tasks, timer lateness, and initial explainer
+      construction separately, using the fixed-quality Live/Frozen/Hidden/off
+      comparisons in `PERFORMANCE.md`. Verify sustained 30 fps and uninterrupted audio
+      before treating the changes as a stall fix.
 
 - [ ] Complete the PlayCanvas/SOG production benchmark matrix at 25%, 50%, and 100% on
       the same desktop and Quest 3 sessions:
@@ -45,6 +48,9 @@ A task is checked only after its acceptance criteria are implemented and verifie
         sample in `PERFORMANCE.md` gained no throughput from a second preparation.
   - [ ] Compare WebGL2 CPU sort with WebGPU GPU sort using repeated p50/p95 samples for
         preparation, sorting, GPU frame time, presented cadence, memory, and stalls.
+        Keep stochastic alpha disabled for the default sorted baseline, then compare
+        the opt-in stochastic mode for frame timing, sampling noise, edge quality, and
+        XR stereo.
   - [ ] Capture a full-tier Quest trace and any WebGPU XR run that reports
         `XRGPUBinding`; verify both eyes during paused and continuous WebGL2 XR
         playback.

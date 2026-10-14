@@ -3,10 +3,7 @@ import { useEffect, useState } from "react";
 import type { ExplainerController, ExplainerDebugInfo } from "./ExplainerController.js";
 import type { ExplainerDiagnosticMode } from "./explainerPerformance.js";
 import type { ExplainerVisualToggles } from "./ExplainerScene.js";
-import type {
-  GaussianStreamingPlayer,
-  GaussianStreamingPlayerSnapshot,
-} from "@6g-path/gaussian-player";
+import type { GaussianStreamingPlayerSnapshot } from "@6g-path/gaussian-player";
 import type {
   PlayCanvasGaussianRendererAdapter,
   PlayCanvasRendererMetrics,
@@ -16,7 +13,7 @@ interface ExplainerDebugPanelProps {
   adapter: PlayCanvasGaussianRendererAdapter | undefined;
   controller: ExplainerController | undefined;
   error: string | undefined;
-  player: GaussianStreamingPlayer | undefined;
+  snapshot: GaussianStreamingPlayerSnapshot | undefined;
   seek(timeSeconds: number): void;
 }
 
@@ -37,22 +34,21 @@ export function ExplainerDebugPanel({
   adapter,
   controller,
   error,
-  player,
+  snapshot,
   seek,
 }: ExplainerDebugPanelProps) {
   const [info, setInfo] = useState<ExplainerDebugInfo>();
-  const [snapshot, setSnapshot] = useState<GaussianStreamingPlayerSnapshot>();
   const [, setToggleRevision] = useState(0);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (controller !== undefined) setInfo({ ...controller.debugInfo });
-      if (player !== undefined) setSnapshot(player.snapshot);
     }, 250);
     return () => window.clearInterval(timer);
-  }, [controller, player]);
+  }, [controller]);
 
   const metrics = snapshot?.renderer as PlayCanvasRendererMetrics | undefined;
+  const runtime = adapter?.getRuntimeInfo();
   const cpu = controller?.performance.snapshot;
   const ms = (value: number | undefined) =>
     value === undefined ? "n/a" : `${value.toFixed(2)} ms`;
@@ -75,7 +71,9 @@ export function ExplainerDebugPanel({
         {metrics?.gpuTimings.frameTime === undefined
           ? (metrics?.gpuTimings.status ?? "n/a")
           : ms(metrics.gpuTimings.frameTime.latestMs)}{" "}
-        · sort {ms(metrics?.sortTimeMs)}
+        {runtime?.stochasticAlpha === true
+          ? " · stochastic alpha"
+          : " · sort " + ms(metrics?.sortTimeMs)}
       </p>
       <p>
         Pipeline {ms(snapshot?.presentationTiming?.pipelineDurationMs)} · handoff{" "}

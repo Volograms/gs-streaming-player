@@ -6,8 +6,11 @@ export type PlayCanvasGaussianSortMode = "auto" | "cpu" | "gpu";
 
 export interface PlayCanvasRendererRuntimeInfo {
   readonly graphicsBackend: PlayCanvasGraphicsBackend;
+  /** Configured renderer pipeline; GPU sorting is skipped when stochasticAlpha is true. */
   readonly gaussianSort: "cpu" | "gpu";
   readonly splatCentersEnabled: boolean;
+  /** Whether the GPU renderer is using sort-free, dithered alpha coverage. */
+  readonly stochasticAlpha: boolean;
   /** Active XR layer's accepted fixed-foveation value, or null outside supported XR. */
   readonly xrFixedFoveation: number | null;
 }
@@ -76,8 +79,15 @@ export interface PlayCanvasRendererAdapterOptions {
   /**
    * Gaussian depth-sort implementation. Auto selects GPU sort on WebGPU and CPU
    * sort on WebGL2. CPU sort remains available as an experimental WebGPU option.
+   * The GPU renderer skips sorting while stochasticAlpha is enabled.
    */
   gaussianSort?: PlayCanvasGaussianSortMode;
+  /**
+   * Use sort-free, dithered alpha coverage on the WebGPU GPU renderer. Defaults to
+   * false for adapter-owned applications. Caller-owned applications retain their
+   * setting when omitted. Ignored by the CPU-sort renderer, including WebGL2.
+   */
+  stochasticAlpha?: boolean;
   /** Configure automatic canvas resolution. Defaults to true for adapter-owned applications. */
   manageResize?: boolean;
   /** Reject projected splats smaller than this screen-space radius. PlayCanvas defaults to 2. */
@@ -113,7 +123,8 @@ export interface PlayCanvasRendererAdapterOptions {
    */
   staticLodLevel?: number;
   /**
-   * Resolve presentation only after PlayCanvas reports an up-to-date GSplat sort.
+   * Resolve presentation only after PlayCanvas reports GSplat frame readiness.
+   * Set stochasticAlpha to false when a fully sorted capture is required.
    * Defaults to false, matching PlayCanvas's native GSplat flipbook handoff.
    */
   waitForFrameReady?: boolean;

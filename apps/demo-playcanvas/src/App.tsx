@@ -118,6 +118,7 @@ const gsplatRenderEnvironmentConfiguration = {
   gaussianSort: import.meta.env.VITE_PLAYCANVAS_GSPLAT_SORT,
   minContribution: import.meta.env.VITE_PLAYCANVAS_GSPLAT_MIN_CONTRIBUTION,
   minPixelSize: import.meta.env.VITE_PLAYCANVAS_GSPLAT_MIN_PIXEL_SIZE,
+  stochasticAlpha: import.meta.env.VITE_PLAYCANVAS_GSPLAT_STOCHASTIC_ALPHA,
   xrFixedFoveation: import.meta.env.VITE_PLAYCANVAS_XR_FIXED_FOVEATION,
 };
 const staticGsBaseTransform = createStaticSceneTransform({
@@ -754,9 +755,11 @@ export function App() {
           value={
             rendererRuntime === undefined
               ? "initialising"
-              : `${rendererRuntime.gaussianSort} (${
-                  rendererRuntime.splatCentersEnabled ? "CPU centers" : "no CPU centers"
-                })`
+              : rendererRuntime.stochasticAlpha
+                ? "stochastic alpha"
+                : `${rendererRuntime.gaussianSort} (${
+                    rendererRuntime.splatCentersEnabled ? "CPU centers" : "no CPU centers"
+                  })`
           }
         />
         <Metric

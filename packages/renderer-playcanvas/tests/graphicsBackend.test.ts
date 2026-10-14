@@ -64,6 +64,7 @@ describe("PlayCanvas graphics backend configuration", () => {
       gaussianSort: "gpu",
       graphicsBackend: "webgpu",
       splatCentersEnabled: false,
+      stochasticAlpha: false,
       xrFixedFoveation: null,
     });
   });
@@ -88,6 +89,7 @@ describe("PlayCanvas graphics backend configuration", () => {
       gaussianSort: "cpu",
       graphicsBackend: "webgpu",
       splatCentersEnabled: true,
+      stochasticAlpha: false,
       xrFixedFoveation: null,
     });
   });
@@ -107,6 +109,7 @@ describe("PlayCanvas graphics backend configuration", () => {
       gaussianSort: "cpu",
       graphicsBackend: "webgl2",
       splatCentersEnabled: true,
+      stochasticAlpha: false,
       xrFixedFoveation: null,
     });
   });

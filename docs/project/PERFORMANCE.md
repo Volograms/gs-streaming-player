@@ -5,7 +5,7 @@ important results, test conditions, interpretations, and limitations independent
 chat history. Update it when a renderer, decoder, scheduler, content encoding, browser,
 or device change materially affects the pipeline.
 
-Last updated: 2026-10-13.
+Last updated: 2026-10-14.
 
 ## Measurement rules
 
@@ -59,6 +59,107 @@ full frames, or 2.1 seconds, but substantially more minimum and medium frames.
 
 ## Recorded results
 
+### 6G main-thread CPU attribution — 2026-10-14
+
+Short foreground, focused Chrome CPU profiles and timeline traces of the full live 6G
+scene, approximately media seconds 72–81, manual Medium (33%), WebGPU GPU sorting,
+static LOD 2, four preparation jobs and two compressed downloads. Budgets were 500 MB
+compressed and 1,000 MB estimated decoded, with a 20-second target. The owned test
+browser muted audio and used a 1400x1000 viewport. These development-server captures
+identify work to optimise; they are not production or Quest benchmarks.
+
+The initial 8.445-second CPU profile attributed 2.206 seconds inclusively to React's
+`performWorkUntilDeadline` scheduler/render path. Routine player notifications caused
+the transport and debug UI to rerender as fetching, preparation, and presentation
+progressed. Player-core accounted for 0.692 seconds of self time, including repeated
+transfer selection, cache-plan rebuilding, and full buffer snapshots. PlayCanvas JS
+accounted for 0.469 seconds and explainer JS for 0.093 seconds of self time. This
+supports reducing UI and bookkeeping work before attributing saturation to explainer
+animation alone.
+
+The 6G UI now coalesces ordinary snapshots to at most ten publications per second.
+Initial state, lifecycle/play-pause changes, errors, quality-control changes, and audio
+controls publish immediately; trailing progress publishes the latest snapshot.
+Unsubscription cancels pending work. Core scheduling, quality adaptation, and the
+renderer loop retain their original cadence. Transfer selection now scans the authored
+ladder without cloning and sorting every candidate on each buffer-plan query, while
+preserving playable floors, ties, metadata ratios, and missing/invalid-tier handling.
+
+| Sampled main-thread work                  |  Before, 8.445 s |   After, 8.394 s | Attribution      |
+| ----------------------------------------- | ---------------: | ---------------: | ---------------- |
+| React scheduler/render                    | 2,206 ms (26.1%) | 1,153 ms (13.7%) | Inclusive        |
+| Transfer-tier selection                   |    139 ms (1.6%) |     76 ms (0.9%) | Inclusive        |
+| Native `Blob` calls                       |    655 ms (7.8%) |   972 ms (11.6%) | Self             |
+| Native `createImageBitmap` calls          |    112 ms (1.3%) |    192 ms (2.3%) | Self             |
+| Native `copyExternalImageToTexture` calls |     81 ms (1.0%) |    112 ms (1.3%) | Self             |
+| Unattributed `(program)` samples          | 3,797 ms (45.0%) | 3,710 ms (44.2%) | Self; unresolved |
+
+Values aggregate all matching function entries rather than taking the largest single
+call-tree node. Inclusive rows can contain other work and must not be summed with self
+time. These observations are consistent with less React and transfer-selection work, but
+the user's concurrent PlayCanvas 2.23.2 alignment and stochastic-alpha update, different
+initial cache residency, and development instrumentation prevent an isolated causal
+speedup claim. An intermediate capture reported three preparation jobs after development
+hot reload; it is excluded from this table. The final capture applies the four/two
+settings directly to the owned test page and disables its HMR connection.
+
+Both captures started with less than one second continuously ready and accumulated
+presentation misses. The final ready reserve fell from about 0.75 to 0.04 seconds; the
+downloaded reserve also fell. This does not reproduce the user's warm, nine-second
+reserve or establish a decode-only bottleneck, sustained 30-fps playback, improved GPU
+utilisation, or uninterrupted audio.
+
+Installed PlayCanvas 2.23.2 source identifies `ImgParser.load` in
+`framework/parsers/texture/img.js` as wrapping each embedded SOG WebP in a new `Blob`,
+then requesting `createImageBitmap` with no premultiplication or colour conversion. The
+preceding component sample found five WebPs per frame and negligible ZIP parsing for
+these stored entries. Moving embedded-image Blob/bitmap preparation to a bounded worker
+path is a candidate follow-up; texture/resource construction and GPU submission still
+require coordination with the renderer. No such worker path was added here, and the
+large `(program)` share needs browser/native attribution before assigning it to WebP
+decode, upload, driver work, or profiler overhead.
+
+Validation: eleven fake-timer UI subscription cases, tier-selection and ring-buffer
+tests, core/6G type checks, scoped lint/format checks, and a real React/browser check of
+latest progress, ready counts, play/pause, mute, manual quality, narrow transport, and
+cleanup on navigation. One automatic-recovery test exceeded its five-second wall-clock
+timeout in a combined run, then passed alone and in an isolated rerun of all eighteen
+quality-facade tests; no assertion failure occurred.
+
+Local, uncommitted artifacts: `test-results/profile-showcase-cpu.mjs`,
+`test-results/showcase-cpu-before-4.cpuprofile`,
+`test-results/showcase-cpu-after-4.cpuprofile`, their `-trace.json` and `-summary.json`
+files, `test-results/verify-showcase-ui.mjs`, and
+`test-results/showcase-ui-update-check.json`. They reference local developer assets.
+
+### User-reported full-scene concurrency result — 2026-10-14
+
+The user reports that two concurrent downloads and four SOG preparation jobs keep the
+decoded count stable or increasing during manual Medium (33%) playback with the live 6G
+explainer. This is evidence from a full-scene run, unlike the isolated component sample
+below; it supports using this configuration for further desktop measurements. It does
+not establish the best concurrency for Quest or a measured throughput gain.
+
+The supplied screenshot at approximately 73 seconds shows 270 ready frames and 9.0
+seconds ahead in the transport, render FPS 37.0, latest render frame interval 33.40 ms,
+render CPU 2.10 ms, application update 0.90 ms, sampled GPU frame time 3.98 ms,
+presentation pipeline 11.60 ms, handoff 2.90 ms, and explainer CPU p95 1.10 ms over 120
+updates. The dropped count is 130 cumulatively; the run's initial count and sample
+interval are unknown, so a drop rate cannot be derived.
+
+Windows Task Manager identifies an RTX 3070 Laptop GPU, about 18% 3D utilization, 2%
+copy utilization, and 2.4/8.0 GB dedicated GPU memory. System CPU reads about 60% and
+RAM 28.0/31.7 GB. These are whole-system readings, not exclusive player measurements.
+The short GPU time is consistent with GPU headroom in this view; it does not identify
+which CPU/browser task limits full-scene throughput. Timing distributions, production
+build status, full memory configuration, and a target-device capture were not supplied.
+
+The independent debug-panel poll showed 271 decoded residents but 0.00 seconds ahead
+while the transport showed 270/9.0. Both UI paths use the same facade diagnostic field,
+but sampled it independently. The debug panel now receives the transport's subscribed
+snapshot, ensuring consistent readouts in each React render. A genuinely noncontiguous
+decoded reserve can still have many resident frames but zero continuous time ahead.
+
 ### Cached native SOG preparation and concurrency — 2026-10-13
 
 Short diagnostic sample on Windows, Intel i7-11850H, NVIDIA Ampere WebGPU, Chrome
@@ -88,8 +189,9 @@ fenced. One batch per setting is insufficient to estimate sustained tail latency
 the user's 100+ ms full-scene spikes were not reproduced.
 
 Increasing frame concurrency doubled individual latency without a meaningful throughput
-improvement in this sample. Keep the current defaults pending target-device measurement;
-increasing worker/job counts is not supported by this result. The first target for
+improvement in this sample. It does not establish whether higher concurrency helps under
+full-scene load; the later user-reported four-job result above must be considered
+separately. Keep target-device defaults pending Quest measurement. The first target for
 deeper investigation is WebP/image preparation under full-scene load, with one versus
 two active frames on Quest, rather than ZIP parsing. An explicit decoder worker
 experiment must measure aggregate throughput and rendering contention together.
